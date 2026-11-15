@@ -21,12 +21,10 @@
         <p class="text-xs mt-0.5 font-medium tracking-wide">
             <span class="text-amber-400">Wap chất</span> - <span class="text-emerald-400">Kết bạn</span> - <span class="text-pink-400">Giải trí</span>
         </p>
-        <nav class="mt-2 text-xs font-semibold flex justify-center space-x-2 text-slate-300">
-            <a href="#" onclick="switchTab('home')" class="hover:text-blue-400 transition"><i class="fa-solid fa-house text-[10px] text-amber-400 mr-1"></i>Trang chủ</a>
-            <span>·</span>
-            <a href="#" onclick="switchTab('login')" class="hover:text-blue-400 transition"><i class="fa-solid fa-right-to-bracket text-[10px] text-emerald-400 mr-1"></i>Đăng nhập</a>
-            <span>·</span>
-            <a href="#" onclick="switchTab('register')" class="hover:text-blue-400 transition"><i class="fa-solid fa-user-plus text-[10px] text-pink-400 mr-1"></i>Đăng ký</a>
+
+        <!-- THANH ĐIỀU HƯỚNG DYNAMIC (Thay đổi tùy trạng thái Đăng nhập / Chưa đăng nhập) -->
+        <nav id="top-nav" class="mt-2 text-xs font-semibold flex justify-center flex-wrap gap-2 px-2 text-slate-300">
+            <!-- Sẽ được tự động cập nhật bởi JavaScript -->
         </nav>
     </header>
 
@@ -42,7 +40,6 @@
                 <h3 class="text-sm font-bold text-slate-200"><i class="fa-solid fa-lock text-amber-400 mr-1"></i> Đăng nhập hệ thống</h3>
             </div>
 
-            <!-- Nút chọn kiểu đăng nhập -->
             <div class="grid grid-cols-2 gap-2 mb-3 text-xs">
                 <button type="button" onclick="setLoginType('username')" id="btn-type-username" class="py-1.5 bg-blue-600 text-white rounded-lg font-semibold transition">Bằng tài khoản</button>
                 <button type="button" onclick="setLoginType('id')" id="btn-type-id" class="py-1.5 bg-[#1a1a1e] text-slate-400 rounded-lg font-semibold border border-[#2e2e36] transition">Bằng ID</button>
@@ -103,13 +100,12 @@
             </div>
         </div>
 
-        <!-- TRANG CHỦ / BẢNG TIN -->
+        <!-- TRANG CHỦ / BẢNG TIN (Hiển thị sau khi đăng nhập) -->
         <div id="view-home" class="hidden space-y-3">
             <div class="wap-card rounded-xl p-3 flex items-center justify-between text-xs">
                 <div>
-                    <span class="text-slate-400 text-[10px]">Xin chào,</span>
-                    <span class="font-bold text-amber-400 text-sm ml-1" id="profile-name">--</span>
-                    <span class="text-[10px] text-slate-500 ml-1" id="profile-gender"></span>
+                    <span class="text-slate-400 text-[10px]">Xin chào, ID: <span id="profile-id"></span></span>
+                    <div class="font-bold text-amber-400 text-sm" id="profile-name">--</div>
                 </div>
                 <button onclick="handleLogout()" class="bg-rose-500/20 text-rose-400 border border-rose-500/30 px-2.5 py-1 rounded hover:bg-rose-500/30 transition">Đăng xuất</button>
             </div>
@@ -125,6 +121,28 @@
                 <div class="wap-card rounded-xl p-3 text-center text-xs text-slate-400">Đang tải bài viết...</div>
             </div>
         </div>
+
+        <!-- CÁC TAB KHÁC (Trực tuyến, Thông báo, Tin nhắn, Menu) -->
+        <div id="view-online" class="hidden wap-card rounded-xl p-4 text-center text-xs text-slate-400">
+            <i class="fa-solid fa-users text-2xl text-emerald-400 mb-2"></i>
+            <p>Phòng thành viên trực tuyến đang cập nhật...</p>
+        </div>
+        <div id="view-notifications" class="hidden wap-card rounded-xl p-4 text-center text-xs text-slate-400">
+            <i class="fa-solid fa-bell text-2xl text-amber-400 mb-2"></i>
+            <p>Không có thông báo mới nào.</p>
+        </div>
+        <div id="view-messages" class="hidden wap-card rounded-xl p-4 text-center text-xs text-slate-400">
+            <i class="fa-solid fa-message text-2xl text-pink-400 mb-2"></i>
+            <p>Hộp thư tin nhắn trống.</p>
+        </div>
+        <div id="view-menu" class="hidden wap-card rounded-xl p-4 text-xs space-y-2">
+            <h3 class="font-bold text-amber-400 text-sm border-b border-[#222228] pb-1"><i class="fa-solid fa-bars mr-1"></i> Menu hệ thống</h3>
+            <ul class="space-y-1.5 text-slate-300">
+                <li><a href="#" onclick="switchTab('home')" class="hover:text-blue-400"><i class="fa-solid fa-house mr-1.5 text-amber-400"></i> Trang chủ cá nhân</a></li>
+                <li><a href="#" onclick="switchTab('online')" class="hover:text-blue-400"><i class="fa-solid fa-users mr-1.5 text-emerald-400"></i> Thành viên online</a></li>
+                <li><a href="#" onclick="handleLogout()" class="text-rose-400 hover:underline"><i class="fa-solid fa-right-from-bracket mr-1.5"></i> Đăng xuất tài khoản</a></li>
+            </ul>
+        </div>
     </main>
 
     <footer class="bg-[#050505] border-t border-[#1f1f23] text-center py-3 text-[11px] text-slate-500 mt-auto">
@@ -136,12 +154,42 @@
         let currentLoginType = 'username';
 
         document.addEventListener('DOMContentLoaded', () => {
+            renderTopNav();
             if (currentUser) {
                 switchTab('home');
             } else {
                 switchTab('login');
             }
         });
+
+        function renderTopNav() {
+            const nav = document.getElementById('top-nav');
+            if (currentUser) {
+                // Thanh nav khi ĐÃ ĐĂNG NHẬP (Home, Trực Tuyến, Bảng Tin, Thông Báo, Tin Nhắn, Menu)
+                nav.innerHTML = `
+                    <a href="#" onclick="switchTab('home')" class="hover:text-blue-400 transition"><i class="fa-solid fa-house text-[10px] text-amber-400 mr-0.5"></i>Home</a>
+                    <span class="text-slate-600">·</span>
+                    <a href="#" onclick="switchTab('online')" class="hover:text-blue-400 transition"><i class="fa-solid fa-users text-[10px] text-emerald-400 mr-0.5"></i>Trực Tuyến</a>
+                    <span class="text-slate-600">·</span>
+                    <a href="#" onclick="switchTab('home')" class="hover:text-blue-400 transition"><i class="fa-solid fa-newspaper text-[10px] text-blue-400 mr-0.5"></i>Bảng Tin</a>
+                    <span class="text-slate-600">·</span>
+                    <a href="#" onclick="switchTab('notifications')" class="hover:text-blue-400 transition"><i class="fa-solid fa-bell text-[10px] text-yellow-400 mr-0.5"></i>Thông Báo</a>
+                    <span class="text-slate-600">·</span>
+                    <a href="#" onclick="switchTab('messages')" class="hover:text-blue-400 transition"><i class="fa-solid fa-message text-[10px] text-pink-400 mr-0.5"></i>Tin Nhắn</a>
+                    <span class="text-slate-600">·</span>
+                    <a href="#" onclick="switchTab('menu')" class="hover:text-blue-400 transition"><i class="fa-solid fa-bars text-[10px] text-purple-400 mr-0.5"></i>Menu</a>
+                `;
+            } else {
+                // Thanh nav khi CHƯA ĐĂNG NHẬP
+                nav.innerHTML = `
+                    <a href="#" onclick="switchTab('login')" class="hover:text-blue-400 transition"><i class="fa-solid fa-house text-[10px] text-amber-400 mr-0.5"></i>Trang chủ</a>
+                    <span class="text-slate-600">·</span>
+                    <a href="#" onclick="switchTab('login')" class="hover:text-blue-400 transition"><i class="fa-solid fa-right-to-bracket text-[10px] text-emerald-400 mr-0.5"></i>Đăng nhập</a>
+                    <span class="text-slate-600">·</span>
+                    <a href="#" onclick="switchTab('register')" class="hover:text-blue-400 transition"><i class="fa-solid fa-user-plus text-[10px] text-pink-400 mr-0.5"></i>Đăng ký</a>
+                `;
+            }
+        }
 
         function setLoginType(type) {
             currentLoginType = type;
@@ -169,20 +217,29 @@
             document.getElementById('view-login').classList.add('hidden');
             document.getElementById('view-register').classList.add('hidden');
             document.getElementById('view-home').classList.add('hidden');
+            document.getElementById('view-online').classList.add('hidden');
+            document.getElementById('view-notifications').classList.add('hidden');
+            document.getElementById('view-messages').classList.add('hidden');
+            document.getElementById('view-menu').classList.add('hidden');
 
             if (tab === 'home') {
-                if (!currentUser) {
-                    switchTab('login');
-                    return;
-                }
+                if (!currentUser) { switchTab('login'); return; }
                 document.getElementById('view-home').classList.remove('hidden');
-                document.getElementById('profile-name').innerText = currentUser.display_name;
-                document.getElementById('profile-gender').innerText = `(${currentUser.gender})`;
+                document.getElementById('profile-name').innerText = currentUser.display_name + ` (${currentUser.gender})`;
+                document.getElementById('profile-id').innerText = currentUser.id;
                 loadPosts();
             } else if (tab === 'register') {
                 document.getElementById('view-register').classList.remove('hidden');
-            } else {
+            } else if (tab === 'login') {
                 document.getElementById('view-login').classList.remove('hidden');
+            } else if (tab === 'online') {
+                document.getElementById('view-online').classList.remove('hidden');
+            } else if (tab === 'notifications') {
+                document.getElementById('view-notifications').classList.remove('hidden');
+            } else if (tab === 'messages') {
+                document.getElementById('view-messages').classList.remove('hidden');
+            } else if (tab === 'menu') {
+                document.getElementById('view-menu').classList.remove('hidden');
             }
         }
 
@@ -239,6 +296,7 @@
                 if (res.ok) {
                     currentUser = data.user;
                     localStorage.setItem('tgc_user_obj', JSON.stringify(currentUser));
+                    renderTopNav();
                     alert('Đăng nhập thành công!');
                     switchTab('home');
                 } else {
@@ -252,6 +310,7 @@
         function handleLogout() {
             currentUser = null;
             localStorage.removeItem('tgc_user_obj');
+            renderTopNav();
             switchTab('login');
             alert('Đã đăng xuất!');
         }
