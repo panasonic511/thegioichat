@@ -10,4 +10,4 @@ run_worker_first = ["/api/*"]
 [[d1_databases]]
 binding = "DB"
 database_name = "thegioichat-db"
-database_id = "THAY_DATABASE_ID_SAU_KHI_TAO"
+database_id = "98f2938c-81a6-437f-bf4e-d28d36be5419"
