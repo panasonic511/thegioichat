@@ -3,279 +3,255 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Thế Giới Chat - Mạng xã hội kết bạn và trò chuyện</title>
+    <title>THEGIOICHAT.US - Wap chất - Kết bạn - Giải trí</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background-color: #050505; color: #e4e4e7; }
+        .wap-card { background-color: #121214; border: 1px solid #27272a; }
+        .wap-input { background-color: #1a1a1e; border: 1px solid #2e2e36; color: #ffffff; }
+        .wap-input:focus { border-color: #3b82f6; outline: none; }
+    </style>
 </head>
-<body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex flex-col">
-    <!-- Header -->
-    <header class="bg-gradient-to-r from-blue-600 to-indigo-700 text-white shadow-lg sticky top-0 z-50">
-        <div class="max-w-md mx-auto px-4 py-3 flex justify-between items-center">
-            <div class="flex items-center space-x-2">
-                <i class="fa-solid fa-earth-asia text-2xl"></i>
-                <span class="font-bold text-lg tracking-wide">THẾ GIỚI CHAT</span>
-            </div>
-            <div id="user-badge" class="text-xs bg-blue-500/50 px-2.5 py-1 rounded-full border border-blue-400">
-                <i class="fa-solid fa-user-circle mr-1"></i> <span id="current-user-display">Chưa đăng nhập</span>
-            </div>
-        </div>
-        <!-- Navigation Tabs -->
-        <div class="bg-blue-800/40 backdrop-blur px-4 py-2 flex justify-around text-sm font-medium">
-            <button onclick="switchTab('feed')" id="tab-feed" class="text-white border-b-2 border-white pb-1 transition"><i class="fa-solid fa-newspaper mr-1"></i> Bảng tin</button>
-            <button onclick="switchTab('chat')" id="tab-chat" class="text-blue-200 hover:text-white pb-1 transition"><i class="fa-solid fa-comments mr-1"></i> Phòng chat</button>
-            <button onclick="switchTab('auth')" id="tab-auth" class="text-blue-200 hover:text-white pb-1 transition"><i class="fa-solid fa-user-lock mr-1"></i> Tài khoản</button>
-        </div>
+<body class="font-sans min-h-screen flex flex-col selection:bg-blue-500 selection:text-white">
+    
+    <!-- Top Header -->
+    <header class="bg-[#0b0b0d] border-b border-[#1f1f23] text-center py-3 shadow-md">
+        <h1 class="text-xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-200 to-slate-400 drop-shadow">
+            THEGIOICHAT.US
+        </h1>
+        <p class="text-xs mt-0.5 font-medium tracking-wide">
+            <span class="text-amber-400">Wap chất</span> <span class="text-slate-500">-</span> <span class="text-emerald-400">Kết bạn</span> <span class="text-slate-500">-</span> <span class="text-pink-400">Giải trí</span>
+        </p>
+        <!-- Nav links -->
+        <nav class="mt-2 text-xs font-semibold flex justify-center space-x-2 text-slate-300">
+            <a href="#" onclick="switchTab('home')" class="hover:text-blue-400 transition"><i class="fa-solid fa-house text-[10px] mr-0.5 text-amber-400"></i> Trang chủ</a>
+            <span class="text-slate-600">·</span>
+            <a href="#" onclick="switchTab('auth')" class="hover:text-blue-400 transition"><i class="fa-solid fa-right-to-bracket text-[10px] mr-0.5 text-emerald-400"></i> Đăng nhập</a>
+            <span class="text-slate-600">·</span>
+            <a href="#" onclick="switchTab('register')" class="hover:text-blue-400 transition"><i class="fa-solid fa-user-plus text-[10px] mr-0.5 text-pink-400"></i> Đăng ký</a>
+        </nav>
     </header>
 
     <!-- Main Container -->
-    <main class="max-w-md mx-auto w-full p-4 flex-grow mb-16">
-        <!-- TAB 1: BẢNG TIN -->
-        <div id="view-feed" class="space-y-4">
-            <!-- Create Post Box -->
-            <div class="bg-white rounded-2xl shadow-sm p-4 border border-slate-100">
-                <div class="flex items-center space-x-3 mb-3">
-                    <div class="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-lg shadow-sm" id="avatar-initial">?</div>
-                    <div>
-                        <h3 class="font-semibold text-sm text-slate-800" id="poster-name">Khách vãng lai</h3>
-                        <span class="text-xs text-slate-400">Chia sẻ suy nghĩ của bạn...</span>
-                    </div>
-                </div>
-                <textarea id="post-content" rows="3" placeholder="Bạn đang nghĩ gì thế?..." class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
-                <div class="flex justify-between items-center mt-2">
-                    <div class="text-slate-400 text-xs"><i class="fa-solid fa-globe"></i> Công khai</div>
-                    <button onclick="createPost()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-xl text-sm shadow-md shadow-blue-500/20 transition flex items-center space-x-1">
-                        <span>Đăng bài</span> <i class="fa-solid fa-paper-plane text-xs"></i>
+    <main class="max-w-md mx-auto w-full p-3 flex-grow space-y-4 my-2">
+
+        <!-- Banner Greeting -->
+        <div class="text-center py-2">
+            <p class="text-sm font-semibold text-rose-500 flex items-center justify-center space-x-1">
+                <span>❤️</span> <span>Hi, Chào bạn</span>
+            </p>
+            <h2 class="text-sm font-bold text-amber-400 mt-1">
+                Thế Giới Chat – Chat online, giao lưu và kết bạn
+            </h2>
+            <div class="text-pink-400 text-xs tracking-widest mt-1">
+                💖 ✨ 💖 ✨ 💖
+            </div>
+        </div>
+
+        <!-- VIEW: LOGIN / AUTH -->
+        <div id="view-auth" class="wap-card rounded-xl p-4 shadow-xl">
+            <div class="text-center border-b border-[#222228] pb-3 mb-4">
+                <h3 class="text-sm font-bold text-slate-200 flex items-center justify-center space-x-1.5">
+                    <i class="fa-solid fa-lock text-xs text-amber-400"></i> <span>Đăng nhập hệ thống</span>
+                </h3>
+            </div>
+
+            <!-- Login Tabs Option -->
+            <div class="mb-4">
+                <span class="text-[11px] font-semibold text-emerald-400 block mb-1.5">Đăng nhập bằng:</span>
+                <div class="grid grid-cols-3 gap-1.5 bg-[#18181c] p-1 rounded-lg border border-[#27272a] text-xs">
+                    <button class="py-1.5 bg-blue-600 text-white rounded font-medium shadow flex items-center justify-center space-x-1">
+                        <i class="fa-solid fa-user text-[10px]"></i> <span>Tài khoản</span>
+                    </button>
+                    <button class="py-1.5 text-slate-400 hover:text-white rounded font-medium flex items-center justify-center space-x-1 transition">
+                        <i class="fa-solid fa-id-card text-[10px]"></i> <span>ID</span>
+                    </button>
+                    <button class="py-1.5 text-slate-400 hover:text-white rounded font-medium flex items-center justify-center space-x-1 transition">
+                        <i class="fa-solid fa-envelope text-[10px]"></i> <span>Gmail</span>
                     </button>
                 </div>
             </div>
 
-            <!-- Feed List -->
-            <div class="space-y-3" id="posts-container">
-                <div class="text-center py-8 text-slate-400 text-sm bg-white rounded-2xl border border-slate-100 p-6">
-                    <i class="fa-solid fa-spinner fa-spin text-xl mb-2 text-blue-600"></i>
-                    <p>Đang tải bài viết...</p>
+            <!-- Form Fields -->
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-[11px] font-medium text-slate-300 mb-1">Tên tài khoản:</label>
+                    <input type="text" id="login-user" placeholder="Nhập tên đăng nhập..." class="w-full px-3 py-2 text-xs rounded-lg wap-input">
+                </div>
+                <div>
+                    <label class="block text-[11px] font-medium text-slate-300 mb-1">Nhập mật khẩu:</label>
+                    <div class="relative">
+                        <input type="password" id="login-pass" placeholder="••••••••" class="w-full px-3 py-2 pr-9 text-xs rounded-lg wap-input">
+                        <span class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 cursor-pointer hover:text-white">
+                            <i class="fa-solid fa-eye-slash text-xs"></i>
+                        </span>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-between text-xs pt-1">
+                    <label class="flex items-center space-x-1.5 text-slate-300 cursor-pointer">
+                        <input type="checkbox" checked class="rounded bg-[#1a1a1e] border-[#3f3f46] text-blue-600 focus:ring-0">
+                        <span class="text-[11px]">Ghi nhớ</span>
+                    </label>
+                    <a href="#" class="text-blue-400 hover:underline text-[11px]">Quên mật khẩu</a>
+                </div>
+
+                <button onclick="doLogin()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg text-xs shadow-lg shadow-blue-600/20 transition mt-2">
+                    Đăng nhập
+                </button>
+            </div>
+
+            <!-- Divider -->
+            <div class="relative flex py-3 items-center">
+                <div class="flex-grow border-t border-[#27272a]"></div>
+                <span class="flex-shrink mx-3 text-[10px] text-slate-500 uppercase tracking-widest">Hoặc</span>
+                <div class="flex-grow border-t border-[#27272a]"></div>
+            </div>
+
+            <div class="text-center text-xs">
+                <span class="text-slate-400">Nếu chưa có tài khoản?</span> 
+                <a href="#" onclick="switchTab('register')" class="text-emerald-400 font-semibold hover:underline ml-1">Đăng kí ngay</a>
+            </div>
+        </div>
+
+        <!-- VIEW: CHAT & FEED (Hiển thị sau khi đăng nhập hoặc chọn Trang chủ) -->
+        <div id="view-home" class="hidden space-y-3">
+            <div class="wap-card rounded-xl p-3 shadow flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                    <div class="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs border border-emerald-500/30" id="user-avatar-lbl">U</div>
+                    <div>
+                        <span class="text-[10px] text-slate-400 block">Xin chào,</span>
+                        <span class="text-xs font-bold text-amber-400" id="username-display">Khách vãng lai</span>
+                    </div>
+                </div>
+                <button onclick="doLogout()" class="text-[11px] bg-rose-500/20 text-rose-400 px-2.5 py-1 rounded-md border border-rose-500/30 hover:bg-rose-500/30 transition">Đăng xuất</button>
+            </div>
+
+            <!-- Box đăng bài -->
+            <div class="wap-card rounded-xl p-3 space-y-2">
+                <textarea id="post-text" rows="2" placeholder="Bạn đang nghĩ gì? Chia sẻ ngay..." class="w-full p-2.5 text-xs rounded-lg wap-input resize-none"></textarea>
+                <div class="flex justify-between items-center">
+                    <span class="text-[10px] text-slate-400"><i class="fa-solid fa-globe mr-1"></i>Công khai</span>
+                    <button onclick="submitPost()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow transition">Đăng bài</button>
+                </div>
+            </div>
+
+            <!-- Bảng tin -->
+            <div class="space-y-2" id="feed-container">
+                <div class="wap-card rounded-xl p-4 text-center text-xs text-slate-400">
+                    Đang tải bài viết từ cộng đồng...
                 </div>
             </div>
         </div>
 
-        <!-- TAB 2: PHÒNG CHAT -->
-        <div id="view-chat" class="hidden space-y-4">
-            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 flex flex-col h-[70vh]">
-                <div class="p-3 border-b border-slate-100 flex items-center justify-between bg-slate-50 rounded-t-2xl">
-                    <span class="font-semibold text-sm flex items-center"><i class="fa-solid fa-circle text-emerald-500 text-xs mr-2"></i> Phòng Chung Thế Giới</span>
-                    <span class="text-xs text-slate-400">Trực tuyến</span>
-                </div>
-                <div id="chat-messages" class="flex-grow p-3 overflow-y-auto space-y-3 text-sm bg-slate-50/50">
-                    <div class="text-center text-xs text-slate-400 my-2">Chào mừng bạn đến với phòng chat cộng đồng!</div>
-                </div>
-                <div class="p-3 border-t border-slate-100 bg-white rounded-b-2xl flex space-x-2">
-                    <input type="text" id="chat-input" placeholder="Nhập tin nhắn..." class="flex-grow bg-slate-100 border-0 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" onkeypress="if(event.key==='Enter') sendChatMessage()">
-                    <button onclick="sendChatMessage()" class="bg-blue-600 text-white w-10 h-10 rounded-xl flex items-center justify-center shadow hover:bg-blue-700 transition">
-                        <i class="fa-solid fa-paper-plane"></i>
-                    </button>
-                </div>
-            </div>
+        <!-- Info Footer Card -->
+        <div class="wap-card rounded-xl p-3 text-xs space-y-1.5 border border-[#222228]">
+            <h4 class="font-bold text-amber-400 flex items-center space-x-1">
+                <i class="fa-solid fa-circle-info text-[10px]"></i> <span>Kết bạn trên Thế Giới Chat</span>
+            </h4>
+            <p class="text-[11px] text-slate-400 leading-relaxed">
+                Thế Giới Chat là mạng xã hội trực tuyến giúp bạn kết bạn, giao lưu trò chuyện mỗi ngày và giải trí ngay trên trình duyệt điện thoại hoặc máy tính hoàn toàn miễn phí.
+            </p>
         </div>
 
-        <!-- TAB 3: TÀI KHOẢN (ĐĂNG KÝ / ĐĂNG NHẬP) -->
-        <div id="view-auth" class="hidden space-y-4">
-            <div class="bg-white rounded-2xl shadow-sm p-6 border border-slate-100">
-                <div class="text-center mb-6">
-                    <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-2xl mx-auto mb-2 shadow-inner">
-                        <i class="fa-solid fa-user-shield"></i>
-                    </div>
-                    <h2 class="text-xl font-bold text-slate-800" id="auth-title">Đăng nhập tài khoản</h2>
-                    <p class="text-xs text-slate-400 mt-1">Tham gia cộng đồng Thế Giới Chat ngay hôm nay</p>
-                </div>
-
-                <!-- Form Login / Register -->
-                <div id="auth-form" class="space-y-4">
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-600 mb-1">Tên đăng nhập / Tên hiển thị</label>
-                        <div class="relative">
-                            <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400"><i class="fa-solid fa-user"></i></span>
-                            <input type="text" id="username-input" placeholder="Nhập tên của bạn..." class="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        </div>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-600 mb-1">Mật khẩu</label>
-                        <div class="relative">
-                            <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400"><i class="fa-solid fa-lock"></i></span>
-                            <input type="password" id="password-input" placeholder="••••••••" class="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        </div>
-                    </div>
-                    <button onclick="handleAuth()" id="auth-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl text-sm shadow-lg shadow-blue-500/20 transition">
-                        Đăng nhập / Đăng ký nhanh
-                    </button>
-                </div>
-
-                <div id="user-profile-card" class="hidden text-center space-y-4">
-                    <div class="p-4 bg-blue-50 rounded-xl border border-blue-100">
-                        <p class="text-xs text-slate-500">Đang đăng nhập với tài khoản:</p>
-                        <h3 class="font-bold text-lg text-blue-700 mt-1" id="profile-name">--</h3>
-                    </div>
-                    <button onclick="logout()" class="w-full bg-rose-50 hover:bg-rose-100 text-rose-600 font-semibold py-3 rounded-xl text-sm transition border border-rose-200">
-                        <i class="fa-solid fa-right-from-bracket mr-1"></i> Đăng xuất tài khoản
-                    </button>
-                </div>
-            </div>
-        </div>
     </main>
 
     <!-- Footer -->
-    <footer class="mt-auto py-4 text-center text-xs text-slate-400 border-t border-slate-100 bg-white">
-        <p>Thế Giới Chat · Vận hành trên Cloudflare Workers & D1</p>
+    <footer class="bg-[#050505] border-t border-[#1f1f23] text-center py-3 text-[11px] text-slate-500 mt-auto">
+        <p>© 2026 THEGIOICHAT.US · All rights reserved</p>
     </footer>
 
-    <!-- Script xử lý logic -->
+    <!-- Script Logic -->
     <script>
-        let currentUser = localStorage.getItem('tgc_user') || '';
+        let loggedUser = localStorage.getItem('tgc_user') || '';
 
         document.addEventListener('DOMContentLoaded', () => {
-            updateAuthUI();
-            loadPosts();
+            if (loggedUser) {
+                switchTab('home');
+            } else {
+                switchTab('auth');
+            }
+            loadFeed();
         });
 
         function switchTab(tab) {
-            document.getElementById('view-feed').classList.add('hidden');
-            document.getElementById('view-chat').classList.add('hidden');
             document.getElementById('view-auth').classList.add('hidden');
+            document.getElementById('view-home').classList.add('hidden');
 
-            document.getElementById('tab-feed').className = 'text-blue-200 hover:text-white pb-1 transition';
-            document.getElementById('tab-chat').className = 'text-blue-200 hover:text-white pb-1 transition';
-            document.getElementById('tab-auth').className = 'text-blue-200 hover:text-white pb-1 transition';
-
-            document.getElementById('view-' + tab).classList.remove('hidden');
-            document.getElementById('tab-' + tab).className = 'text-white border-b-2 border-white pb-1 transition';
-        }
-
-        function updateAuthUI() {
-            const badge = document.getElementById('current-user-display');
-            const initial = document.getElementById('avatar-initial');
-            const poster = document.getElementById('poster-name');
-            const authForm = document.getElementById('auth-form');
-            const profileCard = document.getElementById('user-profile-card');
-            const profileName = document.getElementById('profile-name');
-
-            if (currentUser) {
-                badge.innerText = currentUser;
-                initial.innerText = currentUser.charAt(0).toUpperCase();
-                poster.innerText = currentUser;
-                authForm.classList.add('hidden');
-                profileCard.classList.remove('hidden');
-                profileName.innerText = currentUser;
-                document.getElementById('auth-title').innerText = 'Quản lý tài khoản';
+            if (tab === 'home') {
+                if (!loggedUser) {
+                    switchTab('auth');
+                    return;
+                }
+                document.getElementById('view-home').classList.remove('hidden');
+                document.getElementById('username-display').innerText = loggedUser;
+                document.getElementById('user-avatar-lbl').innerText = loggedUser.charAt(0).toUpperCase();
             } else {
-                badge.innerText = 'Chưa đăng nhập';
-                initial.innerText = '?';
-                poster.innerText = 'Khách vãng lai';
-                authForm.classList.remove('hidden');
-                profileCard.classList.add('hidden');
-                document.getElementById('auth-title').innerText = 'Đăng nhập / Đăng ký';
+                document.getElementById('view-auth').classList.remove('hidden');
             }
         }
 
-        function handleAuth() {
-            const username = document.getElementById('username-input').value.trim();
-            if (!username) {
-                alert('Vui lòng nhập tên hiển thị!');
+        function doLogin() {
+            const user = document.getElementById('login-user').value.trim();
+            if (!user) {
+                alert('Vui lòng nhập tên tài khoản!');
                 return;
             }
-            currentUser = username;
-            localStorage.setItem('tgc_user', currentUser);
-            updateAuthUI();
-            switchTab('feed');
+            loggedUser = user;
+            localStorage.setItem('tgc_user', loggedUser);
             alert('Đăng nhập thành công!');
+            switchTab('home');
         }
 
-        function logout() {
-            currentUser = '';
+        function doLogout() {
+            loggedUser = '';
             localStorage.removeItem('tgc_user');
-            updateAuthUI();
+            switchTab('auth');
             alert('Đã đăng xuất!');
         }
 
-        async function loadPosts() {
-            const container = document.getElementById('posts-container');
+        async function loadFeed() {
+            const container = document.getElementById('feed-container');
             try {
                 const res = await fetch('/api/posts');
                 if (res.ok) {
                     const posts = await res.json();
                     if (posts.length === 0) {
-                        container.innerHTML = '<div class="text-center py-8 text-slate-400 text-sm bg-white rounded-2xl border border-slate-100 p-6">Chưa có bài viết nào. Hãy là người đầu tiên đăng bài!</div>';
+                        container.innerHTML = '<div class="wap-card rounded-xl p-3 text-center text-xs text-slate-400">Chưa có bài viết nào. Hãy đăng bài đầu tiên!</div>';
                         return;
                     }
                     container.innerHTML = posts.map(p => `
-                        <div class="bg-white rounded-2xl shadow-sm p-4 border border-slate-100 space-y-2">
+                        <div class="wap-card rounded-xl p-3 space-y-1.5">
                             <div class="flex items-center space-x-2">
-                                <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-sm">${(p.username || 'Ẩn danh').charAt(0).toUpperCase()}</div>
-                                <div>
-                                    <h4 class="font-semibold text-xs text-slate-800">${p.username || 'Ẩn danh'}</h4>
-                                    <span class="text-[10px] text-slate-400">${new Date(p.created_at || Date.now()).toLocaleTimeString()}</span>
-                                </div>
+                                <div class="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-[10px]">${(p.username || 'A').charAt(0).toUpperCase()}</div>
+                                <span class="font-bold text-xs text-slate-200">${p.username || 'Ẩn danh'}</span>
                             </div>
-                            <p class="text-sm text-slate-700 whitespace-pre-line">${escapeHtml(p.content)}</p>
+                            <p class="text-xs text-slate-300 whitespace-pre-line">${escapeHtml(p.content)}</p>
                         </div>
                     `).join('');
-                } else {
-                    container.innerHTML = '<div class="text-center py-6 text-slate-400 text-sm bg-white rounded-2xl border border-slate-100">Chưa kết nối API bảng tin.</div>';
                 }
             } catch (e) {
-                container.innerHTML = '<div class="text-center py-6 text-slate-400 text-sm bg-white rounded-2xl border border-slate-100">Đang tải dữ liệu...</div>';
+                // Ignore if offline
             }
         }
 
-        async function createPost() {
-            if (!currentUser) {
-                alert('Vui lòng đăng nhập trước khi đăng bài!');
-                switchTab('auth');
-                return;
-            }
-            const content = document.getElementById('post-content').value.trim();
-            if (!content) {
-                alert('Nội dung bài viết không được để trống!');
-                return;
-            }
-
+        async function submitPost() {
+            const content = document.getElementById('post-text').value.trim();
+            if (!content) return;
             try {
                 const res = await fetch('/api/posts', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: currentUser, content })
+                    body: JSON.stringify({ username: loggedUser, content })
                 });
                 if (res.ok) {
-                    document.getElementById('post-content').value = '';
-                    loadPosts();
-                } else {
-                    alert('Lỗi khi đăng bài lên máy chủ.');
+                    document.getElementById('post-text').value = '';
+                    loadFeed();
                 }
             } catch (e) {
-                alert('Không thể kết nối đến máy chủ.');
+                alert('Không thể đăng bài.');
             }
-        }
-
-        function sendChatMessage() {
-            if (!currentUser) {
-                alert('Vui lòng đăng nhập để chat!');
-                switchTab('auth');
-                return;
-            }
-            const input = document.getElementById('chat-input');
-            const text = input.value.trim();
-            if (!text) return;
-
-            const chatBox = document.getElementById('chat-messages');
-            const msgDiv = document.createElement('div');
-            msgDiv.className = 'flex flex-col items-end';
-            msgDiv.innerHTML = `
-                <div class="bg-blue-600 text-white rounded-2xl rounded-tr-none px-3 py-2 max-w-[80%] text-sm shadow-sm">
-                    <span class="block text-[10px] text-blue-200 font-semibold mb-0.5">${currentUser}</span>
-                    ${escapeHtml(text)}
-                </div>
-            `;
-            chatBox.appendChild(msgDiv);
-            input.value = '';
-            chatBox.scrollTop = chatBox.scrollHeight;
         }
 
         function escapeHtml(text) {
