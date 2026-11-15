@@ -1,5 +1,5 @@
 name = "thegioichat"
-main = "scr/worker.js"
+main = "src/worker.js"
 compatibility_date = "2026-11-16"
 
 [assets]
