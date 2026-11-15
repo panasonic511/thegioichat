@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#1769aa">
+<title>Thế Giới Chat</title>
+<style>
+:root{font-family:system-ui,-apple-system,sans-serif;color:#172033;background:#f2f6fb}
+*{box-sizing:border-box}body{margin:0}.top{background:#1769aa;color:white;padding:24px 18px 30px;border-radius:0 0 24px 24px}
+h1{margin:0;font-size:26px}.tag{opacity:.9;margin-top:4px}.wrap{max-width:720px;margin:auto;padding:16px}
+.card{background:white;border-radius:16px;padding:16px;margin:12px 0;box-shadow:0 3px 14px #17365d12}
+nav{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}button{border:0;border-radius:12px;padding:11px 14px;background:#e7f1fb;color:#14558d;font-weight:650}
+button.active{background:white;color:#14558d}input,textarea{width:100%;padding:12px;border:1px solid #ccd7e3;border-radius:10px;margin:6px 0 12px;font:inherit}
+.muted{color:#68778a;font-size:14px}.post{border-top:1px solid #edf0f4;padding:12px 0}.hidden{display:none}
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+<h1>🌐 THẾ GIỚI CHAT</h1><div class="tag">Kết nối bạn bè bốn phương</div>
+<nav>
+<button class="active" data-tab="home">Trang chủ</button><button data-tab="diary">Nhật ký</button><button data-tab="rooms">Phòng chat</button><button data-tab="profile">Hồ sơ</button>
+</nav></div></header>
+<main class="wrap">
+<section id="home" class="tab">
+<div class="card"><h2>Chào mừng đến Thế Giới Chat!</h2><p class="muted">Bản giao diện thử nghiệm. Hãy đăng nhập để trải nghiệm cộng đồng.</p>
+<label>Tên hiển thị</label><input id="nickname" maxlength="30" placeholder="Ví dụ: Bạn mới">
+<button id="saveName">Lưu tên</button><span id="welcome" class="muted"></span></div>
+<div class="card"><h3>Bảng tin cộng đồng</h3><p class="muted">Các bài viết mới sẽ xuất hiện tại đây khi tính năng nhật ký được kết nối máy chủ.</p></div>
+</section>
+<section id="diary" class="tab hidden"><div class="card"><h2>Nhật ký</h2><textarea id="diaryText" rows="3" placeholder="Bạn đang nghĩ gì?"></textarea><button id="postDiary">Đăng thử (trên thiết bị)</button><div id="posts"></div></div></section>
+<section id="rooms" class="tab hidden"><div class="card"><h2>Phòng chat trực tuyến</h2><p class="muted">Giao diện phòng chat mẫu. Chat nhiều người và lưu lịch sử cần triển khai API, xác thực và cơ sở dữ liệu.</p><p>💬 Phòng giao lưu · 🎮 Phòng giải trí · ❤️ Kết bạn</p></div></section>
+<section id="profile" class="tab hidden"><div class="card"><h2>Hồ sơ thành viên</h2><p>Điểm thưởng: 0 · Cấp độ: 1 · Xu ảo: 0</p><p class="muted">Các số liệu hiện là dữ liệu minh họa, chưa có giao dịch thật.</p></div></section>
+<footer class="muted">Thế Giới Chat · Phiên bản giao diện khởi đầu</footer>
+</main>
+<script>
+document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>{
+ document.querySelectorAll('.tab').forEach(s=>s.classList.add('hidden'));
+ document.getElementById(b.dataset.tab).classList.remove('hidden');
+ document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===b));
+}));
+document.getElementById('saveName').onclick=()=>{
+ const n=document.getElementById('nickname').value.trim();
+ if(n){localStorage.setItem('tgchat-name',n);document.getElementById('welcome').textContent=' Xin chào, '+n+'!';}
+};
+document.getElementById('postDiary').onclick=()=>{
+ const t=document.getElementById('diaryText').value.trim(); if(!t)return;
+ const p=document.createElement('div');p.className='post';p.textContent=t;
+ document.getElementById('posts').prepend(p);document.getElementById('diaryText').value='';
+};
+const old=localStorage.getItem('tgchat-name');if(old){document.getElementById('nickname').value=old;document.getElementById('welcome').textContent=' Xin chào, '+old+'!';}
+</script>
+</body></html>
