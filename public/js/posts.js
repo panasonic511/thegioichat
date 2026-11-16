@@ -30,10 +30,10 @@ async function loadPosts() {
             feed.innerHTML = posts.map(p => `
                 <div class="wap-card rounded-xl p-3 space-y-1.5">
                     <div class="flex items-center space-x-2">
-                        <div class="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-[10px]">${(p.username || 'A').charAt(0).toUpperCase()}</div>
-                        <span class="font-bold text-xs text-slate-200">${escapeHtml(p.username)}</span>
+                        <div class="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-[10px]">${(p.nguoi_dang || 'A').charAt(0).toUpperCase()}</div>
+                        <span class="font-bold text-xs text-slate-200">${escapeHtml(p.nguoi_dang)}</span>
                     </div>
-                    <p class="text-xs text-slate-300 whitespace-pre-line">${escapeHtml(p.content)}</p>
+                    <p class="text-xs text-slate-300 whitespace-pre-line">${escapeHtml(p.noi_dung)}</p>
                 </div>
             `).join('');
         }
@@ -43,15 +43,15 @@ async function loadPosts() {
 async function createPost() {
     const input = document.getElementById('post-content');
     if (!input) return;
-    const content = input.value.trim();
+    const noi_dung = input.value.trim();
     const user = getCurrentUser();
-    if (!content || !user) return;
+    if (!noi_dung || !user) return;
 
     try {
         const res = await fetch('/api/posts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: user.display_name, content })
+            body: JSON.stringify({ nguoi_dang: user.ten_hien_thi, noi_dung })
         });
         if (res.ok) {
             input.value = '';
