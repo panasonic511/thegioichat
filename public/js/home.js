@@ -28,7 +28,6 @@ async function renderHomeView(container) {
                 </div>
             </div>
 
-            <!-- Phòng chat -->
             <div class="space-y-1.5">
                 <h3 class="text-xs font-bold text-emerald-400 flex items-center px-1"><i class="fa-solid fa-door-open mr-1.5"></i> Phòng chat</h3>
                 <div class="grid grid-cols-2 gap-2">
@@ -55,7 +54,6 @@ async function renderHomeView(container) {
                 </div>
             </div>
 
-            <!-- Menu nhanh có Cửa hàng -->
             <div class="wap-card rounded-xl overflow-hidden text-xs">
                 <div class="bg-[#18181c] px-3 py-2 border-b border-[#27272a] font-bold text-emerald-400 flex items-center justify-between">
                     <span><i class="fa-solid fa-bars mr-1.5"></i> Menu hệ thống</span>
@@ -69,7 +67,6 @@ async function renderHomeView(container) {
                 </div>
             </div>
 
-            <!-- Thông báo banner -->
             <div class="wap-card rounded-xl overflow-hidden text-xs">
                 <div class="bg-[#18181c] px-3 py-2 border-b border-[#27272a] font-bold text-emerald-400 flex items-center justify-between">
                     <span><i class="fa-solid fa-bullhorn mr-1.5"></i> Thông báo</span>
@@ -89,10 +86,8 @@ async function renderHomeView(container) {
         const res = await fetch('/api/stats');
         if (res.ok) {
             const data = await res.json();
-            const uElem = document.getElementById('home-total-users');
             const pElem = document.getElementById('home-total-posts');
             const oElem = document.getElementById('home-online-count');
-            if (uElem) uElem.innerText = data.tongThanhVien;
             if (pElem) pElem.innerText = data.tongBaiViet;
             if (oElem) oElem.innerText = data.thanhVienOnline;
         }
