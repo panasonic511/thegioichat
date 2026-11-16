@@ -1,62 +1,65 @@
-// Thay thế dòng import renderMenuView cũ bằng:
-import { renderOnlineView, renderNotificationsView } from './online.js';
-import { renderMenuView } from './menu.js';
-import { renderLoginView, renderRegisterView } from './auth.js';
-import { renderHomeView } from './home.js';
-import { renderPostsView } from './posts.js';
-import { renderMessagesView, stopMessagePolling } from './messages.js';
-import { renderOnlineView, renderNotificationsView, renderMenuView } from './online.js';
+let currentUser = JSON.parse(localStorage.getItem('tgc_user_obj')) || null;
 
-export function getCurrentUser() {
-    return JSON.parse(localStorage.getItem('tgc_user_obj')) || null;
-}
-
-export function escapeHtml(text) {
+function getCurrentUser() { return currentUser; }
+function escapeHtml(text) {
     if (!text) return '';
     return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-export function renderTopNav() {
+document.addEventListener('DOMContentLoaded', () => {
+    renderTopNav();
+    updateLiveClock();
+    setInterval(updateLiveClock, 1000);
+
+    if (currentUser) {
+        switchTab('home');
+    } else {
+        switchTab('login');
+    }
+});
+
+function updateLiveClock() {
+    const now = new Date();
+    const days = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'];
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} - ${days[now.getDay()]} ••••• ${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()} •••••`;
+    const el = document.getElementById('live-clock-banner');
+    if (el) el.innerText = timeStr;
+}
+
+function renderTopNav() {
     const nav = document.getElementById('top-nav');
-    const user = getCurrentUser();
-    if (user) {
+    if (!nav) return;
+    if (currentUser) {
         nav.innerHTML = `
-            <a href="#" data-tab="home" class="nav-link hover:text-blue-400 transition flex items-center"><i class="fa-solid fa-house text-[10px] text-amber-400 mr-1"></i>Home</a>
+            <a href="#" onclick="switchTab('home')" class="hover:text-blue-400 transition flex items-center"><i class="fa-solid fa-house text-[10px] text-amber-400 mr-1"></i>Home</a>
             <span class="text-slate-600">·</span>
-            <a href="#" data-tab="online" class="nav-link hover:text-blue-400 transition flex items-center"><i class="fa-solid fa-users text-[10px] text-emerald-400 mr-1"></i>Trực tuyến</a>
+            <a href="#" onclick="switchTab('online')" class="hover:text-blue-400 transition flex items-center"><i class="fa-solid fa-users text-[10px] text-emerald-400 mr-1"></i>Trực tuyến</a>
             <span class="text-slate-600">·</span>
-            <a href="#" data-tab="posts" class="nav-link hover:text-blue-400 transition flex items-center"><i class="fa-solid fa-newspaper text-[10px] text-blue-400 mr-1"></i>Bảng tin</a>
+            <a href="#" onclick="switchTab('posts')" class="hover:text-blue-400 transition flex items-center"><i class="fa-solid fa-newspaper text-[10px] text-blue-400 mr-1"></i>Bảng tin</a>
             <span class="text-slate-600">·</span>
-            <a href="#" data-tab="notifications" class="nav-link hover:text-blue-400 transition flex items-center"><i class="fa-solid fa-bell text-[10px] text-yellow-400 mr-1"></i>Thông báo</a>
+            <a href="#" onclick="switchTab('notifications')" class="hover:text-blue-400 transition flex items-center"><i class="fa-solid fa-bell text-[10px] text-yellow-400 mr-1"></i>Thông báo</a>
             <span class="text-slate-600">·</span>
-            <a href="#" data-tab="messages" class="nav-link hover:text-blue-400 transition flex items-center"><i class="fa-solid fa-envelope text-[10px] text-pink-400 mr-1"></i>Tin nhắn</a>
+            <a href="#" onclick="switchTab('messages')" class="hover:text-blue-400 transition flex items-center"><i class="fa-solid fa-envelope text-[10px] text-pink-400 mr-1"></i>Tin nhắn</a>
             <span class="text-slate-600">·</span>
-            <a href="#" data-tab="menu" class="nav-link hover:text-blue-400 transition flex items-center"><i class="fa-solid fa-bars text-[10px] text-purple-400 mr-1"></i>Menu</a>
+            <a href="#" onclick="switchTab('menu')" class="hover:text-blue-400 transition flex items-center"><i class="fa-solid fa-bars text-[10px] text-purple-400 mr-1"></i>Menu</a>
         `;
     } else {
         nav.innerHTML = `
-            <a href="#" data-tab="login" class="nav-link hover:text-blue-400 transition flex items-center"><i class="fa-solid fa-house text-[10px] text-amber-400 mr-0.5"></i>Trang chủ</a>
+            <a href="#" onclick="switchTab('login')" class="hover:text-blue-400 transition flex items-center"><i class="fa-solid fa-house text-[10px] text-amber-400 mr-0.5"></i>Trang chủ</a>
             <span class="text-slate-600">·</span>
-            <a href="#" data-tab="login" class="nav-link hover:text-blue-400 transition flex items-center"><i class="fa-solid fa-right-to-bracket text-[10px] text-emerald-400 mr-0.5"></i>Đăng nhập</a>
+            <a href="#" onclick="switchTab('login')" class="hover:text-blue-400 transition flex items-center"><i class="fa-solid fa-right-to-bracket text-[10px] text-emerald-400 mr-0.5"></i>Đăng nhập</a>
             <span class="text-slate-600">·</span>
-            <a href="#" data-tab="register" class="nav-link hover:text-blue-400 transition flex items-center"><i class="fa-solid fa-user-plus text-[10px] text-pink-400 mr-0.5"></i>Đăng ký</a>
+            <a href="#" onclick="switchTab('register')" class="hover:text-blue-400 transition flex items-center"><i class="fa-solid fa-user-plus text-[10px] text-pink-400 mr-0.5"></i>Đăng ký</a>
         `;
     }
-
-    document.querySelectorAll('.nav-link').forEach(link => {
-        link.addEventListener('click', (e) => {
-            e.preventDefault();
-            switchTab(link.getAttribute('data-tab'));
-        });
-    });
 }
 
-export function switchTab(tab, extraData = null) {
-    stopMessagePolling(); // Dừng tải ngầm tin nhắn khi chuyển sang tab khác
+function switchTab(tab, extraData = null) {
+    stopMessagePolling();
     const container = document.getElementById('main-content');
-    const user = getCurrentUser();
+    if (!container) return;
 
-    if (!user && tab !== 'login' && tab !== 'register') {
+    if (!currentUser && tab !== 'login' && tab !== 'register') {
         renderLoginView(container);
         return;
     }
@@ -73,12 +76,3 @@ export function switchTab(tab, extraData = null) {
         default: renderHomeView(container);
     }
 }
-
-document.addEventListener('DOMContentLoaded', () => {
-    renderTopNav();
-    if (getCurrentUser()) {
-        switchTab('home');
-    } else {
-        switchTab('login');
-    }
-});
