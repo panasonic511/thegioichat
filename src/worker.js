@@ -1,90 +1,176 @@
 export default {
-  async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-    const path = url.pathname;
+    async fetch(request, env, ctx) {
+        const url = new URL(request.url);
+        const path = url.pathname;
+        const method = request.method;
 
-    const corsHeaders = {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-    };
+        const corsHeaders = {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+        };
 
-    if (request.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders });
+        if (method === 'OPTIONS') {
+            return new Response(null, { headers: corsHeaders });
+        }
+
+        try {
+            // Đăng ký thành viên mới (Level 1, 100 xu)
+            if (path === '/api/register' && method === 'POST') {
+                const { ten_dang_nhap, ten_hien_thi, mat_khau, gioi_tinh } = await request.json();
+                if (!ten_dang_nhap || !ten_hien_thi || !mat_khau) {
+                    return new Response(JSON.stringify({ error: 'Vui lòng điền đủ thông tin!' }), { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+                }
+
+                try {
+                    await env.DB.prepare(
+                        `INSERT INTO nguoi_dung (ten_dang_nhap, ten_hien_thi, mat_khau, gioi_tinh, vai_tro, cap_do, tien_xu, tien_vang) VALUES (?, ?, ?, ?, 'Thành Viên', 1, 100, 0)`
+                    ).bind(ten_dang_nhap, ten_hien_thi, mat_khau, gioi_tinh || 'Nam').run();
+
+                    return new Response(JSON.stringify({ success: true, message: 'Đăng ký thành công!' }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+                } catch (e) {
+                    return new Response(JSON.stringify({ error: 'Tên đăng nhập đã tồn tại!' }), { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+                }
+            }
+
+            // Đăng nhập
+            if (path === '/api/login' && method === 'POST') {
+                const { loaiDangNhap, dinhDanh, mat_khau } = await request.json();
+                let user;
+
+                if (loaiDangNhap === 'id') {
+                    user = await env.DB.prepare(`SELECT * FROM nguoi_dung WHERE id = ? AND mat_khau = ?`).bind(dinhDanh, mat_khau).first();
+                } else {
+                    user = await env.DB.prepare(`SELECT * FROM nguoi_dung WHERE ten_dang_nhap = ? AND mat_khau = ?`).bind(dinhDanh, mat_khau).first();
+                }
+
+                if (!user) {
+                    return new Response(JSON.stringify({ error: 'Tài khoản hoặc mật khẩu không đúng!' }), { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+                }
+
+                return new Response(JSON.stringify({ success: true, user }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            }
+
+            // Lấy thông tin tài khoản mới nhất
+            if (path === '/api/user/info' && method === 'GET') {
+                const ten_dang_nhap = url.searchParams.get('ten_dang_nhap');
+                const user = await env.DB.prepare(`SELECT * FROM nguoi_dung WHERE ten_dang_nhap = ?`).bind(ten_dang_nhap).first();
+                if (!user) return new Response(JSON.stringify({ error: 'Không tìm thấy người dùng' }), { status: 404, headers: corsHeaders });
+                return new Response(JSON.stringify(user), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            }
+
+            // Thống kê hệ thống
+            if (path === '/api/stats' && method === 'GET') {
+                const usersCount = await env.DB.prepare(`SELECT COUNT(*) as total FROM nguoi_dung`).first();
+                const postsCount = await env.DB.prepare(`SELECT COUNT(*) as total FROM bai_viet`).first();
+                return new Response(JSON.stringify({
+                    tongThanhVien: usersCount.total,
+                    tongBaiViet: postsCount.total,
+                    thanhVienOnline: 1 + Math.floor(Math.random() * 5)
+                }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            }
+
+            // Bài viết
+            if (path === '/api/posts' && method === 'GET') {
+                const { results } = await env.DB.prepare(`SELECT * FROM bai_viet ORDER BY id DESC LIMIT 50`).all();
+                return new Response(JSON.stringify(results), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            }
+
+            if (path === '/api/posts' && method === 'POST') {
+                const { nguoi_dang, noi_dung } = await request.json();
+                if (!noi_dung) return new Response(JSON.stringify({ error: 'Nội dung trống' }), { status: 400, headers: corsHeaders });
+
+                await env.DB.prepare(`INSERT INTO bai_viet (nguoi_dang, noi_dung) VALUES (?, ?)`).bind(nguoi_dang || 'Thành viên', noi_dung).run();
+                return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            }
+
+            // Tin nhắn riêng
+            if (path === '/api/messages/get' && method === 'GET') {
+                const user1 = url.searchParams.get('user1');
+                const user2 = url.searchParams.get('user2');
+
+                const { results } = await env.DB.prepare(
+                    `SELECT * FROM tin_nhan WHERE (nguoi_gui = ? AND nguoi_nhan = ?) OR (nguoi_gui = ? AND nguoi_nhan = ?) ORDER BY id ASC`
+                ).bind(user1, user2, user2, user1).all();
+
+                return new Response(JSON.stringify(results), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            }
+
+            if (path === '/api/messages/send' && method === 'POST') {
+                const { nguoi_gui, nguoi_nhan, noi_dung } = await request.json();
+                if (!noi_dung || !nguoi_nhan) return new Response(JSON.stringify({ error: 'Thiếu thông tin' }), { status: 400, headers: corsHeaders });
+
+                await env.DB.prepare(`INSERT INTO tin_nhan (nguoi_gui, nguoi_nhan, noi_dung) VALUES (?, ?, ?)`).bind(nguoi_gui, nguoi_nhan, noi_dung).run();
+                return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            }
+
+            // --- API CỬA HÀNG & TÚI ĐỒ ---
+            if (path === '/api/shop/buy' && method === 'POST') {
+                const { ten_dang_nhap, ten_vat_pham, loai_vat_pham, gia_xu, gia_vang } = await request.json();
+                const user = await env.DB.prepare(`SELECT * FROM nguoi_dung WHERE ten_dang_nhap = ?`).bind(ten_dang_nhap).first();
+                if (!user) return new Response(JSON.stringify({ error: 'Không tìm thấy tài khoản' }), { status: 404, headers: corsHeaders });
+
+                if (gia_xu && user.tien_xu < gia_xu) {
+                    return new Response(JSON.stringify({ error: 'Bạn không đủ Xu để mua vật phẩm này!' }), { status: 400, headers: corsHeaders });
+                }
+                if (gia_vang && user.tien_vang < gia_vang) {
+                    return new Response(JSON.stringify({ error: 'Bạn không đủ Vàng để mua vật phẩm này!' }), { status: 400, headers: corsHeaders });
+                }
+
+                // Trừ tiền
+                let xuMoi = user.tien_xu - (gia_xu || 0);
+                let vangMoi = user.tien_vang - (gia_vang || 0);
+                await env.DB.prepare(`UPDATE nguoi_dung SET tien_xu = ?, tien_vang = ? WHERE ten_dang_nhap = ?`).bind(xuMoi, vangMoi, ten_dang_nhap).run();
+
+                // Thêm vào túi đồ
+                await env.DB.prepare(`INSERT INTO tui_do (ten_dang_nhap, ten_vat_pham, loai_vat_pham) VALUES (?, ?, ?)`).bind(ten_dang_nhap, ten_vat_pham, loai_vat_pham).run();
+
+                const updatedUser = await env.DB.prepare(`SELECT * FROM nguoi_dung WHERE ten_dang_nhap = ?`).bind(ten_dang_nhap).first();
+                return new Response(JSON.stringify({ success: true, message: 'Mua vật phẩm thành công!', user: updatedUser }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            }
+
+            if (path === '/api/shop/deposit' && method === 'POST') {
+                const { ten_dang_nhap, so_xu, so_vang } = await request.json();
+                const user = await env.DB.prepare(`SELECT * FROM nguoi_dung WHERE ten_dang_nhap = ?`).bind(ten_dang_nhap).first();
+                if (!user) return new Response(JSON.stringify({ error: 'Không tìm thấy tài khoản' }), { status: 404, headers: corsHeaders });
+
+                let xuMoi = user.tien_xu + (so_xu || 0);
+                let vangMoi = user.tien_vang + (so_vang || 0);
+                await env.DB.prepare(`UPDATE nguoi_dung SET tien_xu = ?, tien_vang = ? WHERE ten_dang_nhap = ?`).bind(xuMoi, vangMoi, ten_dang_nhap).run();
+
+                const updatedUser = await env.DB.prepare(`SELECT * FROM nguoi_dung WHERE ten_dang_nhap = ?`).bind(ten_dang_nhap).first();
+                return new Response(JSON.stringify({ success: true, message: 'Nạp thành công!', user: updatedUser }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            }
+
+            if (path === '/api/shop/inventory' && method === 'GET') {
+                const ten_dang_nhap = url.searchParams.get('ten_dang_nhap');
+                const { results } = await env.DB.prepare(`SELECT * FROM tui_do WHERE ten_dang_nhap = ? ORDER BY id DESC`).bind(ten_dang_nhap).all();
+                return new Response(JSON.stringify(results), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            }
+
+            // --- API ADMIN QUẢN LÝ ---
+            if (path === '/api/admin/users' && method === 'GET') {
+                const { results } = await env.DB.prepare(`SELECT id, ten_dang_nhap, ten_hien_thi, vai_tro, cap_do, tien_xu, tien_vang, ngay_tao FROM nguoi_dung ORDER BY id ASC`).all();
+                return new Response(JSON.stringify(results), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            }
+
+            if (path === '/api/admin/update-user' && method === 'POST') {
+                const { id, vai_tro, cap_do, tien_xu, tien_vang } = await request.json();
+                let capDoMoi = parseInt(cap_do) || 1;
+                if (capDoMoi > 130) capDoMoi = 130;
+                if (capDoMoi < 1) capDoMoi = 1;
+
+                await env.DB.prepare(
+                    `UPDATE nguoi_dung SET vai_tro = ?, cap_do = ?, tien_xu = ?, tien_vang = ? WHERE id = ?`
+                ).bind(vai_tro, capDoMoi, parseInt(tien_xu) || 0, parseInt(tien_vang) || 0, id).run();
+
+                return new Response(JSON.stringify({ success: true, message: 'Cập nhật thành công!' }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            }
+
+            return new Response(JSON.stringify({ error: 'Không tìm thấy API' }), { status: 404, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+
+        } catch (err) {
+            return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        }
     }
-
-    try {
-      // API Thống kê số liệu thực tế từ D1
-      if (path === "/api/stats" && request.method === "GET") {
-        const totalUsers = await env.DB.prepare("SELECT COUNT(*) as count FROM users").first();
-        const totalPosts = await env.DB.prepare("SELECT COUNT(*) as count FROM posts").first();
-        
-        return new Response(JSON.stringify({
-          onlineCount: Math.floor(Math.random() * 5) + 1,
-          totalUsers: totalUsers ? totalUsers.count : 0,
-          totalPosts: totalPosts ? totalPosts.count : 0
-        }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" }
-        });
-      }
-
-      // API Đăng ký
-      if (path === "/api/register" && request.method === "POST") {
-        const { username, display_name, password, gender } = await request.json();
-        if (!username || !password || !display_name) {
-          return new Response(JSON.stringify({ error: "Vui lòng nhập đầy đủ thông tin!" }), { status: 400, headers: corsHeaders });
-        }
-        const existing = await env.DB.prepare("SELECT * FROM users WHERE username = ?").bind(username).first();
-        if (existing) {
-          return new Response(JSON.stringify({ error: "Tên đăng nhập đã tồn tại!" }), { status: 400, headers: corsHeaders });
-        }
-        await env.DB.prepare("INSERT INTO users (username, display_name, password, gender) VALUES (?, ?, ?, ?)").bind(username, display_name, password, gender || "Nam").run();
-        return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-
-      // API Đăng nhập
-      if (path === "/api/login" && request.method === "POST") {
-        const { loginType, identifier, password } = await request.json();
-        let user;
-        if (loginType === "id") {
-          user = await env.DB.prepare("SELECT * FROM users WHERE id = ? AND password = ?").bind(identifier, password).first();
-        } else {
-          user = await env.DB.prepare("SELECT * FROM users WHERE username = ? AND password = ?").bind(identifier, password).first();
-        }
-        if (!user) {
-          return new Response(JSON.stringify({ error: "Sai thông tin đăng nhập hoặc mật khẩu!" }), { status: 401, headers: corsHeaders });
-        }
-        return new Response(JSON.stringify({ success: true, user: { id: user.id, username: user.username, display_name: user.display_name, gender: user.gender } }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-
-      // API Bài viết
-      if (path === "/api/posts" && request.method === "GET") {
-        const { results } = await env.DB.prepare("SELECT * FROM posts ORDER BY id DESC LIMIT 20").all();
-        return new Response(JSON.stringify(results), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-      if (path === "/api/posts" && request.method === "POST") {
-        const { username, content } = await request.json();
-        if (!content) return new Response(JSON.stringify({ error: "Trống" }), { status: 400, headers: corsHeaders });
-        await env.DB.prepare("INSERT INTO posts (username, content) VALUES (?, ?)").bind(username || "Thành viên", content).run();
-        return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-
-      // API Tin nhắn riêng
-      if (path === "/api/messages/send" && request.method === "POST") {
-        const { sender, receiver, content } = await request.json();
-        await env.DB.prepare("INSERT INTO messages (sender, receiver, content) VALUES (?, ?, ?)").bind(sender, receiver, content).run();
-        return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-      if (path === "/api/messages/get" && request.method === "GET") {
-        const user1 = url.searchParams.get("user1");
-        const user2 = url.searchParams.get("user2");
-        const { results } = await env.DB.prepare("SELECT * FROM messages WHERE (sender = ? AND receiver = ?) OR (sender = ? AND receiver = ?) ORDER BY id ASC").bind(user1, user2, user2, user1).all();
-        return new Response(JSON.stringify(results), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-
-      return env.ASSETS.fetch(request);
-    } catch (err) {
-      return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: corsHeaders });
-    }
-  }
 };
