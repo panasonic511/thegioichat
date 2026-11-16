@@ -1,13 +1,11 @@
-import { getCurrentUser, escapeHtml } from './app.js';
-
-export function renderPostsView(container) {
+function renderPostsView(container) {
     container.innerHTML = `
         <div class="space-y-3">
             <div class="wap-card rounded-xl p-3 space-y-2">
                 <h3 class="font-bold text-xs text-blue-400"><i class="fa-solid fa-newspaper mr-1"></i> Đăng bài lên bảng tin</h3>
                 <textarea id="post-content" rows="2" placeholder="Bạn đang nghĩ gì? Chia sẻ cùng cộng đồng..." class="w-full p-2.5 text-xs rounded-lg wap-input resize-none"></textarea>
                 <div class="flex justify-end">
-                    <button id="btn-submit-post" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow">Đăng bài</button>
+                    <button onclick="createPost()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow">Đăng bài</button>
                 </div>
             </div>
             <div class="space-y-2" id="feed-container">
@@ -15,13 +13,12 @@ export function renderPostsView(container) {
             </div>
         </div>
     `;
-
-    document.getElementById('btn-submit-post').onclick = createPost;
     loadPosts();
 }
 
 async function loadPosts() {
     const feed = document.getElementById('feed-container');
+    if (!feed) return;
     try {
         const res = await fetch('/api/posts');
         if (res.ok) {
@@ -45,10 +42,11 @@ async function loadPosts() {
 
 async function createPost() {
     const input = document.getElementById('post-content');
+    if (!input) return;
     const content = input.value.trim();
-    if (!content) return;
-
     const user = getCurrentUser();
+    if (!content || !user) return;
+
     try {
         const res = await fetch('/api/posts', {
             method: 'POST',
