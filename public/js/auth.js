@@ -1,8 +1,6 @@
-import { renderTopNav, switchTab } from './app.js';
-
 let currentLoginType = 'username';
 
-export function renderLoginView(container) {
+function renderLoginView(container) {
     currentLoginType = 'username';
     container.innerHTML = `
         <div class="wap-card rounded-xl p-4 shadow-xl">
@@ -10,8 +8,8 @@ export function renderLoginView(container) {
                 <h3 class="text-sm font-bold text-slate-200"><i class="fa-solid fa-lock text-amber-400 mr-1"></i> Đăng nhập hệ thống</h3>
             </div>
             <div class="grid grid-cols-2 gap-2 mb-3 text-xs">
-                <button type="button" id="btn-type-username" class="py-1.5 bg-blue-600 text-white rounded-lg font-semibold transition">Bằng tài khoản</button>
-                <button type="button" id="btn-type-id" class="py-1.5 bg-[#1a1a1e] text-slate-400 rounded-lg font-semibold border border-[#2e2e36] transition">Bằng ID</button>
+                <button type="button" onclick="setLoginType('username')" id="btn-type-username" class="py-1.5 bg-blue-600 text-white rounded-lg font-semibold transition">Bằng tài khoản</button>
+                <button type="button" onclick="setLoginType('id')" id="btn-type-id" class="py-1.5 bg-[#1a1a1e] text-slate-400 rounded-lg font-semibold border border-[#2e2e36] transition">Bằng ID</button>
             </div>
             <div class="space-y-3 text-xs">
                 <div>
@@ -22,22 +20,17 @@ export function renderLoginView(container) {
                     <label class="block font-medium text-slate-300 mb-1">Mật khẩu:</label>
                     <input type="password" id="login-password" placeholder="••••••••" class="w-full px-3 py-2 rounded-lg wap-input">
                 </div>
-                <button id="btn-submit-login" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg transition shadow">Đăng nhập</button>
+                <button onclick="handleLogin()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg transition shadow">Đăng nhập</button>
             </div>
             <div class="text-center text-xs mt-3 pt-2 border-t border-[#222228]">
                 <span class="text-slate-400">Chưa có tài khoản?</span> 
-                <a href="#" id="link-to-register" class="text-emerald-400 font-semibold hover:underline ml-1">Đăng ký ngay</a>
+                <a href="#" onclick="switchTab('register')" class="text-emerald-400 font-semibold hover:underline ml-1">Đăng ký ngay</a>
             </div>
         </div>
     `;
-
-    document.getElementById('btn-type-username').onclick = () => toggleLoginType('username');
-    document.getElementById('btn-type-id').onclick = () => toggleLoginType('id');
-    document.getElementById('btn-submit-login').onclick = handleLogin;
-    document.getElementById('link-to-register').onclick = (e) => { e.preventDefault(); switchTab('register'); };
 }
 
-function toggleLoginType(type) {
+function setLoginType(type) {
     currentLoginType = type;
     const label = document.getElementById('login-label-text');
     const input = document.getElementById('login-identifier');
@@ -45,24 +38,22 @@ function toggleLoginType(type) {
     const btnId = document.getElementById('btn-type-id');
 
     if (type === 'id') {
-        label.innerText = 'ID tài khoản (Số):';
-        input.placeholder = 'Nhập ID số của bạn...';
-        input.type = 'number';
-        btnId.className = 'py-1.5 bg-blue-600 text-white rounded-lg font-semibold transition';
-        btnUser.className = 'py-1.5 bg-[#1a1a1e] text-slate-400 rounded-lg font-semibold border border-[#2e2e36] transition';
+        if (label) label.innerText = 'ID tài khoản (Số):';
+        if (input) { input.placeholder = 'Nhập ID số của bạn...'; input.type = 'number'; }
+        if (btnId) btnId.className = 'py-1.5 bg-blue-600 text-white rounded-lg font-semibold transition';
+        if (btnUser) btnUser.className = 'py-1.5 bg-[#1a1a1e] text-slate-400 rounded-lg font-semibold border border-[#2e2e36] transition';
     } else {
-        label.innerText = 'Tên tài khoản:';
-        input.placeholder = 'Nhập tên tài khoản...';
-        input.type = 'text';
-        btnUser.className = 'py-1.5 bg-blue-600 text-white rounded-lg font-semibold transition';
-        btnId.className = 'py-1.5 bg-[#1a1a1e] text-slate-400 rounded-lg font-semibold border border-[#2e2e36] transition';
+        if (label) label.innerText = 'Tên tài khoản:';
+        if (input) { input.placeholder = 'Nhập tên tài khoản...'; input.type = 'text'; }
+        if (btnUser) btnUser.className = 'py-1.5 bg-blue-600 text-white rounded-lg font-semibold transition';
+        if (btnId) btnId.className = 'py-1.5 bg-[#1a1a1e] text-slate-400 rounded-lg font-semibold border border-[#2e2e36] transition';
     }
 }
 
 async function handleLogin() {
     const identifier = document.getElementById('login-identifier').value.trim();
     const password = document.getElementById('login-password').value.trim();
-    if (!identifier || !password) return alert('Vui lòng điền thông tin đăng nhập!');
+    if (!identifier || !password) return alert('Vui lòng điền thông tin!');
 
     try {
         const res = await fetch('/api/login', {
@@ -72,8 +63,10 @@ async function handleLogin() {
         });
         const data = await res.json();
         if (res.ok) {
-            localStorage.setItem('tgc_user_obj', JSON.stringify(data.user));
+            currentUser = data.user;
+            localStorage.setItem('tgc_user_obj', JSON.stringify(currentUser));
             renderTopNav();
+            alert('Đăng nhập thành công!');
             switchTab('home');
         } else {
             alert(data.error || 'Đăng nhập thất bại.');
@@ -83,7 +76,7 @@ async function handleLogin() {
     }
 }
 
-export function renderRegisterView(container) {
+function renderRegisterView(container) {
     container.innerHTML = `
         <div class="wap-card rounded-xl p-4 shadow-xl">
             <div class="text-center border-b border-[#222228] pb-2 mb-3">
@@ -114,17 +107,14 @@ export function renderRegisterView(container) {
                         <option value="Khác">Khác</option>
                     </select>
                 </div>
-                <button id="btn-submit-register" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-lg transition shadow">Đăng ký thành viên</button>
+                <button onclick="handleRegister()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-lg transition shadow">Đăng ký thành viên</button>
             </div>
             <div class="text-center text-xs mt-3 pt-2 border-t border-[#222228]">
                 <span class="text-slate-400">Đã có tài khoản?</span> 
-                <a href="#" id="link-to-login" class="text-blue-400 font-semibold hover:underline ml-1">Đăng nhập ngay</a>
+                <a href="#" onclick="switchTab('login')" class="text-blue-400 font-semibold hover:underline ml-1">Đăng nhập ngay</a>
             </div>
         </div>
     `;
-
-    document.getElementById('btn-submit-register').onclick = handleRegister;
-    document.getElementById('link-to-login').onclick = (e) => { e.preventDefault(); switchTab('login'); };
 }
 
 async function handleRegister() {
@@ -134,8 +124,8 @@ async function handleRegister() {
     const repassword = document.getElementById('reg-repassword').value.trim();
     const gender = document.getElementById('reg-gender').value;
 
-    if (!username || !display_name || !password || !repassword) return alert('Vui lòng điền đầy đủ các ô!');
-    if (password !== repassword) return alert('Mật khẩu nhập lại không khớp!');
+    if (!username || !display_name || !password || !repassword) return alert('Vui lòng điền đủ ô!');
+    if (password !== repassword) return alert('Mật khẩu không khớp!');
 
     try {
         const res = await fetch('/api/register', {
@@ -148,15 +138,17 @@ async function handleRegister() {
             alert('Đăng ký thành công! Hãy đăng nhập.');
             switchTab('login');
         } else {
-            alert(data.error || 'Đăng ký thất bại.');
+            alert(data.error || 'Thất bại.');
         }
     } catch (e) {
-        alert('Lỗi kết nối máy chủ.');
+        alert('Lỗi kết nối.');
     }
 }
 
-export function handleLogout() {
+function handleLogout() {
+    currentUser = null;
     localStorage.removeItem('tgc_user_obj');
     renderTopNav();
     switchTab('login');
+    alert('Đã đăng xuất!');
 }
