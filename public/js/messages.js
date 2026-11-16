@@ -1,16 +1,14 @@
-import { getCurrentUser, escapeHtml } from './app.js';
-
 let activeChatUser = '';
 let messageInterval = null;
 
-export function stopMessagePolling() {
+function stopMessagePolling() {
     if (messageInterval) {
         clearInterval(messageInterval);
         messageInterval = null;
     }
 }
 
-export function renderMessagesView(container, targetUser = null) {
+function renderMessagesView(container, targetUser = null) {
     container.innerHTML = `
         <div class="space-y-3">
             <div class="wap-card rounded-xl p-3 text-xs space-y-2">
@@ -19,7 +17,7 @@ export function renderMessagesView(container, targetUser = null) {
                     <label class="block text-slate-400 mb-1">Nhắn với thành viên (Tên hiển thị):</label>
                     <div class="flex space-x-2">
                         <input type="text" id="chat-target" value="${targetUser ? escapeHtml(targetUser) : ''}" placeholder="Nhập tên người nhận..." class="flex-grow px-2.5 py-1.5 rounded-lg wap-input">
-                        <button id="btn-open-chat" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-semibold">Mở chat</button>
+                        <button onclick="openChatBox()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-semibold">Mở chat</button>
                     </div>
                 </div>
             </div>
@@ -27,36 +25,34 @@ export function renderMessagesView(container, targetUser = null) {
             <div id="private-chat-box" class="wap-card rounded-xl p-3 hidden space-y-3">
                 <div class="flex justify-between items-center border-b border-[#222228] pb-2">
                     <span class="font-bold text-xs text-emerald-400" id="chat-with-title">Đang chat với: --</span>
-                    <button id="btn-close-chat" class="text-rose-400 text-[11px] hover:underline">Đóng</button>
+                    <button onclick="closeChatBox()" class="text-rose-400 text-[11px] hover:underline">Đóng</button>
                 </div>
                 <div id="private-messages-list" class="h-48 overflow-y-auto space-y-2 bg-[#08080a] p-2 rounded-lg border border-[#1f1f23] text-xs">
                     <div class="text-center text-slate-500 py-4">Chưa có tin nhắn nào.</div>
                 </div>
                 <div class="flex space-x-2">
-                    <input type="text" id="private-input" placeholder="Nhập tin nhắn..." class="flex-grow px-2.5 py-2 rounded-lg wap-input">
-                    <button id="btn-send-msg" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-lg font-semibold shadow">Gửi</button>
+                    <input type="text" id="private-input" placeholder="Nhập tin nhắn..." class="flex-grow px-2.5 py-2 rounded-lg wap-input" onkeypress="if(event.key==='Enter') sendPrivateMessage()">
+                    <button onclick="sendPrivateMessage()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-lg font-semibold shadow">Gửi</button>
                 </div>
             </div>
         </div>
     `;
-
-    document.getElementById('btn-open-chat').onclick = openChatBox;
-    document.getElementById('btn-close-chat').onclick = closeChatBox;
-    document.getElementById('btn-send-msg').onclick = sendPrivateMessage;
-    document.getElementById('private-input').onkeypress = (e) => { if (e.key === 'Enter') sendPrivateMessage(); };
-
     if (targetUser) openChatBox();
 }
 
 function openChatBox() {
     const user = getCurrentUser();
-    const target = document.getElementById('chat-target').value.trim();
+    const targetInput = document.getElementById('chat-target');
+    if (!targetInput) return;
+    const target = targetInput.value.trim();
     if (!target) return alert('Vui lòng nhập tên người nhận!');
-    if (target === user.display_name) return alert('Không thể tự nhắn cho chính mình!');
+    if (user && target === user.display_name) return alert('Không thể tự nhắn cho chính mình!');
 
     activeChatUser = target;
-    document.getElementById('chat-with-title').innerText = 'Đang chat với: ' + target;
-    document.getElementById('private-chat-box').classList.remove('hidden');
+    const titleEl = document.getElementById('chat-with-title');
+    const chatBoxEl = document.getElementById('private-chat-box');
+    if (titleEl) titleEl.innerText = 'Đang chat với: ' + target;
+    if (chatBoxEl) chatBoxEl.classList.remove('hidden');
 
     fetchPrivateMessages();
     stopMessagePolling();
@@ -64,7 +60,8 @@ function openChatBox() {
 }
 
 function closeChatBox() {
-    document.getElementById('private-chat-box').classList.add('hidden');
+    const chatBoxEl = document.getElementById('private-chat-box');
+    if (chatBoxEl) chatBoxEl.classList.add('hidden');
     activeChatUser = '';
     stopMessagePolling();
 }
@@ -79,7 +76,7 @@ async function fetchPrivateMessages() {
             const listDiv = document.getElementById('private-messages-list');
             if (!listDiv) return;
             if (msgs.length === 0) {
-                listDiv.innerHTML = '<div class="text-center text-slate-500 py-4">Chưa có tin nhắn nào. Hãy bắt đầu trò chuyện!</div>';
+                listDiv.innerHTML = '<div class="text-center text-slate-500 py-4">Chưa có tin nhắn nào.</div>';
                 return;
             }
             listDiv.innerHTML = msgs.map(m => {
@@ -101,8 +98,9 @@ async function fetchPrivateMessages() {
 async function sendPrivateMessage() {
     const user = getCurrentUser();
     const input = document.getElementById('private-input');
+    if (!input) return;
     const content = input.value.trim();
-    if (!content || !activeChatUser) return;
+    if (!content || !activeChatUser || !user) return;
 
     try {
         const res = await fetch('/api/messages/send', {
