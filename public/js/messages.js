@@ -46,7 +46,7 @@ function openChatBox() {
     if (!targetInput) return;
     const target = targetInput.value.trim();
     if (!target) return alert('Vui lòng nhập tên người nhận!');
-    if (user && target === user.display_name) return alert('Không thể tự nhắn cho chính mình!');
+    if (user && target === user.ten_hien_thi) return alert('Không thể tự nhắn cho chính mình!');
 
     activeChatUser = target;
     const titleEl = document.getElementById('chat-with-title');
@@ -70,7 +70,7 @@ async function fetchPrivateMessages() {
     const user = getCurrentUser();
     if (!activeChatUser || !user) return;
     try {
-        const res = await fetch(`/api/messages/get?user1=${encodeURIComponent(user.display_name)}&user2=${encodeURIComponent(activeChatUser)}`);
+        const res = await fetch(`/api/messages/get?user1=${encodeURIComponent(user.ten_hien_thi)}&user2=${encodeURIComponent(activeChatUser)}`);
         if (res.ok) {
             const msgs = await res.json();
             const listDiv = document.getElementById('private-messages-list');
@@ -80,12 +80,12 @@ async function fetchPrivateMessages() {
                 return;
             }
             listDiv.innerHTML = msgs.map(m => {
-                const isMe = m.sender === user.display_name;
+                const isMe = m.nguoi_gui === user.ten_hien_thi;
                 return `
                     <div class="flex flex-col ${isMe ? 'items-end' : 'items-start'}">
-                        <span class="text-[9px] text-slate-500 mb-0.5">${escapeHtml(m.sender)}</span>
+                        <span class="text-[9px] text-slate-500 mb-0.5">${escapeHtml(m.nguoi_gui)}</span>
                         <div class="max-w-[80%] px-3 py-1.5 rounded-lg text-xs ${isMe ? 'bg-blue-600 text-white rounded-br-none' : 'bg-[#1a1a1e] text-slate-200 border border-[#2e2e36] rounded-bl-none'}">
-                            ${escapeHtml(m.content)}
+                            ${escapeHtml(m.noi_dung)}
                         </div>
                     </div>
                 `;
@@ -99,14 +99,14 @@ async function sendPrivateMessage() {
     const user = getCurrentUser();
     const input = document.getElementById('private-input');
     if (!input) return;
-    const content = input.value.trim();
-    if (!content || !activeChatUser || !user) return;
+    const noi_dung = input.value.trim();
+    if (!noi_dung || !activeChatUser || !user) return;
 
     try {
         const res = await fetch('/api/messages/send', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sender: user.display_name, receiver: activeChatUser, content })
+            body: JSON.stringify({ nguoi_gui: user.ten_hien_thi, nguoi_nhan: activeChatUser, noi_dung })
         });
         if (res.ok) {
             input.value = '';
