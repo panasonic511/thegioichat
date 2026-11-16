@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>THẾ GIỚI CHAT - Wap chất - Kết bạn - Giải trí</title>
+    <title>THEGIOICHAT.US - Wap chất - Kết bạn - Giải trí</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -16,253 +16,26 @@
 </head>
 <body class="font-sans min-h-screen flex flex-col selection:bg-blue-500 selection:text-white">
     
-    <!-- Header -->
+    <!-- Header Logo & Thanh điều hướng -->
     <header class="bg-[#0b0b0d] border-b border-[#1f1f23] text-center py-2.5 shadow-md">
-        <h1 class="text-xl font-black tracking-wider text-white glow-text">Thế Giới Chat</h1>
+        <h1 class="text-xl font-black tracking-wider text-white glow-text">THEGIOICHAT.US</h1>
         <p class="text-[11px] mt-0.5 font-medium tracking-wide">
             <span class="text-amber-400">Wap chất</span> - <span class="text-emerald-400">Kết bạn</span> - <span class="text-pink-400">Giải trí</span>
         </p>
-        <nav id="top-nav" class="mt-2 text-[11px] font-semibold flex justify-center items-center flex-wrap gap-x-3 gap-y-1 px-2 text-slate-300 border-t border-[#1f1f23] pt-2">
-            <!-- Dynamic Nav -->
-        </nav>
+        <nav id="top-nav" class="mt-2 text-[11px] font-semibold flex justify-center items-center flex-wrap gap-x-3 gap-y-1 px-2 text-slate-300 border-t border-[#1f1f23] pt-2"></nav>
     </header>
 
-    <!-- Main Container -->
-    <main class="max-w-md mx-auto w-full p-2.5 flex-grow space-y-3 my-1">
-
-        <!-- Login View -->
-        <div id="view-login" class="wap-card rounded-xl p-4 shadow-xl">
-            <div class="text-center border-b border-[#222228] pb-2 mb-3">
-                <h3 class="text-sm font-bold text-slate-200"><i class="fa-solid fa-lock text-amber-400 mr-1"></i> Đăng nhập hệ thống</h3>
-            </div>
-            <div class="grid grid-cols-2 gap-2 mb-3 text-xs">
-                <button type="button" onclick="setLoginType('username')" id="btn-type-username" class="py-1.5 bg-blue-600 text-white rounded-lg font-semibold transition">Bằng tài khoản</button>
-                <button type="button" onclick="setLoginType('id')" id="btn-type-id" class="py-1.5 bg-[#1a1a1e] text-slate-400 rounded-lg font-semibold border border-[#2e2e36] transition">Bằng ID</button>
-            </div>
-            <div class="space-y-3 text-xs">
-                <div>
-                    <label class="block font-medium text-slate-300 mb-1" id="login-label-text">Tên tài khoản:</label>
-                    <input type="text" id="login-identifier" placeholder="Nhập tên tài khoản..." class="w-full px-3 py-2 rounded-lg wap-input">
-                </div>
-                <div>
-                    <label class="block font-medium text-slate-300 mb-1">Mật khẩu:</label>
-                    <input type="password" id="login-password" placeholder="••••••••" class="w-full px-3 py-2 rounded-lg wap-input">
-                </div>
-                <button onclick="handleLogin()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg transition shadow">Đăng nhập</button>
-            </div>
-            <div class="text-center text-xs mt-3 pt-2 border-t border-[#222228]">
-                <span class="text-slate-400">Chưa có tài khoản?</span> 
-                <a href="#" onclick="switchTab('register')" class="text-emerald-400 font-semibold hover:underline ml-1">Đăng ký ngay</a>
-            </div>
-        </div>
-
-        <!-- Register View -->
-        <div id="view-register" class="wap-card rounded-xl p-4 shadow-xl hidden">
-            <div class="text-center border-b border-[#222228] pb-2 mb-3">
-                <h3 class="text-sm font-bold text-slate-200"><i class="fa-solid fa-user-plus text-pink-400 mr-1"></i> Đăng ký thành viên</h3>
-            </div>
-            <div class="space-y-3 text-xs">
-                <div>
-                    <label class="block font-medium text-slate-300 mb-1">Tên đăng nhập:</label>
-                    <input type="text" id="reg-username" placeholder="Nhập tên đăng nhập..." class="w-full px-3 py-2 rounded-lg wap-input">
-                </div>
-                <div>
-                    <label class="block font-medium text-slate-300 mb-1">Tên hiển thị trong wap:</label>
-                    <input type="text" id="reg-displayname" placeholder="Tên hiển thị công khai..." class="w-full px-3 py-2 rounded-lg wap-input">
-                </div>
-                <div>
-                    <label class="block font-medium text-slate-300 mb-1">Mật khẩu:</label>
-                    <input type="password" id="reg-password" placeholder="••••••••" class="w-full px-3 py-2 rounded-lg wap-input">
-                </div>
-                <div>
-                    <label class="block font-medium text-slate-300 mb-1">Nhập lại mật khẩu:</label>
-                    <input type="password" id="reg-repassword" placeholder="••••••••" class="w-full px-3 py-2 rounded-lg wap-input">
-                </div>
-                <div>
-                    <label class="block font-medium text-slate-300 mb-1">Chọn giới tính:</label>
-                    <select id="reg-gender" class="w-full px-3 py-2 rounded-lg wap-input">
-                        <option value="Nam">Nam</option>
-                        <option value="Nữ">Nữ</option>
-                        <option value="Khác">Khác</option>
-                    </select>
-                </div>
-                <button onclick="handleRegister()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-lg transition shadow">Đăng ký thành viên</button>
-            </div>
-            <div class="text-center text-xs mt-3 pt-2 border-t border-[#222228]">
-                <span class="text-slate-400">Đã có tài khoản?</span> 
-                <a href="#" onclick="switchTab('login')" class="text-blue-400 font-semibold hover:underline ml-1">Đăng nhập ngay</a>
-            </div>
-        </div>
-
-        <!-- Home View -->
-        <div id="view-home" class="hidden space-y-3">
-            <div class="wap-card rounded-xl p-2.5 flex items-center justify-between text-xs">
-                <div class="flex items-center space-x-2.5">
-                    <div class="relative">
-                        <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-amber-500 to-pink-500 flex items-center justify-center text-white font-bold text-sm shadow">
-                            <span id="avatar-initial">U</span>
-                        </div>
-                        <div class="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 border-2 border-[#121214] rounded-full"></div>
-                    </div>
-                    <div>
-                        <div class="flex items-center space-x-1">
-                            <span class="font-bold text-amber-400 text-sm" id="profile-name">--</span>
-                            <span class="text-slate-400 text-[10px]" id="profile-id-tag">(ID: --)</span>
-                        </div>
-                        <div class="flex items-center space-x-2 mt-0.5 text-[11px]">
-                            <span class="flex items-center text-amber-300"><i class="fa-solid fa-coins text-[10px] mr-1 text-yellow-400"></i><span>0</span></span>
-                            <span class="flex items-center text-emerald-400 font-bold"><i class="fa-solid fa-gem text-[10px] mr-1 text-emerald-400"></i><span id="stat-total-users-badge">0</span> thành viên</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="text-right flex flex-col items-end space-y-1">
-                    <span class="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded text-[10px] font-semibold">Thành viên</span>
-                    <button onclick="handleLogout()" class="text-rose-400 text-[10px] hover:underline">Đăng xuất</button>
-                </div>
-            </div>
-
-            <!-- Phòng chat -->
-            <div class="space-y-1.5">
-                <h3 class="text-xs font-bold text-emerald-400 flex items-center px-1"><i class="fa-solid fa-door-open mr-1.5"></i> Phòng chat</h3>
-                <div class="grid grid-cols-2 gap-2">
-                    <div onclick="switchTab('online')" class="wap-card rounded-xl p-3 text-center cursor-pointer hover:border-emerald-500/50 transition space-y-1">
-                        <i class="fa-solid fa-house text-amber-400 text-base"></i>
-                        <div class="font-bold text-xs text-slate-200">Bữa tiệc</div>
-                        <div class="text-[10px] text-slate-400"><i class="fa-solid fa-user text-[9px] text-emerald-400"></i> <span id="online-count-1">1</span></div>
-                    </div>
-                    <div onclick="switchTab('online')" class="wap-card rounded-xl p-3 text-center cursor-pointer hover:border-emerald-500/50 transition space-y-1">
-                        <i class="fa-solid fa-gamepad text-blue-400 text-base"></i>
-                        <div class="font-bold text-xs text-slate-200">Trò chơi</div>
-                        <div class="text-[10px] text-slate-400"><i class="fa-solid fa-user text-[9px] text-slate-500"></i> 0</div>
-                    </div>
-                    <div onclick="switchTab('online')" class="wap-card rounded-xl p-3 text-center cursor-pointer hover:border-emerald-500/50 transition space-y-1">
-                        <i class="fa-solid fa-comments text-pink-400 text-base"></i>
-                        <div class="font-bold text-xs text-slate-200">Giao lưu</div>
-                        <div class="text-[10px] text-slate-400"><i class="fa-solid fa-user text-[9px] text-slate-500"></i> 0</div>
-                    </div>
-                    <div onclick="switchTab('messages')" class="wap-card rounded-xl p-3 text-center cursor-pointer hover:border-emerald-500/50 transition space-y-1">
-                        <i class="fa-solid fa-comments text-amber-400 text-base"></i>
-                        <div class="font-bold text-xs text-slate-200">Chat room</div>
-                        <div class="text-[10px] text-slate-400"><i class="fa-solid fa-user text-[9px] text-emerald-400"></i> 2</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Menu Grid -->
-            <div class="wap-card rounded-xl overflow-hidden text-xs">
-                <div class="bg-[#18181c] px-3 py-2 border-b border-[#27272a] font-bold text-emerald-400 flex items-center">
-                    <i class="fa-solid fa-bars mr-1.5"></i> Menu
-                </div>
-                <div class="grid grid-cols-2 divide-x divide-y divide-[#222228] text-[11px]">
-                    <a href="#" onclick="switchTab('home')" class="p-2.5 hover:bg-[#18181c] transition flex items-center space-x-2 text-slate-300"><i class="fa-solid fa-user text-amber-400 w-4 text-center"></i> <span>Trang cá nhân</span></a>
-                    <a href="#" onclick="switchTab('online')" class="p-2.5 hover:bg-[#18181c] transition flex items-center space-x-2 text-slate-300"><i class="fa-solid fa-magnifying-glass text-blue-400 w-4 text-center"></i> <span>Tìm kiếm ID</span></a>
-                    <a href="#" onclick="switchTab('online')" class="p-2.5 hover:bg-[#18181c] transition flex items-center space-x-2 text-slate-300"><i class="fa-solid fa-trophy text-yellow-400 w-4 text-center"></i> <span>Bảng xếp hạng</span></a>
-                    <a href="#" onclick="switchTab('posts')" class="p-2.5 hover:bg-[#18181c] transition flex items-center space-x-2 text-slate-300"><i class="fa-solid fa-comments text-pink-400 w-4 text-center"></i> <span>Diễn đàn (<span id="stat-posts-count">0</span>)</span></a>
-                    <a href="#" onclick="switchTab('online')" class="p-2.5 hover:bg-[#18181c] transition flex items-center space-x-2 text-slate-300"><i class="fa-solid fa-user-group text-emerald-400 w-4 text-center"></i> <span>Thành viên (<span id="stat-users-count">0</span>)</span></a>
-                    <a href="#" onclick="switchTab('home')" class="p-2.5 hover:bg-[#18181c] transition flex items-center space-x-2 text-slate-300"><i class="fa-solid fa-chart-line text-purple-400 w-4 text-center"></i> <span>Bảng cấp độ</span></a>
-                    <a href="#" onclick="switchTab('menu')" class="p-2.5 hover:bg-[#18181c] transition flex items-center space-x-2 text-slate-300"><i class="fa-solid fa-gear text-slate-400 w-4 text-center"></i> <span>Cài đặt</span></a>
-                    <a href="#" onclick="switchTab('home')" class="p-2.5 hover:bg-[#18181c] transition flex items-center space-x-2 text-slate-300"><i class="fa-solid fa-chart-pie text-cyan-400 w-4 text-center"></i> <span>Thống kê</span></a>
-                </div>
-            </div>
-
-            <!-- Thông báo banner -->
-            <div class="wap-card rounded-xl overflow-hidden text-xs">
-                <div class="bg-[#18181c] px-3 py-2 border-b border-[#27272a] font-bold text-emerald-400 flex items-center justify-between">
-                    <span class="flex items-center"><i class="fa-solid fa-bullhorn mr-1.5"></i> Thông báo</span>
-                </div>
-                <div class="p-4 text-center space-y-2 bg-[#0a0a0c]">
-                    <div class="text-pink-400 tracking-wider text-xs">💖 ✨ 💖 ✨ 💖 ✨ 💖</div>
-                    <div class="text-[11px] font-semibold text-slate-300" id="live-clock-banner">Đang tải thời gian...</div>
-                    <div class="text-xs font-bold tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-pink-400 to-amber-400 pt-1">
-                        CHÀO MỪNG ĐẾN VỚI WEB THẾ GIỚI CHAT<br>CHÚC M.N ONLINE VUI VẺ
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Online View -->
-        <div id="view-online" class="hidden space-y-3">
-            <div class="wap-card rounded-xl p-3 text-xs space-y-2">
-                <h3 class="font-bold text-emerald-400 border-b border-[#222228] pb-1"><i class="fa-solid fa-users mr-1"></i> Thành viên trực tuyến</h3>
-                <div class="space-y-2" id="online-users-list">
-                    <div class="p-3 text-center text-slate-400">Hệ thống đang đồng bộ danh sách trực tuyến...</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Posts View -->
-        <div id="view-posts" class="hidden space-y-3">
-            <div class="wap-card rounded-xl p-3 space-y-2">
-                <h3 class="font-bold text-xs text-blue-400"><i class="fa-solid fa-newspaper mr-1"></i> Đăng bài lên bảng tin</h3>
-                <textarea id="post-content" rows="2" placeholder="Bạn đang nghĩ gì? Chia sẻ cùng cộng đồng..." class="w-full p-2.5 text-xs rounded-lg wap-input resize-none"></textarea>
-                <div class="flex justify-end">
-                    <button onclick="createPost()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow">Đăng bài</button>
-                </div>
-            </div>
-            <div class="space-y-2" id="feed-container">
-                <div class="wap-card rounded-xl p-3 text-center text-xs text-slate-400">Đang tải bài viết...</div>
-            </div>
-        </div>
-
-        <!-- Notifications View -->
-        <div id="view-notifications" class="hidden wap-card rounded-xl p-4 text-xs space-y-3">
-            <h3 class="font-bold text-amber-400 border-b border-[#222228] pb-1"><i class="fa-solid fa-bell mr-1"></i> Thông báo hệ thống</h3>
-            <div class="space-y-2 text-slate-300">
-                <div class="p-2.5 bg-[#18181c] rounded-lg border border-[#27272a] space-y-1">
-                    <div class="font-bold text-emerald-400">🎉 Chào mừng thành viên mới!</div>
-                    <p class="text-[11px] text-slate-400">Chúc bạn có những giây phút giao lưu vui vẻ tại Thế Giới Chat</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Messages View -->
-        <div id="view-messages" class="hidden space-y-3">
-            <div class="wap-card rounded-xl p-3 text-xs space-y-2">
-                <h3 class="font-bold text-amber-400 border-b border-[#222228] pb-1"><i class="fa-solid fa-envelope mr-1 text-pink-400"></i> Hộp thư & Nhắn tin riêng</h3>
-                <div>
-                    <label class="block text-slate-400 mb-1">Nhắn với thành viên (Tên hiển thị):</label>
-                    <div class="flex space-x-2">
-                        <input type="text" id="chat-target" placeholder="Nhập tên người nhận..." class="flex-grow px-2.5 py-1.5 rounded-lg wap-input">
-                        <button onclick="openChatBox()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-semibold">Mở chat</button>
-                    </div>
-                </div>
-            </div>
-
-            <div id="private-chat-box" class="wap-card rounded-xl p-3 hidden space-y-3">
-                <div class="flex justify-between items-center border-b border-[#222228] pb-2">
-                    <span class="font-bold text-xs text-emerald-400" id="chat-with-title">Đang chat với: --</span>
-                    <button onclick="closePrivateChat()" class="text-rose-400 text-[11px] hover:underline">Đóng</button>
-                </div>
-                <div id="private-messages-list" class="h-48 overflow-y-auto space-y-2 bg-[#08080a] p-2 rounded-lg border border-[#1f1f23] text-xs">
-                    <div class="text-center text-slate-500 py-4">Chưa có tin nhắn nào.</div>
-                </div>
-                <div class="flex space-x-2">
-                    <input type="text" id="private-input" placeholder="Nhập tin nhắn..." class="flex-grow px-2.5 py-2 rounded-lg wap-input" onkeypress="if(event.key==='Enter') sendPrivateMessage()">
-                    <button onclick="sendPrivateMessage()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-lg font-semibold shadow">Gửi</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Menu View -->
-        <div id="view-menu" class="hidden wap-card rounded-xl p-4 text-xs space-y-3">
-            <h3 class="font-bold text-amber-400 text-sm border-b border-[#222228] pb-2"><i class="fa-solid fa-bars mr-1"></i> Menu hệ thống</h3>
-            <ul class="space-y-2 text-slate-300 font-medium">
-                <li><a href="#" onclick="switchTab('home')" class="hover:text-blue-400 flex items-center"><i class="fa-solid fa-house mr-2 text-amber-400"></i> Trang chủ cá nhân</a></li>
-                <li><a href="#" onclick="switchTab('online')" class="hover:text-blue-400 flex items-center"><i class="fa-solid fa-users mr-2 text-emerald-400"></i> Thành viên trực tuyến</a></li>
-                <li><a href="#" onclick="switchTab('posts')" class="hover:text-blue-400 flex items-center"><i class="fa-solid fa-newspaper mr-2 text-blue-400"></i> Bảng tin cộng đồng</a></li>
-                <li><a href="#" onclick="switchTab('notifications')" class="hover:text-blue-400 flex items-center"><i class="fa-solid fa-bell mr-2 text-yellow-400"></i> Thông báo hệ thống</a></li>
-                <li><a href="#" onclick="switchTab('messages')" class="hover:text-blue-400 flex items-center"><i class="fa-solid fa-envelope mr-2 text-pink-400"></i> Tin nhắn riêng</a></li>
-                <li class="border-t border-[#222228] pt-2"><a href="#" onclick="handleLogout()" class="text-rose-400 hover:underline flex items-center"><i class="fa-solid fa-right-from-bracket mr-2"></i> Đăng xuất tài khoản</a></li>
-            </ul>
-        </div>
+    <!-- Khung nội dung động (Từng mục sẽ tự động nạp vào đây) -->
+    <main id="main-content" class="max-w-md mx-auto w-full p-2.5 flex-grow space-y-3 my-1">
+        <div class="text-center text-xs text-slate-500 py-8">Đang tải dữ liệu...</div>
     </main>
 
     <!-- Footer -->
     <footer class="bg-[#050505] border-t border-[#1f1f23] text-center py-3 text-[11px] text-slate-500 mt-auto">
-        <p>© 2026 THẾ GIỚI CHAT · All rights reserved</p>
+        <p>© 2026 THEGIOICHAT.US · All rights reserved</p>
     </footer>
 
-    <!-- Gọi tệp Javascript riêng biệt giúp code không bị rối -->
-    <script src="/js/app.js"></script>
+    <!-- Nạp bộ điều khiển trung tâm -->
+    <script type="module" src="/js/app.js"></script>
 </body>
 </html>
