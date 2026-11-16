@@ -24,7 +24,7 @@ function renderLoginView(container) {
             </div>
             <div class="text-center text-xs mt-3 pt-2 border-t border-[#222228]">
                 <span class="text-slate-400">Chưa có tài khoản?</span> 
-                <a href="#" onclick="switchTab('register')" class="text-emerald-400 font-semibold hover:underline ml-1">Đăng ký ngay</a>
+                <a href="/register" onclick="navigate(event, 'register')" class="text-emerald-400 font-semibold hover:underline ml-1">Đăng ký ngay</a>
             </div>
         </div>
     `;
@@ -51,15 +51,15 @@ function setLoginType(type) {
 }
 
 async function handleLogin() {
-    const identifier = document.getElementById('login-identifier').value.trim();
-    const password = document.getElementById('login-password').value.trim();
-    if (!identifier || !password) return alert('Vui lòng điền thông tin!');
+    const dinhDanh = document.getElementById('login-identifier').value.trim();
+    const mat_khau = document.getElementById('login-password').value.trim();
+    if (!dinhDanh || !mat_khau) return alert('Vui lòng điền thông tin!');
 
     try {
         const res = await fetch('/api/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ loginType: currentLoginType, identifier, password })
+            body: JSON.stringify({ loaiDangNhap: currentLoginType, dinhDanh, mat_khau })
         });
         const data = await res.json();
         if (res.ok) {
@@ -67,7 +67,7 @@ async function handleLogin() {
             localStorage.setItem('tgc_user_obj', JSON.stringify(currentUser));
             renderTopNav();
             alert('Đăng nhập thành công!');
-            switchTab('home');
+            navigate(null, 'home');
         } else {
             alert(data.error || 'Đăng nhập thất bại.');
         }
@@ -80,7 +80,7 @@ function renderRegisterView(container) {
     container.innerHTML = `
         <div class="wap-card rounded-xl p-4 shadow-xl">
             <div class="text-center border-b border-[#222228] pb-2 mb-3">
-                <h3 class="text-sm font-bold text-slate-200"><i class="fa-solid fa-user-plus text-pink-400 mr-1"></i> Đăng ký thành viên</h3>
+                <h3 class="text-sm font-bold text-slate-200"><i class="fa-solid fa-user-plus text-pink-400 mr-1"></i> Đăng ký thành viên (Level 1 + 100 xu)</h3>
             </div>
             <div class="space-y-3 text-xs">
                 <div>
@@ -111,32 +111,32 @@ function renderRegisterView(container) {
             </div>
             <div class="text-center text-xs mt-3 pt-2 border-t border-[#222228]">
                 <span class="text-slate-400">Đã có tài khoản?</span> 
-                <a href="#" onclick="switchTab('login')" class="text-blue-400 font-semibold hover:underline ml-1">Đăng nhập ngay</a>
+                <a href="/login" onclick="navigate(event, 'login')" class="text-blue-400 font-semibold hover:underline ml-1">Đăng nhập ngay</a>
             </div>
         </div>
     `;
 }
 
 async function handleRegister() {
-    const username = document.getElementById('reg-username').value.trim();
-    const display_name = document.getElementById('reg-displayname').value.trim();
-    const password = document.getElementById('reg-password').value.trim();
+    const ten_dang_nhap = document.getElementById('reg-username').value.trim();
+    const ten_hien_thi = document.getElementById('reg-displayname').value.trim();
+    const mat_khau = document.getElementById('reg-password').value.trim();
     const repassword = document.getElementById('reg-repassword').value.trim();
-    const gender = document.getElementById('reg-gender').value;
+    const gioi_tinh = document.getElementById('reg-gender').value;
 
-    if (!username || !display_name || !password || !repassword) return alert('Vui lòng điền đủ ô!');
-    if (password !== repassword) return alert('Mật khẩu không khớp!');
+    if (!ten_dang_nhap || !ten_hien_thi || !mat_khau || !repassword) return alert('Vui lòng điền đủ ô!');
+    if (mat_khau !== repassword) return alert('Mật khẩu không khớp!');
 
     try {
         const res = await fetch('/api/register', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, display_name, password, gender })
+            body: JSON.stringify({ ten_dang_nhap, ten_hien_thi, mat_khau, gioi_tinh })
         });
         const data = await res.json();
         if (res.ok) {
-            alert('Đăng ký thành công! Hãy đăng nhập.');
-            switchTab('login');
+            alert('Đăng ký thành công! Bạn bắt đầu ở Level 1 với 100 xu.');
+            navigate(null, 'login');
         } else {
             alert(data.error || 'Thất bại.');
         }
@@ -149,6 +149,6 @@ function handleLogout() {
     currentUser = null;
     localStorage.removeItem('tgc_user_obj');
     renderTopNav();
-    switchTab('login');
+    navigate(null, 'login');
     alert('Đã đăng xuất!');
 }
