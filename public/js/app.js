@@ -1,3 +1,6 @@
+// Thay thế dòng import renderMenuView cũ bằng:
+import { renderOnlineView, renderNotificationsView } from './online.js';
+import { renderMenuView } from './menu.js';
 import { renderLoginView, renderRegisterView } from './auth.js';
 import { renderHomeView } from './home.js';
 import { renderPostsView } from './posts.js';
