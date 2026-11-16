@@ -119,7 +119,6 @@ function renderSearchView(container) {
                     <button onclick="alert('Tính năng tra cứu theo ID đang kết nối với cơ sở dữ liệu D1.')" class="bg-blue-600 px-3 py-2 rounded-lg font-semibold text-white">Tìm</button>
                 </div>
             </div>
-            <div class="pt-2 text-center text-slate-400">Nhập ID để xem thông tin chi tiết thành viên.</div>
         </div>
     `;
 }
