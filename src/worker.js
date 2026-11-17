@@ -13,6 +13,7 @@ export default {
         if (method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
         try {
+            // 1. ĐĂNG KÝ TÀI KHOẢN (Mặc định Level 1, 100 Xu)
             if (path === '/api/register' && method === 'POST') {
                 const { ten_dang_nhap, ten_hien_thi, mat_khau, gioi_tinh } = await request.json();
                 if (!ten_dang_nhap || !ten_hien_thi || !mat_khau) {
@@ -28,6 +29,7 @@ export default {
                 }
             }
 
+            // 2. ĐĂNG NHẬP (Hỗ trợ bằng Tên tài khoản hoặc ID số)
             if (path === '/api/login' && method === 'POST') {
                 const { loaiDangNhap, dinhDanh, mat_khau } = await request.json();
                 let user = loaiDangNhap === 'id' 
@@ -38,12 +40,14 @@ export default {
                 return new Response(JSON.stringify({ success: true, user }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
             }
 
+            // 3. LẤY THÔNG TIN NGƯỜI DÙNG
             if (path === '/api/user/info' && method === 'GET') {
                 const ten_dang_nhap = url.searchParams.get('ten_dang_nhap');
                 const user = await env.DB.prepare(`SELECT * FROM nguoi_dung WHERE ten_dang_nhap = ?`).bind(ten_dang_nhap).first();
                 return new Response(JSON.stringify(user), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
             }
 
+            // 4. THỐNG KÊ WAP
             if (path === '/api/stats' && method === 'GET') {
                 const usersCount = await env.DB.prepare(`SELECT COUNT(*) as total FROM nguoi_dung`).first();
                 const postsCount = await env.DB.prepare(`SELECT COUNT(*) as total FROM bai_viet`).first();
@@ -54,6 +58,7 @@ export default {
                 }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
             }
 
+            // 5. BÀI VIẾT / DIỄN ĐÀN
             if (path === '/api/posts' && method === 'GET') {
                 const { results } = await env.DB.prepare(`SELECT * FROM bai_viet ORDER BY id DESC LIMIT 50`).all();
                 return new Response(JSON.stringify(results), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
@@ -66,6 +71,7 @@ export default {
                 return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
             }
 
+            // 6. TIN NHẮN RIÊNG
             if (path === '/api/messages/get' && method === 'GET') {
                 const user1 = url.searchParams.get('user1');
                 const user2 = url.searchParams.get('user2');
@@ -82,6 +88,7 @@ export default {
                 return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
             }
 
+            // 7. CỬA HÀNG & MUA VẬT PHẨM
             if (path === '/api/shop/buy' && method === 'POST') {
                 const { ten_dang_nhap, ten_vat_pham, loai_vat_pham, gia_xu, gia_vang } = await request.json();
                 const user = await env.DB.prepare(`SELECT * FROM nguoi_dung WHERE ten_dang_nhap = ?`).bind(ten_dang_nhap).first();
@@ -99,6 +106,7 @@ export default {
                 return new Response(JSON.stringify({ success: true, user: updatedUser }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
             }
 
+            // 8. NẠP TIỀN XU / VÀNG
             if (path === '/api/shop/deposit' && method === 'POST') {
                 const { ten_dang_nhap, so_xu, so_vang } = await request.json();
                 const user = await env.DB.prepare(`SELECT * FROM nguoi_dung WHERE ten_dang_nhap = ?`).bind(ten_dang_nhap).first();
@@ -111,17 +119,20 @@ export default {
                 return new Response(JSON.stringify({ success: true, user: updatedUser }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
             }
 
+            // 9. TÚI ĐỒ
             if (path === '/api/shop/inventory' && method === 'GET') {
                 const ten_dang_nhap = url.searchParams.get('ten_dang_nhap');
                 const { results } = await env.DB.prepare(`SELECT * FROM tui_do WHERE ten_dang_nhap = ? ORDER BY id DESC`).bind(ten_dang_nhap).all();
                 return new Response(JSON.stringify(results), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
             }
 
+            // 10. QUẢN TRỊ ADMIN (Danh sách người dùng)
             if (path === '/api/admin/users' && method === 'GET') {
                 const { results } = await env.DB.prepare(`SELECT id, ten_dang_nhap, ten_hien_thi, vai_tro, cap_do, tien_xu, tien_vang, ngay_tao FROM nguoi_dung ORDER BY id ASC`).all();
                 return new Response(JSON.stringify(results), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
             }
 
+            // 11. CẬP NHẬT THÀNH VIÊN TỪ ADMIN PANEL (Max Level 130)
             if (path === '/api/admin/update-user' && method === 'POST') {
                 const { id, vai_tro, cap_do, tien_xu, tien_vang } = await request.json();
                 let capDoMoi = parseInt(cap_do) || 1;
