@@ -1,0 +1,241 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background-color: #090a0f;
+  color: #e2e8f0;
+  font-family: Tahoma, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+}
+a { color: #38bdf8; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.hidden { display: none !important; }
+.muted { color: #94a3b8; font-size: 12px; }
+.error-text { color: #f87171; margin-bottom: 8px; font-size: 12px; }
+.success-text { color: #4ade80; margin-bottom: 8px; font-size: 12px; }
+
+.wap-container {
+  max-width: 640px;
+  margin: 0 auto;
+  background-color: #11131a;
+  border-left: 1px solid #1e293b;
+  border-right: 1px solid #1e293b;
+  min-height: 100vh;
+}
+
+/* Header */
+.wap-header {
+  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+  padding: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #334155;
+}
+.logo {
+  font-weight: bold;
+  font-size: 15px;
+  color: #38bdf8;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+}
+
+/* Top Nav */
+.top-nav {
+  display: flex;
+  flex-wrap: wrap;
+  background-color: #161923;
+  border-bottom: 1px solid #262b3d;
+}
+.top-nav > a, .menu-dropdown-wrap > a {
+  padding: 8px 9px;
+  color: #cbd5e1;
+  font-size: 12px;
+  border-right: 1px solid #262b3d;
+  display: inline-block;
+}
+.top-nav > a.active {
+  background-color: #0284c7;
+  color: #fff;
+  font-weight: bold;
+}
+.badge {
+  background-color: #ef4444;
+  color: #fff;
+  border-radius: 10px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+/* Dropdown Menu */
+.menu-dropdown-wrap { position: relative; }
+.dropdown-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  background-color: #1e2230;
+  border: 1px solid #3b4259;
+  min-width: 175px;
+  z-index: 99;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.7);
+}
+.dropdown-menu a {
+  display: block;
+  padding: 8px 10px;
+  border-bottom: 1px solid #2b3145;
+  color: #e2e8f0;
+  font-size: 12px;
+}
+.dropdown-menu a:hover { background-color: #2d354c; }
+.admin-link { color: #fbbf24 !important; font-weight: bold; }
+.danger-link { color: #f87171 !important; }
+
+/* Sub-bar */
+.sub-bar {
+  background-color: #0d1017;
+  padding: 6px 10px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  border-bottom: 1px solid #1e293b;
+  color: #94a3b8;
+}
+
+/* Quick Grid 3 Trái - 3 Phải */
+.quick-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background-color: #131620;
+  border-bottom: 1px solid #262b3d;
+}
+.grid-col:first-child { border-right: 1px solid #262b3d; }
+.grid-item {
+  display: block;
+  padding: 7px 10px;
+  border-bottom: 1px solid #1e2333;
+  color: #e2e8f0;
+  font-size: 12.5px;
+}
+.grid-item:hover { background-color: #1c2130; }
+
+/* Boxes */
+.wap-box {
+  margin: 8px;
+  background-color: #161923;
+  border: 1px solid #282e42;
+  border-radius: 3px;
+}
+.box-header {
+  background-color: #1f2433;
+  padding: 7px 10px;
+  font-weight: bold;
+  font-size: 12.5px;
+  color: #38bdf8;
+  border-bottom: 1px solid #282e42;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.box-content { padding: 8px 10px; }
+
+/* Danh sách bài viết / Thành viên */
+.list-row {
+  padding: 8px 0;
+  border-bottom: 1px dashed #2a3045;
+}
+.list-row:last-child { border-bottom: none; }
+
+/* Huy hiệu chức vụ & Level */
+.role-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10.5px;
+  font-weight: bold;
+  margin-right: 4px;
+}
+.role-chu-wap { background: #7f1d1d; color: #fca5a5; border: 1px solid #ef4444; }
+.role-admin { background: #78350f; color: #fcd34d; border: 1px solid #f59e0b; }
+.role-mod { background: #064e3b; color: #6ee7b7; border: 1px solid #10b981; }
+.role-member { background: #1e293b; color: #94a3b8; }
+.lv-tag { color: #38bdf8; font-size: 11px; font-weight: bold; }
+
+/* Forms & Buttons */
+.wap-form .form-group { margin-bottom: 8px; }
+.wap-form label { display: block; margin-bottom: 3px; font-size: 12px; color: #cbd5e1; }
+input, textarea, select {
+  width: 100%;
+  background-color: #0b0d13;
+  border: 1px solid #334155;
+  color: #f8fafc;
+  padding: 7px;
+  border-radius: 3px;
+  font-size: 12.5px;
+}
+button {
+  background-color: #262d40;
+  color: #e2e8f0;
+  border: 1px solid #3b4563;
+  padding: 6px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+}
+button:hover { background-color: #333c54; }
+.btn-primary { background-color: #0284c7; border-color: #0369a1; color: #fff; font-weight: bold; }
+.btn-gold { background-color: #b45309; border-color: #d97706; color: #fff; font-weight: bold; }
+.btn-danger { background-color: #b91c1c; border-color: #dc2626; color: #fff; }
+.btn-xs { padding: 3px 7px; font-size: 11px; }
+.btn-block { width: 100%; padding: 8px; }
+
+/* Chat Box Realtime */
+.chat-history {
+  height: 260px;
+  overflow-y: auto;
+  background-color: #0d0f15;
+  border: 1px solid #262b3d;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+.chat-bubble {
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background-color: #1b2030;
+}
+.chat-bubble.mine {
+  background-color: #0c4a6e;
+  text-align: right;
+}
+.chat-input-row { display: flex; gap: 6px; }
+
+/* Modal */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 12px;
+}
+.modal-box {
+  background: #161923;
+  border: 1px solid #334155;
+  width: 100%;
+  max-width: 380px;
+  border-radius: 4px;
+}
+.auth-tabs { display: flex; border-bottom: 1px solid #282e42; }
+.auth-tabs button { flex: 1; border: none; border-radius: 0; padding: 8px 4px; }
+.auth-tabs button.active { background: #0284c7; color: #fff; font-weight: bold; }
+.modal-box .wap-form { padding: 10px; }
+
+.wap-footer {
+  text-align: center;
+  padding: 12px;
+  font-size: 11px;
+  color: #64748b;
+  border-top: 1px solid #1e293b;
+}
