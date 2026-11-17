@@ -1,12 +1,19 @@
-import { handleAuthRoutes } from './routes/auth.js';
-import { handleProfileRoutes } from './routes/profile.js';
-import { handleShopRoute } from './routes/shop.js';
-import { handleMailRoutes } from './routes/mail.js';
-import { handleFeedRoutes } from './routes/feed.js';
-import { handleGameRoute } from './routes/game.js';
-import { handleAdminRoutes } from './routes/admin.js';
-import { handleIndex } from './routes/index.js'; // Nhập file Trang chủ vào
+import { handleLogin, handleRegister } from './routes/auth.js';
+import { handleLogout } from './routes/logout.js';
+import { handleIndex } from './routes/index.js';
+import { handleProfile } from './routes/profile.js';
+import { handleLevel } from './routes/level.js';
+import { handleShop } from './routes/shop.js';
+import { handleMailBox } from './routes/mail_box.js';
+import { handleMailChat } from './routes/mail_chat.js';
+import { handleMailNotification } from './routes/mail_notification.js';
+import { handleRealtimeApi } from './routes/api_realtime.js';
+import { handleFeed } from './routes/feed.js';
+import { handleGame } from './routes/game.js';
+import { handleAdminDashboard } from './routes/admin_dashboard.js';
+import { handleAdminAction } from './routes/admin_action.js';
 
+// Hàm kiểm tra xác thực đăng nhập qua Cookie
 async function checkAuth(request, env) {
     const cookie = request.headers.get('Cookie') || '';
     const match = cookie.match(/user_id=(\d+)/);
@@ -14,6 +21,7 @@ async function checkAuth(request, env) {
     return await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(match[1]).first() || null;
 }
 
+// Khung Layout chuẩn giao diện tông màu đen đặc trưng của Thế Giới Chat
 function renderLayout(title, content, user) {
     return `<!DOCTYPE html>
 <html lang="vi">
@@ -23,7 +31,7 @@ function renderLayout(title, content, user) {
     <title>${title} - Thế Giới Chat</title>
     <style>
         body { background: #000; color: #00ff00; font-family: monospace, sans-serif; margin: 0; padding: 0; }
-        .header { background: linear-gradient(to bottom, #222, #000); text-align: center; padding: 10px; border-bottom: 2px solid #333; }
+        .header { background: linear-gradient(to bottom, #222, #000); text-align: center; padding: 12px; border-bottom: 2px solid #333; }
         .header h1 { color: #fff; margin: 0; font-size: 22px; text-shadow: 0 0 10px #00ff00; }
         .slogan { color: #00ff00; font-size: 11px; }
         .nav-bar { background: #111; display: flex; justify-content: space-around; padding: 8px 0; border-bottom: 1px solid #333; font-size: 12px; }
@@ -36,6 +44,8 @@ function renderLayout(title, content, user) {
         .box-content { padding: 10px; font-size: 13px; }
         a { color: #00ff00; text-decoration: none; }
         a:hover { text-decoration: underline; }
+        .btn { background: #0055ff; color: #fff; border: none; padding: 6px 12px; cursor: pointer; border-radius: 3px; display: inline-block; font-weight: bold; text-decoration: none; text-align: center; }
+        .btn:hover { background: #0033cc; }
         .footer { text-align: center; padding: 15px; font-size: 11px; color: #666; border-top: 1px solid #222; background: #050505; }
     </style>
 </head>
@@ -52,11 +62,11 @@ function renderLayout(title, content, user) {
     </div>
     <div class="nav-bar">
         <a href="/">🏠 Home</a>
-        <a href="/users/online">👥 Trực tuyến</a>
         <a href="/users/feed">📋 Bảng tin</a>
         <a href="/mail/notification">🔔 Thông báo</a>
         <a href="/mail/box">✉️ Tin nhắn</a>
         <a href="/shop">🛒 Cửa hàng</a>
+        ${user.role !== 'Thành Viên' ? '<a href="/admin" style="color:yellow;">🛠️ Quản lý</a>' : ''}
     </div>
     ` : `
     <div class="nav-bar">
@@ -83,33 +93,37 @@ export default {
     const path = url.pathname;
     const user = await checkAuth(request, env);
 
-    let res = await handleAuthRoutes(request, env, url, path);
-    if (res) return res;
-
-    if (!user && path !== '/') return Response.redirect(302, '/login');
-
-    res = await handleProfileRoutes(request, env, url, path, user, renderLayout);
-    if (res) return res;
-
-    res = await handleShopRoute(request, env, path, user, renderLayout);
-    if (res) return res;
-
-    res = await handleMailRoutes(request, env, path, user, renderLayout);
-    if (res) return res;
-
-    res = await handleFeedRoutes(request, env, path, user, renderLayout);
-    if (res) return res;
-
-    res = await handleGameRoute(request, env, path, user, renderLayout);
-    if (res) return res;
-
-    res = await handleAdminRoutes(request, env, path, user, renderLayout);
-    if (res) return res;
-
-    // Định tuyến Trang chủ (Index Wap)
-    if (path === '/') {
-        return await handleIndex(request, env, user, renderLayout);
+    // 1. Các route không bắt buộc đăng nhập
+    if (path === '/login' || path === '/register' && request.method === 'GET') {
+        return path === '/login' ? await handleLogin(request, env) : await handleRegister(request, env);
     }
+    if (path === '/login' || path === '/register' && request.method === 'POST') {
+        return path === '/login' ? await handleLogin(request, env) : await handleRegister(request, env);
+    }
+    if (path === '/logout') {
+        return await handleLogout(request, env);
+    }
+    if (path === '/api/realtime-check') {
+        return await handleRealtimeApi(request, env);
+    }
+
+    // 2. Kiểm tra bảo mật: Nếu chưa đăng nhập mà truy cập trang khác -> Chuyển về /login
+    if (!user && path !== '/') {
+        return Response.redirect(new URL('/login', request.url), 302);
+    }
+
+    // 3. Phân phối các route đã phân tách file
+    if (path === '/') return await handleIndex(request, env, user, renderLayout);
+    if (path === '/profile') return await handleProfile(request, env, user, renderLayout, url);
+    if (path === '/profile/level') return await handleLevel(request, env, user, renderLayout);
+    if (path === '/shop') return await handleShop(request, env, user, renderLayout);
+    if (path === '/mail/box') return await handleMailBox(request, env, user, renderLayout);
+    if (path === '/mail/chat') return await handleMailChat(request, env, user, renderLayout, url);
+    if (path === '/mail/notification') return await handleMailNotification(request, env, user, renderLayout);
+    if (path === '/users/feed') return await handleFeed(request, env, user, renderLayout);
+    if (path === '/game') return await handleGame(request, env, user, renderLayout);
+    if (path === '/admin') return await handleAdminDashboard(request, env, user, renderLayout);
+    if (path === '/admin/update-role') return await handleAdminAction(request, env, user);
 
     return new Response("Không tìm thấy trang (404)", { status: 404 });
   }
