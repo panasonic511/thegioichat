@@ -2,7 +2,19 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const path = url.pathname;
-
+// 1. Định tuyến trang tĩnh & xử lý F5 (Reload) trên đường dẫn /login
+    if (!path.startsWith('/api/')) {
+      if (path === '/login' || path === '/login/') {
+        const loginUrl = new URL('/login.html', request.url);
+        return env.ASSETS.fetch(new Request(loginUrl, request));
+      }
+      const assetRes = await env.ASSETS.fetch(request);
+      if (assetRes.status === 404) {
+        const homeUrl = new URL('/index.html', request.url);
+        return env.ASSETS.fetch(new Request(homeUrl, request));
+      }
+      return assetRes;
+    }
     // Phục vụ file tĩnh nếu không phải API
     if (!path.startsWith('/api/')) {
       return env.ASSETS.fetch(request);
