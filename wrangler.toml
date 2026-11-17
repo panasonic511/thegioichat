@@ -1,8 +1,0 @@
-name = "thegioichat"
-main = "src/worker.js"
-compatibility_date = "2023-03-01"
-
-[env.production]
-d1_databases = [
-  { binding = "DB", database_name = "thegioichat-db", database_id = "YOUR_D1_DATABASE_ID" }
-]
