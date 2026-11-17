@@ -24,18 +24,57 @@ function renderRoleBadge(role, level) {
 }
 
 function updateUserUI() {
-} else {
-    miniBar.innerHTML = `
-      <div>👋 Chào khách!</div>
-      <div style="display: flex; gap: 6px;">
-        <a href="/login" style="background-color: #1d6ce0; color: #fff; padding: 3px 8px; border-radius: 3px; font-weight: bold; font-size: 11.5px;">Đăng nhập</a>
-        <a href="/register" style="background-color: #15803d; color: #fff; padding: 3px 8px; border-radius: 3px; font-weight: bold; font-size: 11.5px;">Đăng ký</a>
-      </div>
-    `;
-    adminLink.classList.add('hidden');
-    logoutLink.classList.add('hidden');
-    btnAddAnn.classList.add('hidden');
+  const guestView = document.getElementById('guest-view');
+  const memberView = document.getElementById('member-view');
+  const miniBar = document.getElementById('user-mini-bar');
+  const adminLink = document.getElementById('menu-admin-link');
+  const logoutLink = document.getElementById('menu-logout-link');
+  const btnAddAnn = document.getElementById('btn-add-announcement');
+
+  if (currentUser) {
+    // 1. Khi đã đăng nhập: Hiện khung thành viên, ẩn form đăng nhập khách
+    if (guestView) guestView.classList.add('hidden');
+    if (memberView) memberView.classList.remove('hidden');
+
+    if (miniBar) {
+      miniBar.innerHTML = `
+        <div>
+          ${currentUser.avatar || '👤'} <b style="color:#facc15;">${currentUser.display_name}</b> <span class="muted">(ID:${currentUser.id})</span>
+          ${renderRoleBadge(currentUser.role, currentUser.level)}
+        </div>
+        <div style="color:#22c55e; font-weight:bold;">
+          💰 ${Number(currentUser.coins || 0).toLocaleString()} Xu
+        </div>
+      `;
+    }
+    
+    if (logoutLink) logoutLink.classList.remove('hidden');
+
+    if (adminLink) {
+      if (currentUser.role && currentUser.role !== 'Thành Viên') {
+        adminLink.classList.remove('hidden');
+      } else {
+        adminLink.classList.add('hidden');
+      }
+    }
+
+    if (btnAddAnn) {
+      if (Number(currentUser.level || 0) >= 50) {
+        btnAddAnn.classList.remove('hidden');
+      } else {
+        btnAddAnn.classList.add('hidden');
+      }
+    }
+  } else {
+    // 2. Khi chưa đăng nhập: Hiện form đăng nhập khách, ẩn khung thành viên
+    if (guestView) guestView.classList.remove('hidden');
+    if (memberView) memberView.classList.add('hidden');
+    
+    if (adminLink) adminLink.classList.add('hidden');
+    if (logoutLink) logoutLink.classList.add('hidden');
+    if (btnAddAnn) btnAddAnn.classList.add('hidden');
   }
+}
 
     // Chỉ Mod, Admin, Chủ Wap mới thấy mục Quản Trị
     if (currentUser.role !== 'Thành Viên') {
