@@ -3,96 +3,165 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Thế Giới Chat - WAP Mạng Xã Hội</title>
+  <title>Thế Giới Chat - Wap Chát, Kết Bạn, Giải Trí</title>
+  <link rel="stylesheet" href="/css/login.css" />
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
-  <div class="wap-container">
-    <!-- HEADER ĐỒNG BỘ HOÀN TOÀN VỚI TRANG /LOGIN -->
-    <header class="wap-header" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px;">
-      <div class="banner-title" onclick="navigate('home')" style="font-size: 16px; cursor: pointer;">🌐 THẾ GIỚI CHAT</div>
-      <div id="user-mini-bar" style="display: flex; gap: 6px; align-items: center;">
-        <a href="/login" style="background-color: #1d6ce0; color: #fff; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 11.5px; text-decoration: none;">Đăng nhập</a>
-        <a href="/register" style="background-color: #15803d; color: #fff; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 11.5px; text-decoration: none;">Đăng ký</a>
+  <div class="wap-wrapper">
+    <!-- BANNER THƯƠNG HIỆU CHUNG -->
+    <header class="wap-banner" onclick="navigate('home')">
+      <div class="banner-title">THẾ GIỚI CHAT</div>
+      <div class="banner-sub">
+        <span class="c-blue">Wap chát</span> - <span class="c-yellow">Kết bạn</span> - <span class="c-green">Giải trí</span>
       </div>
     </header>
 
-    <!-- 1. THANH MENU CHÍNH TRÊN CÙNG -->
-    <nav class="top-nav">
-      <a href="javascript:void(0)" onclick="navigate('home')" id="nav-home" class="active">🏠 Home</a>
-      <a href="javascript:void(0)" onclick="navigate('online')" id="nav-online">🟢 Trực tuyến</a>
-      <a href="javascript:void(0)" onclick="navigate('feed')" id="nav-feed">📰 Bảng tin</a>
-      <a href="javascript:void(0)" onclick="navigate('notifications')" id="nav-notifications">
-        🔔 Thông báo <span id="badge-notif" class="badge hidden">0</span>
-      </a>
-      <a href="javascript:void(0)" onclick="navigate('messages')" id="nav-messages">
-        ✉️ Tin nhắn <span id="badge-msg" class="badge hidden">0</span>
-      </a>
-      <div class="menu-dropdown-wrap">
-        <a href="javascript:void(0)" onclick="toggleMainMenu()" id="nav-menu">☰ Menu ▾</a>
-        <div id="main-dropdown" class="dropdown-menu hidden">
-          <a href="javascript:void(0)" onclick="navigate('profile')">👤 Trang cá nhân</a>
-          <a href="javascript:void(0)" onclick="navigate('search')">🔍 Tìm kiếm nick</a>
-          <a href="javascript:void(0)" onclick="navigate('friends')">🤝 Bạn bè</a>
-          <a href="javascript:void(0)" onclick="navigate('shop')">🛒 Cửa hàng</a>
-          <a href="javascript:void(0)" onclick="navigate('forum')">💬 Diễn đàn</a>
-          <a href="javascript:void(0)" onclick="navigate('games')">🎮 Khu giải trí</a>
-          <a href="javascript:void(0)" onclick="navigate('settings')">⚙️ Cài đặt</a>
-          <a href="javascript:void(0)" id="menu-admin-link" class="admin-link hidden" onclick="navigate('admin')">🛡️ Quản lý Admin/BQT</a>
-          <a href="javascript:void(0)" id="menu-logout-link" class="danger-link hidden" onclick="logout()">🚪 Đăng xuất</a>
+    <!-- =================================================================
+         GIAO DIỆN 1: KHI CHƯA ĐĂNG NHẬP (GIỐNG HỆT HÌNH TRANG /LOGIN)
+         ================================================================= -->
+    <div id="guest-view">
+      <nav class="wap-breadcrumb">
+        🏠 <a href="/" class="active-link">Trang chủ</a> · <a href="/login">Đăng nhập</a> · <a href="/register">Đăng ký</a>
+      </nav>
+
+      <div class="section-bar">🔒 Đăng nhập</div>
+
+      <main class="login-area">
+        <div class="login-card">
+          <div class="card-header">🔒 Đăng nhập</div>
+
+          <form id="index-login-form" class="card-body" onsubmit="submitIndexLogin(event)">
+            <div class="field-label">Đăng nhập bằng</div>
+            <div class="method-tabs">
+              <button type="button" id="idx-tab-user" class="m-tab active" onclick="setIdxLoginMethod('user')">👤 Tài khoản</button>
+              <button type="button" id="idx-tab-id" class="m-tab" onclick="setIdxLoginMethod('id')">🪪 ID</button>
+              <button type="button" id="idx-tab-gmail" class="m-tab" onclick="setIdxLoginMethod('gmail')">✉️ Gmail</button>
+            </div>
+
+            <div class="form-row">
+              <label id="idx-account-label" class="field-label" for="idx-login-account">Tên tài khoản:</label>
+              <input type="text" id="idx-login-account" class="wap-input" required autocomplete="username" />
+            </div>
+
+            <div class="form-row">
+              <label class="field-label" for="idx-login-password">Nhập mật khẩu:</label>
+              <div class="pw-group">
+                <input type="password" id="idx-login-password" class="wap-input" required autocomplete="current-password" />
+                <button type="button" class="pw-toggle" onclick="toggleIdxPasswordVis()">👁️</button>
+              </div>
+            </div>
+
+            <div class="options-row">
+              <label class="remember-label"><input type="checkbox" id="idx-remember-me" checked /> Ghi nhớ</label>
+              <a href="javascript:void(0)" onclick="alert('Vui lòng liên hệ Chủ Wap để cấp lại mật khẩu!')" class="orange-link">Quên mật khẩu</a>
+            </div>
+
+            <div id="idx-login-status" class="status-msg hidden"></div>
+            <button type="submit" id="idx-btn-login" class="btn-submit-blue">Đăng nhập</button>
+
+            <div class="divider-or"><span>Hoặc</span></div>
+            <div class="register-prompt">
+              <span class="c-green">Nếu chưa có tài khoản?</span> · <a href="/register" class="orange-link">Đăng kí ngay</a>
+            </div>
+          </form>
+        </div>
+      </main>
+    </div>
+
+    <!-- =================================================================
+         GIAO DIỆN 2: KHI ĐÃ ĐĂNG NHẬP THÀNH CÔNG (MẠNG XÃ HỘI WAP)
+         ================================================================= -->
+    <div id="member-view" class="hidden">
+      <!-- Thanh trạng thái thành viên -->
+      <div id="user-mini-bar" class="wap-breadcrumb"></div>
+
+      <!-- Thanh Menu chính -->
+      <nav class="top-nav">
+        <a href="javascript:void(0)" onclick="navigate('home')" id="nav-home" class="active">🏠 Home</a>
+        <a href="javascript:void(0)" onclick="navigate('online')" id="nav-online">🟢 Trực tuyến</a>
+        <a href="javascript:void(0)" onclick="navigate('feed')" id="nav-feed">📰 Bảng tin</a>
+        <a href="javascript:void(0)" onclick="navigate('notifications')" id="nav-notifications">
+          🔔 Thông báo <span id="badge-notif" class="badge hidden">0</span>
+        </a>
+        <a href="javascript:void(0)" onclick="navigate('messages')" id="nav-messages">
+          ✉️ Tin nhắn <span id="badge-msg" class="badge hidden">0</span>
+        </a>
+        <div class="menu-dropdown-wrap">
+          <a href="javascript:void(0)" onclick="toggleMainMenu()" id="nav-menu">☰ Menu ▾</a>
+          <div id="main-dropdown" class="dropdown-menu hidden">
+            <a href="javascript:void(0)" onclick="navigate('profile')">👤 Trang cá nhân</a>
+            <a href="javascript:void(0)" onclick="navigate('search')">🔍 Tìm kiếm nick</a>
+            <a href="javascript:void(0)" onclick="navigate('friends')">🤝 Bạn bè</a>
+            <a href="javascript:void(0)" onclick="navigate('shop')">🛒 Cửa hàng</a>
+            <a href="javascript:void(0)" onclick="navigate('forum')">💬 Diễn đàn</a>
+            <a href="javascript:void(0)" onclick="navigate('games')">🎮 Khu giải trí</a>
+            <a href="javascript:void(0)" onclick="navigate('settings')">⚙️ Cài đặt</a>
+            <a href="javascript:void(0)" id="menu-admin-link" class="admin-link hidden" onclick="navigate('admin')">🛡️ Quản lý Admin/BQT</a>
+            <a href="javascript:void(0)" id="menu-logout-link" class="danger-link hidden" onclick="logout()">🚪 Đăng xuất</a>
+          </div>
+        </div>
+      </nav>
+
+      <!-- Thanh phụ thời gian & liên kết nhanh -->
+      <div class="sub-bar">
+        <div class="sub-left" id="live-clock">⏰ 00:00:00</div>
+        <div class="sub-right">
+          <a href="javascript:void(0)" onclick="navigate('profile')">Trang cá nhân</a> ·
+          <a href="javascript:void(0)" onclick="navigate('search')">Tìm kiếm ID</a> ·
+          <a href="javascript:void(0)" onclick="navigate('ranking')">Bảng xếp hạng</a>
         </div>
       </div>
-    </nav>
 
-    <!-- 2. THANH PHỤ DƯỚI MENU: THỜI GIAN BÊN TRÁI | CÁ NHÂN, TÌM ID, BXH BÊN PHẢI -->
-    <div class="sub-bar">
-      <div class="sub-left" id="live-clock">⏰ 00:00:00</div>
-      <div class="sub-right">
-        <a href="javascript:void(0)" onclick="navigate('profile')">Trang cá nhân</a> |
-        <a href="javascript:void(0)" onclick="navigate('search')">Tìm kiếm ID</a> |
-        <a href="javascript:void(0)" onclick="navigate('ranking')">Bảng xếp hạng</a>
+      <!-- Lưới 6 mục chức năng -->
+      <div class="quick-grid">
+        <div class="grid-col">
+          <a href="javascript:void(0)" onclick="navigate('forum')" class="grid-item">💬 Diễn đàn</a>
+          <a href="javascript:void(0)" onclick="navigate('levels')" class="grid-item">📊 Bảng cấp độ</a>
+          <a href="javascript:void(0)" onclick="navigate('stats')" class="grid-item">📈 Thống kê</a>
+        </div>
+        <div class="grid-col">
+          <a href="javascript:void(0)" onclick="navigate('friends')" class="grid-item">🤝 Bạn bè</a>
+          <a href="javascript:void(0)" onclick="navigate('settings')" class="grid-item">⚙️ Cài đặt</a>
+          <a href="javascript:void(0)" onclick="navigate('games')" class="grid-item">🎮 Khu giải trí</a>
+        </div>
       </div>
+
+      <!-- Khu vực thông báo BQT -->
+      <section class="wap-section">
+        <div class="section-bar">
+          <span>📢 Thông báo từ Ban Quản Trị</span>
+          <button id="btn-add-announcement" class="btn-xs btn-gold hidden" onclick="openAnnouncementForm()">+ Đăng/Sửa TB</button>
+        </div>
+        <div id="announcement-list" class="section-body">
+          <div class="muted">Đang tải thông báo...</div>
+        </div>
+      </section>
+
+      <!-- Nội dung động của Wap -->
+      <main id="main-view" class="wap-section"></main>
     </div>
 
-    <!-- 3. LƯỚI 6 MỤC: 3 MỤC TRÁI - 3 MỤC PHẢI -->
-    <div class="quick-grid">
-      <div class="grid-col">
-        <a href="javascript:void(0)" onclick="navigate('forum')" class="grid-item">💬 Diễn đàn</a>
-        <a href="javascript:void(0)" onclick="navigate('levels')" class="grid-item">📊 Bảng cấp độ</a>
-        <a href="javascript:void(0)" onclick="navigate('stats')" class="grid-item">📈 Thống kê</a>
-      </div>
-      <div class="grid-col">
-        <a href="javascript:void(0)" onclick="navigate('friends')" class="grid-item">🤝 Bạn bè</a>
-        <a href="javascript:void(0)" onclick="navigate('settings')" class="grid-item">⚙️ Cài đặt</a>
-        <a href="javascript:void(0)" onclick="navigate('games')" class="grid-item">🎮 Khu giải trí</a>
-      </div>
-    </div>
-
-    <!-- 4. KHU VỰC THÔNG BÁO BQT (CẤP ĐỘ >= 50 ĐƯỢC ĐĂNG & SỬA) -->
-    <section class="wap-box announcement-box">
-      <div class="box-header">
-        <span>📢 THÔNG BÁO TỪ BAN QUẢN TRỊ</span>
-        <button id="btn-add-announcement" class="btn-xs btn-gold hidden" onclick="openAnnouncementForm()">+ Đăng/Sửa TB</button>
-      </div>
-      <div id="announcement-list" class="box-content">
-        <div class="muted">Đang tải thông báo...</div>
-      </div>
-    </section>
-
-    <!-- 5. KHUNG NỘI DUNG ĐỘNG CHO TỪNG TRANG / TỪNG MỤC -->
-    <main id="main-view" class="wap-box">
-      <!-- Nội dung từng trang sẽ được JS nạp vào đây để giữ index.html gọn nhẹ -->
-    </main>
-
-    <!-- FOOTER -->
+    <!-- FOOTER CHUNG (GIỐNG HỆT HÌNH) -->
     <footer class="wap-footer">
-      © 2026 Thế Giới Chat • Nền tảng WAP Cloudflare D1
+      <div class="footer-links">
+        🏠 <a href="/">Trang chủ</a> · <a href="javascript:void(0)">Điều khoản</a> · <a href="javascript:void(0)">Liên hệ</a>
+      </div>
+      <div class="footer-info">
+        <div class="c-green bold">Copyright © 2026 - Thế Giới Chat</div>
+        <div class="c-green">Chát kết bạn, Giải trí, Hẹn hò</div>
+        <div class="theme-row">
+          <span class="c-green">Giao diện:</span>
+          <select class="theme-select"><option value="dark" selected>Dark</option></select>
+        </div>
+        <div class="version-row">
+          Version: 2.0.890 - <a href="javascript:void(0)" class="orange-link">Cài đặt App</a>
+        </div>
+      </div>
     </footer>
   </div>
 
-  </div>
-
-  <!-- NẠP CÁC MÔ-ĐUN JS TÁCH BIỆT -->
+  <!-- NẠP CÁC MÔ-ĐUN JS -->
   <script src="/js/auth.js"></script>
   <script src="/js/feed.js"></script>
   <script src="/js/social.js"></script>
