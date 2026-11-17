@@ -30,23 +30,123 @@ function renderLayout(title, content, user) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${title} - Thế Giới Chat</title>
     <style>
-        body { background: #000; color: #00ff00; font-family: monospace, sans-serif; margin: 0; padding: 0; }
-        .header { background: linear-gradient(to bottom, #222, #000); text-align: center; padding: 12px; border-bottom: 2px solid #333; }
-        .header h1 { color: #fff; margin: 0; font-size: 22px; text-shadow: 0 0 10px #00ff00; }
-        .slogan { color: #00ff00; font-size: 11px; }
-        .nav-bar { background: #111; display: flex; justify-content: space-around; padding: 8px 0; border-bottom: 1px solid #333; font-size: 12px; }
-        .nav-bar a { color: #fff; text-decoration: none; text-align: center; }
-        .nav-bar a:hover { color: #00ff00; }
-        .user-panel { background: #0a0a0a; padding: 8px 12px; border-bottom: 1px solid #222; display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
-        .container { padding: 10px; max-width: 600px; margin: 0 auto; }
-        .box { background: #111; border: 1px solid #333; margin-bottom: 10px; border-radius: 4px; overflow: hidden; }
-        .box-title { background: #1a1a1a; color: #00ff00; padding: 6px 10px; font-weight: bold; border-bottom: 1px solid #333; font-size: 13px; }
-        .box-content { padding: 10px; font-size: 13px; }
+        /* Reset & Tông màu đặc trưng Wap */
+        body { 
+            background: #000000; 
+            color: #00ff00; 
+            font-family: monospace, Tahoma, Arial, sans-serif; 
+            margin: 0; 
+            padding: 0; 
+            font-size: 13px;
+            line-height: 1.4;
+        }
+        
+        /* Header Banner */
+        .header { 
+            background: #111111; 
+            text-align: center; 
+            padding: 8px; 
+            border-bottom: 2px solid #333333; 
+        }
+        .header h1 { 
+            color: #00ff00; 
+            margin: 0; 
+            font-size: 20px; 
+            font-weight: bold;
+            text-shadow: 0 0 5px #00ff00; 
+        }
+        .slogan { 
+            color: #ffcc00; 
+            font-size: 11px; 
+            margin-top: 2px;
+        }
+
+        /* User Panel phía trên */
+        .user-panel { 
+            background: #0a0a0a; 
+            padding: 6px 10px; 
+            border-bottom: 1px solid #222; 
+            display: flex; 
+            align-items: center; 
+            justify-content: space-between; 
+            font-size: 12px; 
+        }
+
+        /* Thanh Menu điều hướng chuẩn Wap (gạch nối phân cách) */
+        .nav-bar { 
+            background: #111111; 
+            text-align: center; 
+            padding: 6px 4px; 
+            border-bottom: 1px solid #333333; 
+            font-size: 12px; 
+        }
+        .nav-bar a { 
+            color: #00ff00; 
+            text-decoration: none; 
+            margin: 0 4px;
+        }
+        .nav-bar a:hover { 
+            text-decoration: underline; 
+        }
+
+        /* Khung chứa nội dung chính */
+        .container { 
+            padding: 6px; 
+            max-width: 600px; 
+            margin: 0 auto; 
+        }
+
+        /* Các Box giao diện (Bo góc 0 để giống wap cổ điển) */
+        .box { 
+            background: #0d0d0d; 
+            border: 1px solid #333333; 
+            margin-bottom: 8px; 
+            border-radius: 0px; 
+        }
+        .box-title { 
+            background: #1a1a1a; 
+            color: #00ff00; 
+            padding: 5px 8px; 
+            font-weight: bold; 
+            border-bottom: 1px solid #333333; 
+            font-size: 12px; 
+        }
+        .box-content { 
+            padding: 8px; 
+        }
+
+        /* Liên kết chung */
         a { color: #00ff00; text-decoration: none; }
         a:hover { text-decoration: underline; }
-        .btn { background: #0055ff; color: #fff; border: none; padding: 6px 12px; cursor: pointer; border-radius: 3px; display: inline-block; font-weight: bold; text-decoration: none; text-align: center; }
-        .btn:hover { background: #0033cc; }
-        .footer { text-align: center; padding: 15px; font-size: 11px; color: #666; border-top: 1px solid #222; background: #050505; }
+
+        /* Nút bấm (Button) */
+        .btn { 
+            background: #222222; 
+            color: #00ff00; 
+            border: 1px solid #555555; 
+            padding: 4px 10px; 
+            cursor: pointer; 
+            border-radius: 0px; 
+            font-family: monospace;
+            font-size: 12px; 
+            font-weight: bold;
+            display: inline-block; 
+            text-align: center; 
+        }
+        .btn:hover { 
+            background: #333333; 
+            border-color: #00ff00; 
+        }
+
+        /* Footer chân trang */
+        .footer { 
+            text-align: center; 
+            padding: 10px; 
+            font-size: 11px; 
+            color: #666666; 
+            border-top: 1px solid #222222; 
+            background: #050505; 
+        }
     </style>
 </head>
 <body>
@@ -61,12 +161,12 @@ function renderLayout(title, content, user) {
         <div>🪙 ${user.coins.toLocaleString()} Xu | <span style="color:yellow">${user.role}</span></div>
     </div>
     <div class="nav-bar">
-        <a href="/">🏠 Home</a>
-        <a href="/users/feed">📋 Bảng tin</a>
-        <a href="/mail/notification">🔔 Thông báo</a>
-        <a href="/mail/box">✉️ Tin nhắn</a>
-        <a href="/shop">🛒 Cửa hàng</a>
-        ${user.role !== 'Thành Viên' ? '<a href="/admin" style="color:yellow;">🛠️ Quản lý</a>' : ''}
+        <a href="/">Home</a> · 
+        <a href="/users/feed">Bảng tin</a> · 
+        <a href="/mail/notification">Thông báo</a> · 
+        <a href="/mail/box">Tin nhắn</a> · 
+        <a href="/shop">Cửa hàng</a>
+        ${user.role !== 'Thành Viên' ? '· <a href="/admin" style="color:yellow;">Quản lý</a>' : ''}
     </div>
     ` : `
     <div class="nav-bar">
@@ -80,8 +180,8 @@ function renderLayout(title, content, user) {
 
     <div class="footer">
         <div><a href="/">Home</a> · <a href="/terms">Điều khoản</a> · <a href="/contact">Liên hệ</a> ${user ? '· <a href="/logout">Đăng xuất</a>' : ''}</div>
-        <div style="color: #00ff00; margin-top: 5px;">Copyright © 2026 - Thế Giới Chat</div>
-        <div style="color: #888; margin-top: 5px;">Version: 3.0.0</div>
+        <div style="color: #00ff00; margin-top: 4px;">Copyright © 2026 - Thế Giới Chat</div>
+        <div style="color: #777; margin-top: 2px;">Version: 3.0.0</div>
     </div>
 </body>
 </html>`;
@@ -113,16 +213,16 @@ export default {
     }
 
     // 3. Phân phối các route đã phân tách file
-    if (path === '/') return await handleIndex(request, env, user, renderLayout);
-    if (path === '/profile') return await handleProfile(request, env, user, renderLayout, url);
-    if (path === '/profile/level') return await handleLevel(request, env, user, renderLayout);
-    if (path === '/shop') return await handleShop(request, env, user, renderLayout);
-    if (path === '/mail/box') return await handleMailBox(request, env, user, renderLayout);
-    if (path === '/mail/chat') return await handleMailChat(request, env, user, renderLayout, url);
-    if (path === '/mail/notification') return await handleMailNotification(request, env, user, renderLayout);
-    if (path === '/users/feed') return await handleFeed(request, env, user, renderLayout);
-    if (path === '/game') return await handleGame(request, env, user, renderLayout);
-    if (path === '/admin') return await handleAdminDashboard(request, env, user, renderLayout);
+    if (path === '/') return await handleIndex(request, env, user, );
+    if (path === '/profile') return await handleProfile(request, env, user, , url);
+    if (path === '/profile/level') return await handleLevel(request, env, user, );
+    if (path === '/shop') return await handleShop(request, env, user, );
+    if (path === '/mail/box') return await handleMailBox(request, env, user, );
+    if (path === '/mail/chat') return await handleMailChat(request, env, user, , url);
+    if (path === '/mail/notification') return await handleMailNotification(request, env, user, );
+    if (path === '/users/feed') return await handleFeed(request, env, user, );
+    if (path === '/game') return await handleGame(request, env, user, );
+    if (path === '/admin') return await handleAdminDashboard(request, env, user, );
     if (path === '/admin/update-role') return await handleAdminAction(request, env, user);
 
     return new Response("Không tìm thấy trang (404)", { status: 404 });
