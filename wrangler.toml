@@ -1,12 +1,8 @@
 name = "thegioichat"
 main = "src/worker.js"
-compatibility_date = "2024-11-01"
+compatibility_date = "2023-03-01"
 
-[assets]
-directory = "./public"
-binding = "ASSETS"
-
-[[d1_databases]]
-binding = "DB"
-database_name = "thegioichat-db"
-database_id = "b0a0690b-226b-45ee-829d-31472c431102"
+[env.production]
+d1_databases = [
+  { binding = "DB", database_name = "thegioichat-db", database_id = "YOUR_D1_DATABASE_ID" }
+]
