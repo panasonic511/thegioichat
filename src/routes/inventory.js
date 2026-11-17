@@ -25,7 +25,7 @@ export async function handleInventory(request, env, user, renderLayout) {
             }
             user = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(user.id).first();
         } catch (e) {
-            message = `<div style="color: #ff5555; background: #1a0000; padding: 6px; text-align: center; margin-bottom: 8px;">❌ Lỗi CSDL (Bạn hãy chạy lệnh ALTER TABLE trong Cloudflare Console): ${e.message}</div>`;
+            message = `<div style="color: #ff5555; background: #1a0000; padding: 6px; text-align: center; margin-bottom: 8px;">❌ Lỗi CSDL (Hãy chạy lệnh ALTER TABLE cho avatar_frame & name_effect): ${e.message}</div>`;
         }
     }
 
@@ -34,7 +34,7 @@ export async function handleInventory(request, env, user, renderLayout) {
         <div class="box-title">🛍️ Túi đồ và Vật phẩm của tôi</div>
         <div class="box-content">
             <div style="background: #151515; padding: 8px; font-size: 11px; margin-bottom: 8px; color: #aaa;">
-                💡 Nơi lưu trữ các khung avatar, hình ảnh Photoshop, chữ hiệu ứng từ thư mục <code>/images/users</code> để gắn vào nick.
+                💡 Kho lưu trữ các hình ảnh, khung avatar, hiệu ứng Photoshop từ thư mục <code>/images/users</code> để gắn vào tài khoản.
             </div>
 
             ${message}
@@ -42,7 +42,7 @@ export async function handleInventory(request, env, user, renderLayout) {
             <div style="font-size: 12px; font-weight: bold; color: #ffcc00; margin-bottom: 6px;">🖼️ Khung Avatar đang sở hữu:</div>
             <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 12px;">
                 <div style="background: #141414; border: 1px solid #333; padding: 8px; text-align: center;">
-                    <img src="${user.avatar || 'https://i.imgur.com/7gXvS6v.png'}" width="40" height="40" style="border-radius: 50%; border: 2px solid #ffcc00; margin-bottom: 4px;">
+                    <img src="${user.avatar || 'https://i.imgur.com/7gXvS6v.png'}" width="40" height="40" style="border-radius: 50%; border: 2px solid #ffcc00; margin-bottom: 4px; object-fit: cover;">
                     <div style="font-size: 11px; color: #fff;">Khung Mặc định</div>
                     <form method="POST" style="margin-top: 6px;">
                         <input type="hidden" name="action" value="equip">
@@ -52,7 +52,7 @@ export async function handleInventory(request, env, user, renderLayout) {
                     </form>
                 </div>
                 <div style="background: #141414; border: 1px solid #333; padding: 8px; text-align: center;">
-                    <img src="https://i.imgur.com/7gXvS6v.png" width="40" height="40" style="border-radius: 50%; border: 2px solid #00ff00; margin-bottom: 4px;">
+                    <img src="https://i.imgur.com/7gXvS6v.png" width="40" height="40" style="border-radius: 50%; border: 2px solid #00ff00; margin-bottom: 4px; object-fit: cover;">
                     <div style="font-size: 11px; color: #fff;">Khung Photoshop VIP</div>
                     <form method="POST" style="margin-top: 6px;">
                         <input type="hidden" name="action" value="equip">
