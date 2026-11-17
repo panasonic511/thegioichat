@@ -111,6 +111,10 @@ export default {
           user = await env.DB.prepare(
             'SELECT * FROM users WHERE id = ? AND password_hash = ?'
           ).bind(parseInt(account, 10) || 0, hash).first();
+        } else if (loginType === 'gmail') {
+          user = await env.DB.prepare(
+            'SELECT * FROM users WHERE email = ? AND password_hash = ?'
+          ).bind(account.trim().toLowerCase(), hash).first();
         } else {
           user = await env.DB.prepare(
             'SELECT * FROM users WHERE username = ? AND password_hash = ?'
