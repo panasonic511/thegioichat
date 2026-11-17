@@ -6,21 +6,59 @@
   <title>Thế Giới Chat - Wap Chát, Kết Bạn, Giải Trí</title>
   <link rel="stylesheet" href="/css/login.css" />
   <link rel="stylesheet" href="/style.css" />
+  <style>
+    /* Bổ sung CSS chuẩn đồng bộ theo ảnh mẫu WAP Pro */
+    .wap-main-header {
+      background: linear-gradient(180deg, #2b2b2b 0%, #141414 100%);
+      text-align: center;
+      padding: 10px 8px;
+      border-bottom: 1px solid #2a2a2a;
+      cursor: pointer;
+    }
+    .main-nav-icons {
+      display: flex;
+      background-color: #0c0c0c;
+      border-bottom: 1px solid #222;
+      justify-content: space-around;
+      padding: 6px 0;
+    }
+    .nav-icon-item {
+      text-align: center;
+      color: #e5e7eb;
+      font-size: 11px;
+      text-decoration: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+    }
+    .nav-icon-item span.icon { font-size: 16px; }
+    .nav-icon-item:hover { color: #f59e0b; }
+    
+    .member-info-box {
+      background-color: #0a0a0a;
+      padding: 8px 12px;
+      border-bottom: 1px solid #222;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+  </style>
 </head>
 <body>
   <div class="wap-wrapper">
-    <!-- BANNER THƯƠNG HIỆU CHUNG -->
-    <header class="wap-banner" onclick="navigate('home')">
-      <div class="banner-title">THẾ GIỚI CHAT</div>
-      <div class="banner-sub">
-        <span class="c-blue">Wap chát</span> - <span class="c-yellow">Kết bạn</span> - <span class="c-green">Giải trí</span>
-      </div>
-    </header>
-
+    
     <!-- =================================================================
-         GIAO DIỆN 1: KHI CHƯA ĐĂNG NHẬP (GIỐNG HỆT HÌNH TRANG /LOGIN)
+         1. GIAO DIỆN KHI CHƯA ĐĂNG NHẬP (GIỮ NGUYÊN FORM ĐĂNG NHẬP)
          ================================================================= -->
     <div id="guest-view">
+      <header class="wap-banner" onclick="navigate('home')">
+        <div class="banner-title">THẾ GIỚI CHAT</div>
+        <div class="banner-sub">
+          <span class="c-blue">Wap chát</span> - <span class="c-yellow">Kết bạn</span> - <span class="c-green">Giải trí</span>
+        </div>
+      </header>
+
       <nav class="wap-breadcrumb">
         🏠 <a href="/" class="active-link">Trang chủ</a> · <a href="/login">Đăng nhập</a> · <a href="/register">Đăng ký</a>
       </nav>
@@ -67,43 +105,70 @@
           </form>
         </div>
       </main>
+
+      <footer class="wap-footer">
+        <div class="footer-links">
+          🏠 <a href="/">Trang chủ</a> · <a href="javascript:void(0)">Điều khoản</a> · <a href="javascript:void(0)">Liên hệ</a>
+        </div>
+        <div class="footer-info" style="text-align: center; padding: 8px; font-size: 11.5px; color: #6b7280;">
+          Copyright © 2026 - Thế Giới Chat
+        </div>
+      </footer>
     </div>
 
+
     <!-- =================================================================
-         GIAO DIỆN 2: KHI ĐÃ ĐĂNG NHẬP THÀNH CÔNG (MẠNG XÃ HỘI WAP)
+         2. GIAO DIỆN KHI ĐÃ ĐĂNG NHẬP (CHUẨN WAP PRO GIỐNG ẢNH MẪU)
          ================================================================= -->
     <div id="member-view" class="hidden">
-      <!-- Thanh trạng thái thành viên -->
-      <div id="user-mini-bar" class="wap-breadcrumb"></div>
-
-      <!-- Thanh Menu chính -->
-      <nav class="top-nav">
-        <a href="javascript:void(0)" onclick="navigate('home')" id="nav-home" class="active">🏠 Home</a>
-        <a href="javascript:void(0)" onclick="navigate('online')" id="nav-online">🟢 Trực tuyến</a>
-        <a href="javascript:void(0)" onclick="navigate('feed')" id="nav-feed">📰 Bảng tin</a>
-        <a href="javascript:void(0)" onclick="navigate('notifications')" id="nav-notifications">
-          🔔 Thông báo <span id="badge-notif" class="badge hidden">0</span>
-        </a>
-        <a href="javascript:void(0)" onclick="navigate('messages')" id="nav-messages">
-          ✉️ Tin nhắn <span id="badge-msg" class="badge hidden">0</span>
-        </a>
-        <div class="menu-dropdown-wrap">
-          <a href="javascript:void(0)" onclick="toggleMainMenu()" id="nav-menu">☰ Menu ▾</a>
-          <div id="main-dropdown" class="dropdown-menu hidden">
-            <a href="javascript:void(0)" onclick="navigate('profile')">👤 Trang cá nhân</a>
-            <a href="javascript:void(0)" onclick="navigate('search')">🔍 Tìm kiếm nick</a>
-            <a href="javascript:void(0)" onclick="navigate('friends')">🤝 Bạn bè</a>
-            <a href="javascript:void(0)" onclick="navigate('shop')">🛒 Cửa hàng</a>
-            <a href="javascript:void(0)" onclick="navigate('forum')">💬 Diễn đàn</a>
-            <a href="javascript:void(0)" onclick="navigate('games')">🎮 Khu giải trí</a>
-            <a href="javascript:void(0)" onclick="navigate('settings')">⚙️ Cài đặt</a>
-            <a href="javascript:void(0)" id="menu-admin-link" class="admin-link hidden" onclick="navigate('admin')">🛡️ Quản lý Admin/BQT</a>
-            <a href="javascript:void(0)" id="menu-logout-link" class="danger-link hidden" onclick="logout()">🚪 Đăng xuất</a>
-          </div>
+      
+      <!-- Banner THẾ GIỚI CHAT ở trên cùng -->
+      <header class="wap-main-header" onclick="navigate('home')">
+        <div class="banner-title" style="font-size: 19px; font-weight: 900; color: #e2e8f0; letter-spacing: 1px;">THẾ GIỚI CHAT</div>
+        <div class="banner-sub" style="font-size: 11.5px; margin-top: 2px;">
+          <span class="c-blue">Wap chát</span> - <span class="c-yellow">Kết bạn</span> - <span class="c-green">Giải trí</span>
         </div>
+      </header>
+
+      <!-- Thanh menu icon ngang (Home, Trực tuyến, Bảng tin, Thông báo, Tin nhắn, Menu) -->
+      <nav class="main-nav-icons">
+        <a href="javascript:void(0)" onclick="navigate('home')" class="nav-icon-item">
+          <span class="icon">🏠</span><span>Home</span>
+        </a>
+        <a href="javascript:void(0)" onclick="navigate('online')" class="nav-icon-item">
+          <span class="icon">🟢</span><span>Trực tuyến</span>
+        </a>
+        <a href="javascript:void(0)" onclick="navigate('feed')" class="nav-icon-item">
+          <span class="icon">📰</span><span>Bảng tin</span>
+        </a>
+        <a href="javascript:void(0)" onclick="navigate('notifications')" class="nav-icon-item">
+          <span class="icon">🔔</span><span>Thông báo <span id="badge-notif" class="badge hidden">0</span></span>
+        </a>
+        <a href="javascript:void(0)" onclick="navigate('messages')" class="nav-icon-item">
+          <span class="icon">✉️</span><span>Tin nhắn <span id="badge-msg" class="badge hidden">0</span></span>
+        </a>
+        <a href="javascript:void(0)" onclick="toggleMainMenu()" class="nav-icon-item" id="nav-menu">
+          <span class="icon">☰</span><span>Menu ▾</span>
+        </a>
       </nav>
 
-      <!-- Thanh phụ thời gian & liên kết nhanh -->
+      <!-- Menu Dropdown mở rộng khi bấm nút Menu -->
+      <div id="main-dropdown" class="dropdown-menu hidden" style="position: relative; width: 100%;">
+        <a href="javascript:void(0)" onclick="navigate('profile')">👤 Trang cá nhân</a>
+        <a href="javascript:void(0)" onclick="navigate('search')">🔍 Tìm kiếm nick</a>
+        <a href="javascript:void(0)" onclick="navigate('friends')">🤝 Bạn bè</a>
+        <a href="javascript:void(0)" onclick="navigate('shop')">🛒 Cửa hàng</a>
+        <a href="javascript:void(0)" onclick="navigate('forum')">💬 Diễn đàn</a>
+        <a href="javascript:void(0)" onclick="navigate('games')">🎮 Khu giải trí</a>
+        <a href="javascript:void(0)" onclick="navigate('settings')">⚙️ Cài đặt</a>
+        <a href="javascript:void(0)" id="menu-admin-link" class="admin-link hidden" onclick="navigate('admin')">🛡️ Quản lý Admin/BQT</a>
+        <a href="javascript:void(0)" id="menu-logout-link" class="danger-link hidden" onclick="logout()">🚪 Đăng xuất</a>
+      </div>
+
+      <!-- Khung thông tin thành viên đăng nhập & số Xu -->
+      <div id="user-mini-bar" class="member-info-box"></div>
+
+      <!-- THANH ĐỒNG HỒ & LỐI TẮT NHANH -->
       <div class="sub-bar">
         <div class="sub-left" id="live-clock">⏰ 00:00:00</div>
         <div class="sub-right">
@@ -113,7 +178,7 @@
         </div>
       </div>
 
-      <!-- Lưới 6 mục chức năng -->
+      <!-- BỐ CỤC 6 MỤC CHỨC NĂNG CHIA ĐÔI (Đã loại bỏ hoàn toàn khối Phòng chat) -->
       <div class="quick-grid">
         <div class="grid-col">
           <a href="javascript:void(0)" onclick="navigate('forum')" class="grid-item">💬 Diễn đàn</a>
@@ -127,7 +192,7 @@
         </div>
       </div>
 
-      <!-- Khu vực thông báo BQT -->
+      <!-- KHU VỰC THÔNG BÁO TỪ BAN QUẢN TRỊ -->
       <section class="wap-section">
         <div class="section-bar">
           <span>📢 Thông báo từ Ban Quản Trị</span>
@@ -138,22 +203,23 @@
         </div>
       </section>
 
-      <!-- Nội dung động của Wap -->
+      <!-- KHU VỰC NỘI DUNG ĐỘNG KHI CHUYỂN TRANG -->
       <main id="main-view" class="wap-section"></main>
+
+      <!-- FOOTER THÀNH VIÊN -->
+      <footer class="wap-footer">
+        <div class="footer-links">
+          🏠 <a href="/">Trang chủ</a> · <a href="javascript:void(0)" onclick="navigate('levels')">Cấp độ</a> · <a href="javascript:void(0)" onclick="navigate('ranking')">Bảng xếp hạng</a>
+        </div>
+        <div class="footer-info" style="text-align: center; padding: 8px; font-size: 11.5px; color: #6b7280;">
+          Copyright © 2026 - Thế Giới Chat
+        </div>
+      </footer>
     </div>
 
-    <!-- FOOTER CHUNG (GIỐNG HỆT HÌNH) -->
-<footer class="wap-footer">
-      <div class="footer-links">
-        🏠 <a href="/">Trang chủ</a> · <a href="javascript:void(0)">Điều khoản</a> · <a href="javascript:void(0)">Liên hệ</a>
-      </div>
-      <div class="footer-info" style="text-align: center; padding: 8px; font-size: 11.5px; color: #6b7280;">
-        Copyright © 2026 - Thế Giới Chat
-      </div>
-    </footer>
   </div>
 
-  <!-- NẠP CÁC MÔ-ĐUN JS -->
+  <!-- NẠP CÁC MÔ-ĐUN JS CHÍNH -->
   <script src="/js/auth.js"></script>
   <script src="/js/feed.js"></script>
   <script src="/js/social.js"></script>
