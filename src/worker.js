@@ -5,7 +5,7 @@ import { handleProfile } from './routes/profile.js';
 import { handleLevel } from './routes/level.js';
 import { handleShop } from './routes/shop.js';
 import { handleShopFrames } from './routes/shop_frames.js';
-import { handleInventory } from './routes/inventory.js'; // <-- Thêm dòng này
+import { handleInventory } from './routes/inventory.js';
 import { handleMailBox } from './routes/mail_box.js';
 import { handleMailChat } from './routes/mail_chat.js';
 import { handleMailNotification } from './routes/mail_notification.js';
@@ -188,7 +188,7 @@ export default {
     if (path === '/profile/level') return await handleLevel(request, env, user, renderLayout);
     if (path === '/shop') return await handleShop(request, env, user, renderLayout);
     if (path === '/shop/avatar-frames') return await handleShopFrames(request, env, user, renderLayout);
-    if (path === '/shop/inventory') return await handleInventory(request, env, user, renderLayout); // <-- Thêm tuyến đường này
+    if (path === '/shop/inventory') return await handleInventory(request, env, user, renderLayout);
     if (path === '/mail/box') return await handleMailBox(request, env, user, renderLayout);
     if (path === '/mail/chat') return await handleMailChat(request, env, user, renderLayout, url);
     if (path === '/mail/notification') return await handleMailNotification(request, env, user, renderLayout);
