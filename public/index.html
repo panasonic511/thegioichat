@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Thế Giới Chat - WAP Mạng Xã Hội</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="wap-container">
+    <!-- HEADER LOGO & TRẠNG THÁI TÀI KHOẢN -->
+    <header class="wap-header">
+      <div class="logo" onclick="navigate('home')">🌐 THẾ GIỚI CHAT</div>
+      <div id="user-mini-bar" class="user-mini-bar">
+        <button class="btn-xs btn-primary" onclick="openAuthModal('login')">Đăng nhập</button>
+        <button class="btn-xs" onclick="openAuthModal('register')">Đăng ký</button>
+      </div>
+    </header>
+
+    <!-- 1. THANH MENU CHÍNH TRÊN CÙNG -->
+    <nav class="top-nav">
+      <a href="javascript:void(0)" onclick="navigate('home')" id="nav-home" class="active">🏠 Home</a>
+      <a href="javascript:void(0)" onclick="navigate('online')" id="nav-online">🟢 Trực tuyến</a>
+      <a href="javascript:void(0)" onclick="navigate('feed')" id="nav-feed">📰 Bảng tin</a>
+      <a href="javascript:void(0)" onclick="navigate('notifications')" id="nav-notifications">
+        🔔 Thông báo <span id="badge-notif" class="badge hidden">0</span>
+      </a>
+      <a href="javascript:void(0)" onclick="navigate('messages')" id="nav-messages">
+        ✉️ Tin nhắn <span id="badge-msg" class="badge hidden">0</span>
+      </a>
+      <div class="menu-dropdown-wrap">
+        <a href="javascript:void(0)" onclick="toggleMainMenu()" id="nav-menu">☰ Menu ▾</a>
+        <div id="main-dropdown" class="dropdown-menu hidden">
+          <a href="javascript:void(0)" onclick="navigate('profile')">👤 Trang cá nhân</a>
+          <a href="javascript:void(0)" onclick="navigate('search')">🔍 Tìm kiếm nick</a>
+          <a href="javascript:void(0)" onclick="navigate('friends')">🤝 Bạn bè</a>
+          <a href="javascript:void(0)" onclick="navigate('shop')">🛒 Cửa hàng</a>
+          <a href="javascript:void(0)" onclick="navigate('forum')">💬 Diễn đàn</a>
+          <a href="javascript:void(0)" onclick="navigate('games')">🎮 Khu giải trí</a>
+          <a href="javascript:void(0)" onclick="navigate('settings')">⚙️ Cài đặt</a>
+          <a href="javascript:void(0)" id="menu-admin-link" class="admin-link hidden" onclick="navigate('admin')">🛡️ Quản lý Admin/BQT</a>
+          <a href="javascript:void(0)" id="menu-logout-link" class="danger-link hidden" onclick="logout()">🚪 Đăng xuất</a>
+        </div>
+      </div>
+    </nav>
+
+    <!-- 2. THANH PHỤ DƯỚI MENU: THỜI GIAN BÊN TRÁI | CÁ NHÂN, TÌM ID, BXH BÊN PHẢI -->
+    <div class="sub-bar">
+      <div class="sub-left" id="live-clock">⏰ 00:00:00</div>
+      <div class="sub-right">
+        <a href="javascript:void(0)" onclick="navigate('profile')">Trang cá nhân</a> |
+        <a href="javascript:void(0)" onclick="navigate('search')">Tìm kiếm ID</a> |
+        <a href="javascript:void(0)" onclick="navigate('ranking')">Bảng xếp hạng</a>
+      </div>
+    </div>
+
+    <!-- 3. LƯỚI 6 MỤC: 3 MỤC TRÁI - 3 MỤC PHẢI -->
+    <div class="quick-grid">
+      <div class="grid-col">
+        <a href="javascript:void(0)" onclick="navigate('forum')" class="grid-item">💬 Diễn đàn</a>
+        <a href="javascript:void(0)" onclick="navigate('levels')" class="grid-item">📊 Bảng cấp độ</a>
+        <a href="javascript:void(0)" onclick="navigate('stats')" class="grid-item">📈 Thống kê</a>
+      </div>
+      <div class="grid-col">
+        <a href="javascript:void(0)" onclick="navigate('friends')" class="grid-item">🤝 Bạn bè</a>
+        <a href="javascript:void(0)" onclick="navigate('settings')" class="grid-item">⚙️ Cài đặt</a>
+        <a href="javascript:void(0)" onclick="navigate('games')" class="grid-item">🎮 Khu giải trí</a>
+      </div>
+    </div>
+
+    <!-- 4. KHU VỰC THÔNG BÁO BQT (CẤP ĐỘ >= 50 ĐƯỢC ĐĂNG & SỬA) -->
+    <section class="wap-box announcement-box">
+      <div class="box-header">
+        <span>📢 THÔNG BÁO TỪ BAN QUẢN TRỊ</span>
+        <button id="btn-add-announcement" class="btn-xs btn-gold hidden" onclick="openAnnouncementForm()">+ Đăng/Sửa TB</button>
+      </div>
+      <div id="announcement-list" class="box-content">
+        <div class="muted">Đang tải thông báo...</div>
+      </div>
+    </section>
+
+    <!-- 5. KHUNG NỘI DUNG ĐỘNG CHO TỪNG TRANG / TỪNG MỤC -->
+    <main id="main-view" class="wap-box">
+      <!-- Nội dung từng trang sẽ được JS nạp vào đây để giữ index.html gọn nhẹ -->
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="wap-footer">
+      © 2026 Thế Giới Chat • Nền tảng WAP Cloudflare D1
+    </footer>
+  </div>
+
+  <!-- MODAL ĐĂNG NHẬP / ĐĂNG KÝ / ĐĂNG NHẬP BẰNG ID -->
+  <div id="auth-modal" class="modal-backdrop hidden">
+    <div class="modal-box">
+      <div class="box-header">
+        <span id="auth-modal-title">ĐĂNG NHẬP THẾ GIỚI CHAT</span>
+        <button class="btn-xs" onclick="closeAuthModal()">✖</button>
+      </div>
+      <div class="auth-tabs">
+        <button id="tab-login-user" class="active" onclick="switchAuthTab('login')">Tên đăng nhập</button>
+        <button id="tab-login-id" onclick="switchAuthTab('id')">Đăng nhập bằng ID</button>
+        <button id="tab-register" onclick="switchAuthTab('register')">Đăng ký</button>
+      </div>
+      <form id="auth-form" onsubmit="handleAuthSubmit(event)" class="wap-form">
+        <div id="field-display-name" class="form-group hidden">
+          <label>Tên hiển thị (Tiếng Việt):</label>
+          <input type="text" id="auth-display-name" placeholder="Ví dụ: Hoàng Tử Bóng Đêm" />
+        </div>
+        <div class="form-group">
+          <label id="label-account">Tên đăng nhập:</label>
+          <input type="text" id="auth-account" required placeholder="Nhập tên tài khoản..." />
+        </div>
+        <div class="form-group">
+          <label>Mật khẩu:</label>
+          <input type="password" id="auth-password" required placeholder="Nhập mật khẩu..." />
+        </div>
+        <div id="auth-error" class="error-text hidden"></div>
+        <button type="submit" id="auth-submit-btn" class="btn-block btn-primary">Đăng Nhập</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- NẠP CÁC MÔ-ĐUN JS TÁCH BIỆT -->
+  <script src="/js/auth.js"></script>
+  <script src="/js/feed.js"></script>
+  <script src="/js/social.js"></script>
+  <script src="/js/admin.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
