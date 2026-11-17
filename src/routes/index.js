@@ -47,12 +47,14 @@ export async function handleIndex(request, env, user, renderLayout) {
         announcements = { results: [] };
     }
 
+    const defaultAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/><path d='M20 88 C20 65, 80 65, 80 88' fill='%2300ff00'/></svg>";
+    const currentAvatar = (user.avatar && !user.avatar.includes('7gXvS6v')) ? user.avatar : defaultAvatar;
+
     const content = `
-    <!-- Khung thông tin cá nhân: Avatar, tên, xu và chức vụ -->
     <div class="box" style="margin-bottom: 8px; background: #0d0d0d; border: 1px solid #333;">
         <div class="box-content" style="display: flex; align-items: center; justify-content: space-between; padding: 8px;">
             <div style="display: flex; align-items: center;">
-                <img src="${user.avatar || 'https://i.imgur.com/7gXvS6v.png'}" width="36" height="36" style="border-radius: 50%; border: 1px solid #555; margin-right: 8px; object-fit: cover;">
+                <a href="/profile"><img src="${currentAvatar}" width="38" height="38" style="border-radius: 50%; border: 1px solid #00ff00; margin-right: 8px; object-fit: cover; display: block;"></a>
                 <div>
                     <div>
                         <a href="/profile" style="font-weight: bold; color: #00ff00;">${user.display_name}</a> 
@@ -72,7 +74,6 @@ export async function handleIndex(request, env, user, renderLayout) {
         </div>
     </div>
 
-    <!-- Phòng chát -->
     <div class="box">
         <div class="box-title">🟢 Phòng chát</div>
         <div class="box-content" style="padding: 6px;">
@@ -85,13 +86,12 @@ export async function handleIndex(request, env, user, renderLayout) {
         </div>
     </div>
 
-    <!-- Menu hệ thống -->
     <div class="box">
         <div class="box-title">≡ Menu</div>
         <div class="box-content">
             <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #222; padding-bottom: 6px; margin-bottom: 6px; font-size: 11px; color: #aaa;">
                 <div>
-                    <b style="color: #fff; font-size: 13px;">04:31</b><br>
+                    <b style="color: #fff; font-size: 13px;">05:48</b><br>
                     Thứ Tư - 18/11/2026
                 </div>
                 <div style="text-align: right; line-height: 1.6;">
@@ -112,7 +112,6 @@ export async function handleIndex(request, env, user, renderLayout) {
         </div>
     </div>
 
-    <!-- Thông báo hệ thống -->
     <div class="box">
         <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
             <span>📢 Thông báo</span>
