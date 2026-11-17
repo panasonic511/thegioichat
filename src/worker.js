@@ -28,35 +28,41 @@ function renderLayout(title, content, user) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${title} - Thế Giới Chat</title>
     <style>
+        /* Sử dụng font chữ chuẩn, nét mảnh gọn gàng giống trang mẫu */
         body { 
             background: #000000; 
             color: #00ff00; 
-            font-family: monospace, Tahoma, Arial, sans-serif; 
+            font-family: Arial, Tahoma, sans-serif; 
             margin: 0; 
             padding: 0; 
-            font-size: 13px;
+            font-size: 12px;
             line-height: 1.4;
         }
+        
+        /* Header Banner tối ưu */
         .header { 
-            background: #111111; 
+            background: linear-gradient(to bottom, #222, #000); 
             text-align: center; 
-            padding: 8px; 
+            padding: 10px; 
             border-bottom: 2px solid #333333; 
         }
         .header h1 { 
-            color: #00ff00; 
+            color: #ffffff; 
             margin: 0; 
-            font-size: 20px; 
+            font-size: 18px; 
             font-weight: bold;
-            text-shadow: 0 0 5px #00ff00; 
+            letter-spacing: 1px;
+            text-shadow: 0 0 8px #00ff00; 
         }
         .slogan { 
             color: #ffcc00; 
-            font-size: 11px; 
-            margin-top: 2px;
+            font-size: 10px; 
+            margin-top: 3px;
         }
+
+        /* User Panel phía trên */
         .user-panel { 
-            background: #0a0a0a; 
+            background: #0d0d0d; 
             padding: 6px 10px; 
             border-bottom: 1px solid #222; 
             display: flex; 
@@ -64,26 +70,32 @@ function renderLayout(title, content, user) {
             justify-content: space-between; 
             font-size: 12px; 
         }
+
+        /* Thanh Menu điều hướng */
         .nav-bar { 
             background: #111111; 
             text-align: center; 
             padding: 6px 4px; 
             border-bottom: 1px solid #333333; 
-            font-size: 12px; 
+            font-size: 11px; 
         }
         .nav-bar a { 
             color: #00ff00; 
             text-decoration: none; 
-            margin: 0 4px;
+            margin: 0 5px;
         }
         .nav-bar a:hover { 
             text-decoration: underline; 
         }
+
+        /* Khung chứa nội dung chính */
         .container { 
             padding: 6px; 
             max-width: 600px; 
             margin: 0 auto; 
         }
+
+        /* Các Box giao diện chuẩn wap */
         .box { 
             background: #0d0d0d; 
             border: 1px solid #333333; 
@@ -91,9 +103,9 @@ function renderLayout(title, content, user) {
             border-radius: 0px; 
         }
         .box-title { 
-            background: #1a1a1a; 
+            background: #151515; 
             color: #00ff00; 
-            padding: 5px 8px; 
+            padding: 6px 8px; 
             font-weight: bold; 
             border-bottom: 1px solid #333333; 
             font-size: 12px; 
@@ -101,17 +113,21 @@ function renderLayout(title, content, user) {
         .box-content { 
             padding: 8px; 
         }
+
+        /* Liên kết chung */
         a { color: #00ff00; text-decoration: none; }
         a:hover { text-decoration: underline; }
+
+        /* Nút bấm (Button) */
         .btn { 
-            background: #222222; 
+            background: #1c1c1c; 
             color: #00ff00; 
-            border: 1px solid #555555; 
+            border: 1px solid #444444; 
             padding: 4px 10px; 
             cursor: pointer; 
-            border-radius: 0px; 
-            font-family: monospace;
-            font-size: 12px; 
+            border-radius: 2px; 
+            font-family: Arial, sans-serif;
+            font-size: 11px; 
             font-weight: bold;
             display: inline-block; 
             text-align: center; 
@@ -120,6 +136,8 @@ function renderLayout(title, content, user) {
             background: #333333; 
             border-color: #00ff00; 
         }
+
+        /* Footer chân trang */
         .footer { 
             text-align: center; 
             padding: 10px; 
