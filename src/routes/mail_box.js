@@ -1,61 +1,45 @@
+import { renderUser } from '../utils/userStyle.js';
+
 export async function handleMailBox(request, env, user, renderLayout) {
-    let messages = { results: [] };
-    
+    let partners = { results: [] };
     try {
-        // Kiểm tra xem bảng messages đã tồn tại hoặc có dữ liệu hay chưa
-        messages = await env.DB.prepare(`
-            SELECT m.*, u.display_name, u.avatar, u.role, u.level 
-            FROM messages m 
-            JOIN users u ON (m.sender_id = u.id OR m.receiver_id = u.id) 
+        // Lấy danh sách những người đã từng nhắn tin với user hiện tại
+        partners = await env.DB.prepare(`
+            SELECT DISTINCT u.id, u.display_name, u.avatar, u.role, u.level, u.name_color, u.name_glow, u.name_border, u.name_border_glow, u.border_color, u.avatar_glow
+            FROM users u
+            JOIN messages m ON (u.id = m.sender_id OR u.id = m.receiver_id)
             WHERE (m.sender_id = ? OR m.receiver_id = ?) AND u.id != ?
-            ORDER BY m.id DESC
         `).bind(user.id, user.id, user.id).all();
-    } catch (e) {
-        // Nếu bảng chưa có hoặc lỗi truy vấn, tự động trả về mảng rỗng để không bị sập Worker
-        messages = { results: [] };
-    }
+    } catch (e) {}
 
     const content = `
     <div class="box">
-        <div class="box-title">✉️ Hộp thoại chính</div>
-        <div class="box-content" style="padding: 5px;">
-            <div style="background: #1a1a1a; padding: 8px; border-bottom: 1px solid #333; font-size: 11px; color: #ffcc00; margin-bottom: 8px;">
-                💡 Quản lý tin nhắn trực tuyến và trò chuyện 1-1.
-            </div>
-
-            <div id="conversation-list">
-                ${!messages.results || messages.results.length === 0 ? 
-                    '<div style="text-align: center; color: #888; padding: 20px;">Chưa có cuộc trò chuyện nào! Hãy vào trang cá nhân của thành viên khác để bắt đầu nhắn tin.</div>' : 
-                    messages.results.map(msg => `
-                    <div style="display: flex; align-items: center; border-bottom: 1px solid #222; padding: 8px 5px;">
-                        <img src="${msg.avatar || 'https://i.imgur.com/7gXvS6v.png'}" width="36" height="36" style="border-radius: 50%; margin-right: 10px;">
-                        <div style="flex-grow: 1; overflow: hidden;">
-                            <div><b>${msg.display_name || 'Thành viên'}</b> <span style="font-size: 10px; color: #888;">· ${msg.created_at || ''}</span></div>
-                            <div style="font-size: 12px; color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${msg.message || ''}</div>
+        <div class="box-title">✉️ Hộp thư tin nhắn</div>
+        <div class="box-content" style="padding: 4px;">
+            ${partners.results.length === 0 ? '<div style="text-align: center; color: #888; padding: 20px;">Hộp thư trống. Hãy tìm bạn bè để nhắn tin!</div>' :
+                partners.results.map(p => {
+                    const pUI = renderUser(p);
+                    return `
+                    <div style="border-bottom: 1px solid #222; padding: 8px; display: flex; align-items: center; justify-content: space-between;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <div style="width: 32px; height: 32px;">
+                                <img src="${p.avatar && !p.avatar.includes('7gXvS6v') ? p.avatar : 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'><rect width=\'100\' height=\'100\' fill=\'%231a1a1a\'/><circle cx=\'50\' cy=\'38\' r=\'18\' fill=\'%2300ff00\'/></svg>'}" width="32" height="32" style="${pUI.avatarStyle} display:block;">
+                            </div>
+                            <div>
+                                <a href="/profile?user=${p.id}" style="${pUI.nameStyle}">${p.display_name}</a> <span style="color:#ffcc00; font-size:10px;">[Lv.${p.level}]</span>
+                            </div>
                         </div>
-                        <a href="/mail/chat?with=${msg.sender_id === user.id ? msg.receiver_id : msg.sender_id}" class="btn" style="padding: 4px 10px; font-size: 11px;">Hộp thoại</a>
-                    </div>
-                `).join('')}
-            </div>
+                        <div>
+                            <a href="/mail/chat?user=${p.id}" class="btn" style="background: #0055ff; color: #fff; padding: 3px 8px; font-size: 10px;">Mở chat 💬</a>
+                        </div>
+                    </div>`;
+                }).join('')}
         </div>
     </div>
-    <div style="text-align: center;"><a href="/">⬅️ Về trang chủ</a></div>
-
-    <script>
-        // Kiểm tra tin nhắn mới ngầm định định kỳ
-        setInterval(async () => {
-            try {
-                let res = await fetch('/api/realtime-check');
-                let data = await res.json();
-                if (data && data.has_new_message) {
-                    location.reload();
-                }
-            } catch(e) {}
-        }, 5000);
-    </script>
+    <div style="text-align: center; margin-top: 10px;"><a href="/">⬅️ Về trang chủ</a></div>
     `;
 
-    return new Response(renderLayout('Hộp thoại chính', content, user), {
+    return new Response(renderLayout('Hộp thư', content, user), {
         headers: { 'Content-Type': 'text/html;charset=UTF-8' }
     });
 }
