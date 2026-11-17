@@ -1,4 +1,4 @@
-name = "thegioichat"
+name = "thegioichat-online"
 main = "src/worker.js"
 compatibility_date = "2024-03-20"
 
@@ -10,4 +10,4 @@ run_worker_first = ["/api/*"]
 [[d1_databases]]
 binding = "DB"
 database_name = "thegioichat-db"
-database_id = "98f2938c-81a6-437f-bf4e-d28d36be5419" 
+database_id = "98f2938c-81a6-437f-bf4e-d28d36be54e1"
