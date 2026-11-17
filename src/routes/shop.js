@@ -1,12 +1,10 @@
 export async function handleShop(request, env, user, renderLayout) {
     const content = `
-    <!-- Tiêu đề & Túi đồ -->
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; padding: 0 2px;">
         <span style="font-weight: bold; color: #00ff00;">🛒 Cửa hàng Thế Giới Chat</span>
-        <a href="#" style="font-size: 11px; color: #ffcc00;">🛍️ Túi đồ của tôi</a>
+        <a href="/shop/inventory" style="font-size: 11px; color: #ffcc00;">🛍️ Túi đồ của tôi</a>
     </div>
 
-    <!-- Nạp Xu & Nạp Vàng -->
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px;">
         <a href="#" style="background: #0d0d0d; border: 1px solid #333; padding: 10px; display: block; text-decoration: none; color: inherit;">
             <div style="font-weight: bold; color: #fff; font-size: 12px; margin-bottom: 2px;">⚪ Nạp Xu</div>
@@ -18,7 +16,6 @@ export async function handleShop(request, env, user, renderLayout) {
         </a>
     </div>
 
-    <!-- Nâng cấp tài khoản -->
     <div class="box" style="margin-bottom: 8px;">
         <div class="box-title">⭐ Nâng cấp tài khoản</div>
         <div class="box-content" style="padding: 6px;">
@@ -32,13 +29,11 @@ export async function handleShop(request, env, user, renderLayout) {
         </div>
     </div>
 
-    <!-- Vật phẩm và trang trí -->
     <div class="box">
         <div class="box-title">✨ Vật phẩm và trang trí</div>
         <div class="box-content" style="padding: 6px;">
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
                 
-                <!-- Trỏ trực tiếp tới trang Khung Avatar -->
                 <a href="/shop/avatar-frames" style="background: #141414; border: 1px solid #333; padding: 8px; display: flex; justify-content: space-between; align-items: center; text-decoration: none; color: inherit;">
                     <div>
                         <div style="font-weight: bold; font-size: 11px; color: #fff;">🖼️ Khung avatar</div>
