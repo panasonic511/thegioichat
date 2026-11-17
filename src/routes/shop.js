@@ -32,13 +32,14 @@ export async function handleShop(request, env, user, renderLayout) {
         </div>
     </div>
 
-    <!-- Vật phẩm và trang trí (Lưới 2 cột giống hệt Gaubong) -->
+    <!-- Vật phẩm và trang trí -->
     <div class="box">
         <div class="box-title">✨ Vật phẩm và trang trí</div>
         <div class="box-content" style="padding: 6px;">
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
                 
-                <a href="#" style="background: #141414; border: 1px solid #333; padding: 8px; display: flex; justify-content: space-between; align-items: center; text-decoration: none; color: inherit;">
+                <!-- Trỏ trực tiếp tới trang Khung Avatar -->
+                <a href="/shop/avatar-frames" style="background: #141414; border: 1px solid #333; padding: 8px; display: flex; justify-content: space-between; align-items: center; text-decoration: none; color: inherit;">
                     <div>
                         <div style="font-weight: bold; font-size: 11px; color: #fff;">🖼️ Khung avatar</div>
                         <div style="font-size: 9px; color: #888; margin-top: 1px;">Làm nổi bật ảnh đại diện</div>
