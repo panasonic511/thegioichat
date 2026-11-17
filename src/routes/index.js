@@ -1,53 +1,92 @@
+import { handleLogin } from './auth.js';
+
 export async function handleIndex(request, env, user, renderLayout) {
-    // Lấy danh sách thông báo hệ thống mới nhất từ CSDL D1
+    // Nếu người dùng chưa đăng nhập, hiển thị form đăng nhập trực tiếp ngay tại trang chủ
+    if (!user) {
+        // Xử lý nếu người dùng bấm nút gửi form đăng nhập (POST ngay tại trang chủ)
+        if (request.method === 'POST') {
+            return await handleLogin(request, env);
+        }
+
+        const loginContent = `
+        <div class="box" style="max-width: 450px; margin: 15px auto;">
+            <div class="box-title">🔒 Đăng nhập hệ thống</div>
+            <div class="box-content">
+                <form method="POST" action="/">
+                    <label style="color:#00ff00; display:block; margin-bottom:4px;">Tên tài khoản / ID / Gmail:</label>
+                    <input type="text" name="username" required placeholder="Nhập tên đăng nhập hoặc email..." style="background: #000; color: #00ff00; border: 1px solid #444; padding: 8px; width: 100%; box-sizing: border-box; margin-bottom: 10px; font-family: Arial, sans-serif;">
+                    
+                    <label style="color:#00ff00; display:block; margin-bottom:4px;">Nhập mật khẩu:</label>
+                    <input type="password" name="password" required placeholder="Nhập mật khẩu..." style="background: #000; color: #00ff00; border: 1px solid #444; padding: 8px; width: 100%; box-sizing: border-box; margin-bottom: 10px; font-family: Arial, sans-serif;">
+                    
+                    <div style="margin-bottom: 12px; font-size: 11px;">
+                        <input type="checkbox" name="remember" style="width: auto;"> Ghi nhớ | <a href="/forgot" style="color:#ffcc00;">Quên mật khẩu</a>
+                    </div>
+                    
+                    <button type="submit" class="btn" style="width: 100%; padding: 8px; background: #0055ff; color: #fff; border: none; font-weight: bold; cursor: pointer;">Đăng nhập</button>
+                </form>
+                <div style="text-align: center; margin-top: 12px; font-size: 11px;">
+                    Hoặc chưa có tài khoản? <a href="/register" style="color: #ff5555; font-weight: bold;">Đăng kí ngay</a>
+                </div>
+            </div>
+        </div>
+        `;
+        return new Response(renderLayout('Đăng nhập', loginContent, user), {
+            headers: { 'Content-Type': 'text/html;charset=UTF-8' }
+        });
+    }
+
+    // Nếu ĐÃ ĐĂNG NHẬP: Hiển thị giao diện phòng chat và menu đầy đủ bên trong
     let announcements = { results: [] };
     try {
         announcements = await env.DB.prepare(`
             SELECT announcements.*, users.display_name, users.role, users.level 
             FROM announcements 
             JOIN users ON announcements.user_id = users.id 
-            ORDER BY announcements.id DESC LIMIT 5
+            ORDER BY announcements.id DESC 
+            LIMIT 5
         `).all();
     } catch (e) {
-        // Trường hợp bảng chưa khởi tạo dữ liệu
+        announcements = { results: [] };
     }
 
     const content = `
     <!-- Phòng chát -->
     <div class="box">
-        <div class="box-title" style="color: #00ff00;">🟢 Phòng chát</div>
-        <div class="box-content" style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; text-align: center;">
-            <a href="/game" class="chat-room-btn">🎉 Bữa tiệc <span style="color:#aaa; font-size:11px;">(2)</span></a>
-            <a href="/game" class="chat-room-btn">🎮 Trò chơi <span style="color:#aaa; font-size:11px;">(6)</span></a>
-            <a href="/game" class="chat-room-btn">💬 Giao lưu <span style="color:#aaa; font-size:11px;">(0)</span></a>
-            <a href="/game" class="chat-room-btn">🔥 Chát room <span style="color:#aaa; font-size:11px;">(0)</span></a>
+        <div class="box-title">🟢 Phòng chát</div>
+        <div class="box-content" style="padding: 6px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                <a href="#" class="btn" style="text-align: left; padding: 8px; background: #141414; border: 1px solid #333;">🎉 Bữa tiệc <span style="color:#888;">(2)</span></a>
+                <a href="#" class="btn" style="text-align: left; padding: 8px; background: #141414; border: 1px solid #333;">🎮 Trò chơi <span style="color:#888;">(6)</span></a>
+                <a href="#" class="btn" style="text-align: left; padding: 8px; background: #141414; border: 1px solid #333;">💬 Giao lưu <span style="color:#888;">(0)</span></a>
+                <a href="#" class="btn" style="text-align: left; padding: 8px; background: #141414; border: 1px solid #333;">🔥 Chát room <span style="color:#888;">(0)</span></a>
+            </div>
         </div>
     </div>
 
-    <!-- Menu hệ thống & Đồng hồ -->
+    <!-- Menu hệ thống -->
     <div class="box">
         <div class="box-title">≡ Menu</div>
-        <div class="box-content" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #222; padding-bottom: 8px; margin-bottom: 8px;">
-            <div>
-                <div id="live-clock" style="font-size: 16px; font-weight: bold; color: #fff;">03:17</div>
-                <div id="live-date" style="font-size: 11px; color: #888;">Thứ Tư - 18/11/2026</div>
+        <div class="box-content">
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #222; padding-bottom: 6px; margin-bottom: 6px; font-size: 11px; color: #aaa;">
+                <div>
+                    <b style="color: #fff; font-size: 13px;">04:24</b><br>
+                    Thứ Tư - 18/11/2026
+                </div>
+                <div style="text-align: right; line-height: 1.6;">
+                    👤 <a href="/profile">Trang cá nhân</a><br>
+                    🔍 <a href="#">Tìm kiếm ID</a><br>
+                    📊 <a href="#">Bảng xếp hạng</a>
+                </div>
             </div>
-            <div style="text-align: right; font-size: 12px;">
-                <a href="/profile">👤 Trang cá nhân</a><br>
-                <a href="/users/search">🔍 Tìm kiếm ID</a><br>
-                <a href="/profile/level">📊 Bảng xếp hạng</a>
-            </div>
-        </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; font-size: 13px;">
-            <div>
-                <div style="margin-bottom: 5px;"><a href="/forum">💬 Diễn đàn</a></div>
-                <div style="margin-bottom: 5px;"><a href="/profile/level">📊 Bảng cấp độ</a></div>
-                <div><a href="/stats">📊 Thống kê</a></div>
-            </div>
-            <div>
-                <div style="margin-bottom: 5px;"><a href="/friends">👥 Bạn bè</a></div>
-                <div style="margin-bottom: 5px;"><a href="/settings">⚙️ Cài đặt</a></div>
-                <div><a href="/game">🎮 Khu giải trí [24]</a></div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 11px;">
+                <div>💬 <a href="#">Diễn đàn</a></div>
+                <div>👥 <a href="#">Bạn bè</a></div>
+                <div>📊 <a href="/profile/level">Bảng cấp độ</a></div>
+                <div>⚙️ <a href="#">Cài đặt</a></div>
+                <div>📈 <a href="#">Thống kê</a></div>
+                <div>🎮 <a href="/game">Khu giải trí [24]</a></div>
             </div>
         </div>
     </div>
@@ -56,56 +95,26 @@ export async function handleIndex(request, env, user, renderLayout) {
     <div class="box">
         <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
             <span>📢 Thông báo</span>
-            <a href="/" style="font-size: 11px; color: #ffcc00;">🔄 Làm mới</a>
+            <a href="/" style="font-size: 10px; color: #ffcc00;">🔄 Làm mới</a>
         </div>
-        <div class="box-content" style="text-align: center; font-size: 12px;">
-            <div style="color: #ff55ff; margin-bottom: 8px; font-weight: bold;">
-                ✨ ═══════ •💖• ═══════ ✨<br>
+        <div class="box-content" style="font-size: 11px;">
+            <div style="text-align: center; color: #ff55ff; margin-bottom: 8px; font-weight: bold;">
+                ✨ ═══════ • 💖 • ═══════ ✨<br>
                 CHÀO MỪNG ĐẾN VỚI WAP THẾ GIỚI CHAT<br>
                 CHÚC M.N ONLINE VUI VẺ
             </div>
+            <hr style="border: 0; border-top: 1px dashed #333; margin: 6px 0;">
             
-            ${announcements.results.length === 0 ? `
-                <div style="border-top: 1px dashed #333; padding-top: 8px; margin-top: 8px; text-align: left;">
-                    <span style="color: #ffcc00;">[Lv.130] <span style="color: #ff5555;">Chủ Wap</span> <b>Chủ Wap</b> · Vừa xong</span>
-                    <div style="color: #fff; margin-top: 3px;">Hệ thống Thế Giới Chat đã hoạt động ổn định. Chúc mọi người tham gia vui vẻ!</div>
-                </div>
-            ` : announcements.results.map(a => `
-                <div style="border-top: 1px dashed #333; padding-top: 8px; margin-top: 8px; text-align: left;">
-                    <span style="color: #ffcc00;">[Lv.${a.level}] <span style="color: #ff5555;">${a.role}</span> <b>${a.display_name}</b> · ${a.created_at}</span>
-                    <div style="color: #fff; margin-top: 3px;">${a.content}</div>
+            ${announcements.results.length === 0 ? '<div style="color: #888; text-align: center;">Chưa có thông báo nào từ quản trị viên.</div>' : 
+                announcements.results.map(item => `
+                <div style="margin-bottom: 6px;">
+                    <span style="color: #ffcc00;">[Lv.${item.level}]</span> <b style="color: #ff5555;">${item.display_name}</b> <span style="color: yellow;">(${item.role})</span> · <span style="color: #888; font-size: 10px;">Vừa xong</span>
+                    <div style="color: #fff; margin-top: 2px;">${item.content}</div>
                 </div>
             `).join('')}
         </div>
     </div>
-
-    <style>
-        .chat-room-btn {
-            background: #1a1a1a;
-            border: 1px solid #333;
-            color: #00ff00;
-            padding: 8px;
-            text-decoration: none;
-            border-radius: 3px;
-            font-size: 13px;
-            display: block;
-        }
-        .chat-room-btn:hover {
-            background: #222;
-            border-color: #00ff00;
-        }
-    </style>
-
-    <script>
-        // Đồng hồ thời gian thực giống mẫu
-        function updateClock() {
-            const now = new Date();
-            const hours = String(now.getHours()).padStart(2, '0');
-            const minutes = String(now.getMinutes()).padStart(2, '0');
-            document.getElementById('live-clock').innerText = hours + ':' + minutes;
-        }
-        setInterval(updateClock, 1000);
-    </script>
+    <div style="text-align: center;"><a href="/logout" style="color: #ff5555;">🚪 Đăng xuất tài khoản</a></div>
     `;
 
     return new Response(renderLayout('Trang chủ', content, user), {
