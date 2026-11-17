@@ -1,7 +1,6 @@
 export async function handleInventory(request, env, user, renderLayout) {
     let message = "";
 
-    // Xử lý logic trang bị hoặc tháo vật phẩm
     if (request.method === 'POST') {
         const formData = await request.formData();
         const action = formData.get('action');
@@ -24,10 +23,9 @@ export async function handleInventory(request, env, user, renderLayout) {
                 }
                 message = `<div style="color: #ffcc00; background: #1a1a00; padding: 6px; text-align: center; margin-bottom: 8px;">⚠️ Đã tháo vật phẩm!</div>`;
             }
-            // Làm mới lại thông tin user
             user = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(user.id).first();
         } catch (e) {
-            message = `<div style="color: #ff5555; text-align: center; margin-bottom: 8px;">❌ Lỗi: ${e.message}</div>`;
+            message = `<div style="color: #ff5555; background: #1a0000; padding: 6px; text-align: center; margin-bottom: 8px;">❌ Lỗi CSDL (Bạn hãy chạy lệnh ALTER TABLE trong Cloudflare Console): ${e.message}</div>`;
         }
     }
 
@@ -36,7 +34,7 @@ export async function handleInventory(request, env, user, renderLayout) {
         <div class="box-title">🛍️ Túi đồ và Vật phẩm của tôi</div>
         <div class="box-content">
             <div style="background: #151515; padding: 8px; font-size: 11px; margin-bottom: 8px; color: #aaa;">
-                💡 Nơi lưu trữ các khung avatar, hình ảnh Photoshop, chữ hiệu ứng và các vật phẩm bạn đã mua từ cửa hàng để gắn vào nick.
+                💡 Nơi lưu trữ các khung avatar, hình ảnh Photoshop, chữ hiệu ứng từ thư mục <code>/images/users</code> để gắn vào nick.
             </div>
 
             ${message}
