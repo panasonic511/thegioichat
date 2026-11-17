@@ -2,43 +2,11 @@ export async function handleProfile(request, env, user, renderLayout, url) {
     let message = "";
     const targetId = parseInt(url.searchParams.get('user') || user.id);
 
-    // Tự động khởi tạo các bảng & cột thật nếu chưa tồn tại trong D1
-    try { await env.DB.prepare("ALTER TABLE users ADD COLUMN cover_photo TEXT;").run(); } catch(e) {}
-    try { await env.DB.prepare("ALTER TABLE users ADD COLUMN gender TEXT;").run(); } catch(e) {}
-    try { await env.DB.prepare("ALTER TABLE users ADD COLUMN relationship TEXT;").run(); } catch(e) {}
-    try { await env.DB.prepare("ALTER TABLE users ADD COLUMN province TEXT;").run(); } catch(e) {}
-    try { await env.DB.prepare("ALTER TABLE users ADD COLUMN birthday TEXT;").run(); } catch(e) {}
-    try { await env.DB.prepare("ALTER TABLE users ADD COLUMN online_minutes INTEGER DEFAULT 0;").run(); } catch(e) {}
-    try { await env.DB.prepare("ALTER TABLE users ADD COLUMN created_at TEXT;").run(); } catch(e) {}
-
-    try {
-        await env.DB.prepare(`
-            CREATE TABLE IF NOT EXISTS follows (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                follower_id INTEGER NOT NULL,
-                following_id INTEGER NOT NULL,
-                UNIQUE(follower_id, following_id)
-            );
-        `).run();
-        await env.DB.prepare(`
-            CREATE TABLE IF NOT EXISTS friends (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                friend_id INTEGER NOT NULL,
-                status TEXT DEFAULT 'accepted',
-                UNIQUE(user_id, friend_id)
-            );
-        `).run();
-        await env.DB.prepare(`
-            CREATE TABLE IF NOT EXISTS user_gifts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                sender_id INTEGER NOT NULL,
-                receiver_id INTEGER NOT NULL,
-                gift_type TEXT NOT NULL,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-        `).run();
-    } catch(e) {}
+    // Đảm bảo đủ các cột màu sắc & hiệu ứng trong DB
+    const cols = ['name_color', 'name_glow', 'name_border', 'name_border_glow', 'border_color', 'avatar_glow', 'cover_photo', 'gender', 'relationship', 'province', 'birthday', 'online_minutes', 'created_at'];
+    for (const col of cols) {
+        try { await env.DB.prepare(`ALTER TABLE users ADD COLUMN ${col} TEXT;`).run(); } catch(e) {}
+    }
 
     let profileUser = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(targetId).first();
     if (!profileUser) {
@@ -47,7 +15,6 @@ export async function handleProfile(request, env, user, renderLayout, url) {
 
     const isOwner = (targetId === user.id);
 
-    // Xử lý các hành động POST thật
     if (request.method === 'POST') {
         const formData = await request.formData();
         const action = formData.get('action');
@@ -56,7 +23,6 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             if (isOwner) {
                 if (action === 'update_cover') {
                     const coverPhoto = formData.get('cover_photo');
-                    if (!coverPhoto || coverPhoto.trim() === '') throw new Error("Vui lòng chọn ảnh bìa!");
                     await env.DB.prepare("UPDATE users SET cover_photo = ? WHERE id = ?").bind(coverPhoto.trim(), user.id).run();
                     message = `<div style="color: #00ff00; background: #001a00; border: 1px solid #005500; padding: 6px; text-align: center; margin-bottom: 8px;">✅ Cập nhật ảnh bìa thành công!</div>`;
                 } else if (action === 'delete_cover') {
@@ -64,7 +30,6 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                     message = `<div style="color: #ffcc00; background: #1a1a00; border: 1px solid #555500; padding: 6px; text-align: center; margin-bottom: 8px;">⚠️ Đã xóa ảnh bìa!</div>`;
                 } else if (action === 'update_avatar') {
                     const avatar = formData.get('avatar');
-                    if (!avatar || avatar.trim() === '') throw new Error("Vui lòng chọn ảnh đại diện!");
                     await env.DB.prepare("UPDATE users SET avatar = ? WHERE id = ?").bind(avatar.trim(), user.id).run();
                     message = `<div style="color: #00ff00; background: #001a00; border: 1px solid #005500; padding: 6px; text-align: center; margin-bottom: 8px;">✅ Cập nhật ảnh đại diện thành công!</div>`;
                 } else if (action === 'update_info') {
@@ -86,87 +51,36 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                     }
                     message = `<div style="color: #00ff00; background: #001a00; border: 1px solid #005500; padding: 6px; text-align: center; margin-bottom: 8px;">✅ Đã lưu cài đặt thông tin cá nhân!</div>`;
                 }
-            } else {
-                // Tương tác thật với thành viên khác: Follow / Unfollow / Kết bạn / Tặng quà
-                if (action === 'toggle_follow') {
-                    const exists = await env.DB.prepare("SELECT id FROM follows WHERE follower_id = ? AND following_id = ?").bind(user.id, targetId).first();
-                    if (exists) {
-                        await env.DB.prepare("DELETE FROM follows WHERE follower_id = ? AND following_id = ?").bind(user.id, targetId).run();
-                        message = `<div style="color: #ffcc00; text-align: center; margin-bottom: 6px;">Đã hủy theo dõi ${profileUser.display_name}.</div>`;
-                    } else {
-                        await env.DB.prepare("INSERT INTO follows (follower_id, following_id) VALUES (?, ?)").bind(user.id, targetId).run();
-                        message = `<div style="color: #00ff00; text-align: center; margin-bottom: 6px;">✅ Đã theo dõi ${profileUser.display_name}!</div>`;
-                    }
-                } else if (action === 'toggle_friend') {
-                    const exists = await env.DB.prepare("SELECT id FROM friends WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)").bind(user.id, targetId, targetId, user.id).first();
-                    if (exists) {
-                        await env.DB.prepare("DELETE FROM friends WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)").bind(user.id, targetId, targetId, user.id).run();
-                        message = `<div style="color: #ffcc00; text-align: center; margin-bottom: 6px;">Đã hủy kết bạn với ${profileUser.display_name}.</div>`;
-                    } else {
-                        await env.DB.prepare("INSERT INTO friends (user_id, friend_id, status) VALUES (?, ?, 'accepted')").bind(user.id, targetId).run();
-                        message = `<div style="color: #00ff00; text-align: center; margin-bottom: 6px;">✅ Đã trở thành bạn bè với ${profileUser.display_name}!</div>`;
-                    }
-                } else if (action === 'send_gift') {
-                    const giftType = formData.get('gift_type');
-                    const giftCost = 100;
-                    if ((user.coins || 0) < giftCost) {
-                        throw new Error("Bạn không đủ 100 Xu để tặng quà!");
-                    }
-                    await env.DB.prepare("UPDATE users SET coins = coins - ? WHERE id = ?").bind(giftCost, user.id).run();
-                    await env.DB.prepare("INSERT INTO user_gifts (sender_id, receiver_id, gift_type) VALUES (?, ?, ?)").bind(user.id, targetId, giftType).run();
-                    message = `<div style="color: #00ff00; text-align: center; margin-bottom: 6px;">🎁 Đã tặng quà thành công (-100 Xu)!</div>`;
-                }
             }
-
             profileUser = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(targetId).first();
         } catch (e) {
             message = `<div style="color: #ff5555; background: #1a0000; border: 1px solid #550000; padding: 6px; text-align: center; margin-bottom: 8px;">❌ Lỗi: ${e.message}</div>`;
         }
     }
 
-    // Truy vấn số liệu THẬT 100% từ D1 Database
+    // Tạo style màu sắc và hiệu ứng cho profileUser
+    const nameColor = profileUser.name_color || '#00ff00';
+    let nameStyle = `color: ${nameColor}; font-weight: bold;`;
+    let shadows = [];
+    if (profileUser.name_glow && profileUser.name_glow !== '#000000') shadows.push(`0 0 6px ${profileUser.name_glow}`);
+    if (profileUser.name_border_glow && profileUser.name_border_glow !== '#000000') shadows.push(`0 0 4px ${profileUser.name_border_glow}`);
+    if (shadows.length > 0) nameStyle += ` text-shadow: ${shadows.join(', ')};`;
+    if (profileUser.name_border && profileUser.name_border !== '#000000') nameStyle += ` -webkit-text-stroke: 0.5px ${profileUser.name_border};`;
+
+    const borderColor = profileUser.border_color || '#ffcc00';
+    let avatarStyle = `border-radius: 50%; object-fit: cover; border: 2px solid ${borderColor};`;
+    if (profileUser.avatar_glow && profileUser.avatar_glow !== '#000000') {
+        avatarStyle += ` box-shadow: 0 0 10px ${profileUser.avatar_glow};`;
+    }
+
     const followingRow = await env.DB.prepare("SELECT COUNT(*) as total FROM follows WHERE follower_id = ?").bind(targetId).first();
     const followerRow = await env.DB.prepare("SELECT COUNT(*) as total FROM follows WHERE following_id = ?").bind(targetId).first();
     const friendsRow = await env.DB.prepare("SELECT COUNT(*) as total FROM friends WHERE user_id = ? OR friend_id = ?").bind(targetId, targetId).first();
 
-    const followingCount = followingRow?.total || 0;
-    const followerCount = followerRow?.total || 0;
-    const friendsCount = friendsRow?.total || 0;
-
-    // Kiểm tra trạng thái đang follow/kết bạn nếu đang xem hồ sơ người khác
-    let isFollowing = false;
-    let isFriend = false;
-    if (!isOwner) {
-        const fCheck = await env.DB.prepare("SELECT id FROM follows WHERE follower_id = ? AND following_id = ?").bind(user.id, targetId).first();
-        const frCheck = await env.DB.prepare("SELECT id FROM friends WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)").bind(user.id, targetId, targetId, user.id).first();
-        isFollowing = !!fCheck;
-        isFriend = !!frCheck;
-    }
-
-    // Đếm quà tặng THẬT từ bảng user_gifts
-    const giftRows = await env.DB.prepare("SELECT gift_type, COUNT(*) as cnt FROM user_gifts WHERE receiver_id = ? GROUP BY gift_type").bind(targetId).all();
-    const giftCounts = { love: 0, kiss: 0, ring: 0, flower: 0 };
-    let totalGifts = 0;
-    for (const r of (giftRows.results || [])) {
-        if (giftCounts[r.gift_type] !== undefined) {
-            giftCounts[r.gift_type] = r.cnt;
-        }
-        totalGifts += r.cnt;
-    }
-
-    // Đếm tổng số bài đăng / chat thật của user (Chattop thật)
-    let postCount = 0;
-    try {
-        const pRow = await env.DB.prepare("SELECT COUNT(*) as total FROM feeds WHERE user_id = ?").bind(targetId).first();
-        postCount = pRow?.total || 0;
-    } catch(e) {}
-
     const defaultAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/><path d='M20 88 C20 65, 80 65, 80 88' fill='%2300ff00'/></svg>";
     const currentAvatar = (profileUser.avatar && !profileUser.avatar.includes('7gXvS6v')) ? profileUser.avatar : defaultAvatar;
     const hasCover = (profileUser.cover_photo && !profileUser.cover_photo.includes('7gXvS6v'));
-    const coverStyle = hasCover 
-        ? `background: url('${profileUser.cover_photo}') center/cover no-repeat;` 
-        : `background: linear-gradient(135deg, #0a1f0a 0%, #151515 50%, #051428 100%);`;
+    const coverStyle = hasCover ? `background: url('${profileUser.cover_photo}') center/cover no-repeat;` : `background: linear-gradient(135deg, #0a1f0a 0%, #151515 50%, #051428 100%);`;
 
     const content = `
     <div class="box" style="margin-bottom: 8px; border: 1px solid #333;">
@@ -189,82 +103,32 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             </div>
             ` : ''}
 
+            <!-- Avatar áp dụng style viền và hiệu ứng sáng -->
             <div style="position: relative; margin-top: -35px; margin-bottom: 4px; display: inline-block;">
-                <img src="${currentAvatar}" width="66" height="66" style="border-radius: 50%; border: 3px solid #00ff00; background: #000; object-fit: cover; display: block;">
-                
-                ${isOwner ? `
-                <button type="button" onclick="openAvatarModal()" title="Đổi ảnh đại diện" style="position: absolute; bottom: -2px; right: -2px; background: #111; color: #00ff00; border: 1px solid #00ff00; border-radius: 50%; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; box-shadow: 0 0 4px #000;">📷</button>
-                ` : ''}
+                <img src="${currentAvatar}" width="66" height="66" style="${avatarStyle} display: block;">
+                ${isOwner ? `<button type="button" onclick="openAvatarModal()" title="Đổi ảnh đại diện" style="position: absolute; bottom: -2px; right: -2px; background: #111; color: #00ff00; border: 1px solid #00ff00; border-radius: 50%; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; box-shadow: 0 0 4px #000;">📷</button>` : ''}
             </div>
             
-            <div style="font-size: 13px; font-weight: bold; color: #fff; margin-bottom: 2px;">
-                <a href="/profile?user=${profileUser.id}" style="color: #00ff00;">${profileUser.display_name}</a> 
+            <!-- Tên thành viên áp dụng đầy đủ màu sắc & hiệu ứng sáng -->
+            <div style="font-size: 13px; margin-bottom: 2px;">
+                <a href="/profile?user=${profileUser.id}" style="${nameStyle}">${profileUser.display_name}</a> 
                 <span style="color: #ffcc00; font-size: 11px;">[Lv.${profileUser.level || 1}]</span>
             </div>
             <div style="font-size: 10px; color: #aaa; margin-bottom: 8px;">
                 ID ${profileUser.id} · <span style="color: yellow;">${profileUser.role}</span>
             </div>
-
-            ${!isOwner ? `
-            <div style="padding-bottom: 8px; display: flex; justify-content: center; gap: 6px;">
-                <form method="POST" style="margin: 0;">
-                    <input type="hidden" name="action" value="toggle_follow">
-                    <button type="submit" class="btn" style="font-size: 10px; padding: 3px 8px; background: ${isFollowing ? '#333' : '#0055ff'}; color: #fff;">${isFollowing ? '✓ Đang Follow' : '+ Follow'}</button>
-                </form>
-                <form method="POST" style="margin: 0;">
-                    <input type="hidden" name="action" value="toggle_friend">
-                    <button type="submit" class="btn" style="font-size: 10px; padding: 3px 8px; background: ${isFriend ? '#333' : '#008800'}; color: #fff;">${isFriend ? '👥 Bạn bè' : '+ Kết bạn'}</button>
-                </form>
-                <a href="/mail/chat?user=${profileUser.id}" class="btn" style="font-size: 10px; padding: 3px 8px;">✉️ Nhắn tin</a>
-            </div>
-            ` : ''}
         </div>
 
         ${message}
 
-        <!-- Số liệu THẬT 100% từ database -->
         <div style="background: #141414; padding: 6px; text-align: center; border-bottom: 1px solid #333; font-size: 11px;">
-            <span style="color: #ffcc00; margin: 0 8px;">Đang Follow <b>${followingCount}</b></span> · 
-            <span style="color: #ffcc00; margin: 0 8px;">Follower <b>${followerCount}</b></span> · 
-            <span style="color: #ffcc00; margin: 0 8px;">Bạn bè <b>${friendsCount}</b></span>
+            <span style="color: #ffcc00; margin: 0 8px;">Đang Follow <b>${followingRow?.total || 0}</b></span> · 
+            <span style="color: #ffcc00; margin: 0 8px;">Follower <b>${followerRow?.total || 0}</b></span> · 
+            <span style="color: #ffcc00; margin: 0 8px;">Bạn bè <b>${friendsRow?.total || 0}</b></span>
         </div>
     </div>
 
-    <!-- Hộp Quà tặng (Số liệu THẬT từ D1 + Cho phép tặng quà thật khi xem trang người khác) -->
-    <div class="box">
-        <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
-            <span>🎁 Quà tặng</span>
-            <span style="font-size: 10px; color: #ffcc00;">Tổng: X${totalGifts}</span>
-        </div>
-        <div class="box-content" style="display: flex; justify-content: space-around; text-align: center; font-size: 10px; color: #aaa;">
-            <div>
-                <div style="font-size: 16px;">💌</div>
-                <div style="color: #ff55ff;">X${giftCounts.love}</div>
-                <div>Lời tỏ tình</div>
-                ${!isOwner ? `<form method="POST" style="margin-top:3px;"><input type="hidden" name="action" value="send_gift"><input type="hidden" name="gift_type" value="love"><button type="submit" class="btn" style="font-size:9px; padding:1px 5px;">Tặng (100 Xu)</button></form>` : ''}
-            </div>
-            <div>
-                <div style="font-size: 16px;">💋</div>
-                <div style="color: #ff55ff;">X${giftCounts.kiss}</div>
-                <div>Nụ hôn</div>
-                ${!isOwner ? `<form method="POST" style="margin-top:3px;"><input type="hidden" name="action" value="send_gift"><input type="hidden" name="gift_type" value="kiss"><button type="submit" class="btn" style="font-size:9px; padding:1px 5px;">Tặng (100 Xu)</button></form>` : ''}
-            </div>
-            <div>
-                <div style="font-size: 16px;">💍</div>
-                <div style="color: #ff55ff;">X${giftCounts.ring}</div>
-                <div>Lộ tình yêu</div>
-                ${!isOwner ? `<form method="POST" style="margin-top:3px;"><input type="hidden" name="action" value="send_gift"><input type="hidden" name="gift_type" value="ring"><button type="submit" class="btn" style="font-size:9px; padding:1px 5px;">Tặng (100 Xu)</button></form>` : ''}
-            </div>
-            <div>
-                <div style="font-size: 16px;">🌸</div>
-                <div style="color: #ff55ff;">X${giftCounts.flower}</div>
-                <div>Thích bạn</div>
-                ${!isOwner ? `<form method="POST" style="margin-top:3px;"><input type="hidden" name="action" value="send_gift"><input type="hidden" name="gift_type" value="flower"><button type="submit" class="btn" style="font-size:9px; padding:1px 5px;">Tặng (100 Xu)</button></form>` : ''}
-            </div>
-        </div>
-    </div>
-
-    <!-- Thông tin chi tiết THẬT 100% từ bảng users -->
+    <!-- Thông tin chi tiết -->
     <div class="box">
         <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
             <span>🟢 Thông tin</span>
@@ -276,15 +140,13 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             <div>📊 Level: <b style="color: #ffcc00;">${profileUser.level || 1}</b> · <a href="/profile/level" style="color: #00ff00;">Kiểm tra</a></div>
             <div>🪙 Xu: <b style="color: #00ff00;">${(profileUser.coins || 0).toLocaleString()} Xu</b></div>
             <div>👑 Vàng: <b style="color: #ffcc00;">${(profileUser.gold || 0).toLocaleString()} Vàng</b></div>
-            <div>⏰ Online: <b>${(profileUser.online_minutes || 0).toLocaleString()} phút</b></div>
-            <div>💬 Bài viết: <b>${postCount}</b></div>
             <div>🌍 Tỉnh thành: <b>${profileUser.province || 'Chưa cập nhật'}</b></div>
             <div>🎂 Sinh nhật: <b>${profileUser.birthday || 'Chưa cập nhật'}</b></div>
             <div>📅 Ngày đăng ký: <b>${profileUser.created_at || 'Thành viên hệ thống'}</b></div>
         </div>
     </div>
 
-    <!-- Popup Modal Cài đặt & Chỉnh sửa thông tin cá nhân -->
+    <!-- Modal Cài đặt thông tin -->
     ${isOwner ? `
     <div id="settings-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.88); z-index: 999; justify-content: center; align-items: center; padding: 10px; box-sizing: border-box;">
         <div style="background: #111; border: 1px solid #444; width: 100%; max-width: 400px; padding: 12px; box-sizing: border-box; max-height: 90vh; overflow-y: auto;">
@@ -294,235 +156,35 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             </div>
             <form method="POST">
                 <input type="hidden" name="action" value="update_info">
-
                 <label style="color: #00ff00; display: block; margin-bottom: 2px; font-size: 11px;">Tên hiển thị (Nickname):</label>
                 <input type="text" name="display_name" value="${profileUser.display_name || ''}" required style="width: 100%; background: #000; color: #fff; border: 1px solid #444; padding: 6px; box-sizing: border-box; margin-bottom: 8px; font-size: 11px;">
-
                 <label style="color: #00ff00; display: block; margin-bottom: 2px; font-size: 11px;">Giới tính:</label>
                 <select name="gender" style="width: 100%; background: #000; color: #fff; border: 1px solid #444; padding: 6px; box-sizing: border-box; margin-bottom: 8px; font-size: 11px;">
                     <option value="Nam" ${profileUser.gender === 'Nam' ? 'selected' : ''}>Nam</option>
                     <option value="Nữ" ${profileUser.gender === 'Nữ' ? 'selected' : ''}>Nữ</option>
                     <option value="Khác" ${profileUser.gender === 'Khác' ? 'selected' : ''}>Khác</option>
                 </select>
-
                 <label style="color: #00ff00; display: block; margin-bottom: 2px; font-size: 11px;">Tình trạng hẹn hò:</label>
                 <select name="relationship" style="width: 100%; background: #000; color: #fff; border: 1px solid #444; padding: 6px; box-sizing: border-box; margin-bottom: 8px; font-size: 11px;">
                     <option value="Đang độc thân" ${profileUser.relationship === 'Đang độc thân' ? 'selected' : ''}>Đang độc thân</option>
                     <option value="Đang hẹn hò" ${profileUser.relationship === 'Đang hẹn hò' ? 'selected' : ''}>Đang hẹn hò</option>
                     <option value="Đã kết hôn" ${profileUser.relationship === 'Đã kết hôn' ? 'selected' : ''}>Đã kết hôn</option>
-                    <option value="Phức tạp" ${profileUser.relationship === 'Phức tạp' ? 'selected' : ''}>Phức tạp</option>
                 </select>
-
                 <label style="color: #00ff00; display: block; margin-bottom: 2px; font-size: 11px;">Tỉnh / Thành phố:</label>
-                <input type="text" name="province" value="${profileUser.province || ''}" placeholder="VD: Đồng Tháp, Hồ Chí Minh..." style="width: 100%; background: #000; color: #fff; border: 1px solid #444; padding: 6px; box-sizing: border-box; margin-bottom: 8px; font-size: 11px;">
-
+                <input type="text" name="province" value="${profileUser.province || ''}" style="width: 100%; background: #000; color: #fff; border: 1px solid #444; padding: 6px; box-sizing: border-box; margin-bottom: 8px; font-size: 11px;">
                 <label style="color: #00ff00; display: block; margin-bottom: 2px; font-size: 11px;">Ngày sinh:</label>
-                <input type="text" name="birthday" value="${profileUser.birthday || ''}" placeholder="VD: 01-01-2003" style="width: 100%; background: #000; color: #fff; border: 1px solid #444; padding: 6px; box-sizing: border-box; margin-bottom: 8px; font-size: 11px;">
-
-                <label style="color: #ffcc00; display: block; margin-bottom: 2px; font-size: 11px;">Đổi mật khẩu mới (Để trống nếu không đổi):</label>
-                <input type="password" name="new_password" placeholder="Nhập mật khẩu mới..." style="width: 100%; background: #000; color: #fff; border: 1px solid #444; padding: 6px; box-sizing: border-box; margin-bottom: 10px; font-size: 11px;">
-
-                <div style="display: flex; gap: 6px;">
-                    <button type="submit" class="btn" style="background: #0055ff; color: #fff; flex: 1;">Lưu cài đặt</button>
-                    <button type="button" onclick="closeSettingsModal()" class="btn" style="background: #333; color: #ccc; flex: 1;">Đóng</button>
-                </div>
+                <input type="text" name="birthday" value="${profileUser.birthday || ''}" style="width: 100%; background: #000; color: #fff; border: 1px solid #444; padding: 6px; box-sizing: border-box; margin-bottom: 8px; font-size: 11px;">
+                <button type="submit" class="btn" style="width: 100%; background: #0055ff; color: #fff; padding: 6px;">Lưu cài đặt</button>
             </form>
         </div>
     </div>
     ` : ''}
 
-    <!-- Popup Modal Đổi Avatar (Kéo / Zoom / Cắt) -->
-    <div id="avatar-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.88); z-index: 999; justify-content: center; align-items: center; padding: 10px; box-sizing: border-box;">
-        <div style="background: #111; border: 1px solid #444; width: 100%; max-width: 380px; padding: 12px; box-sizing: border-box; text-align: center;">
-            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 6px; margin-bottom: 8px;">
-                <b style="color: #00ff00; font-size: 12px;">📷 Tùy chỉnh Ảnh đại diện</b>
-                <button type="button" onclick="closeAvatarModal()" style="background:none; border:none; color:#ff5555; font-weight:bold; cursor:pointer;">✕</button>
-            </div>
-            
-            <input type="file" id="avatar-file-picker" accept="image/*" onchange="initImageEditor(this, 'avatar-editor-container', 200, 200)" style="width: 100%; font-size: 11px; color: #ccc; margin-bottom: 8px; background: #000; border: 1px solid #444; padding: 4px; box-sizing: border-box;">
-            
-            <div id="avatar-editor-container" style="position: relative; width: 200px; height: 200px; margin: 0 auto 8px auto; background: #000; border: 2px dashed #00ff00; overflow: hidden; cursor: grab; touch-action: none; display: none;">
-                <img id="avatar-edit-img" style="position: absolute; top: 0; left: 0; transform-origin: top left; user-select: none; pointer-events: none;">
-            </div>
-            <div style="font-size: 10px; color: #aaa; margin-bottom: 8px;">💡 Kéo thả ảnh để căn chỉnh khung hình mong muốn.</div>
-
-            <div id="avatar-zoom-wrapper" style="display: none; margin-bottom: 8px; font-size: 11px; color: #ffcc00;">
-                Zoom: <input type="range" id="avatar-zoom-range" min="0.5" max="3" step="0.05" value="1" oninput="adjustZoom('avatar')" style="width: 70%; vertical-align: middle;">
-            </div>
-
-            <form method="POST">
-                <input type="hidden" name="action" value="update_avatar">
-                <input type="hidden" id="avatar-input-val" name="avatar" required>
-                
-                <div style="display: flex; gap: 6px;">
-                    <button type="submit" id="btn-save-avatar" class="btn" style="background: #0055ff; color: #fff; flex: 1; display: none;">Lưu Avatar</button>
-                    <button type="button" onclick="closeAvatarModal()" class="btn" style="background: #333; color: #ccc; flex: 1;">Đóng</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Popup Modal Đổi Ảnh bìa (Kéo / Zoom / Cắt) -->
-    <div id="cover-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.88); z-index: 999; justify-content: center; align-items: center; padding: 10px; box-sizing: border-box;">
-        <div style="background: #111; border: 1px solid #444; width: 100%; max-width: 380px; padding: 12px; box-sizing: border-box; text-align: center;">
-            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 6px; margin-bottom: 8px;">
-                <b style="color: #ffcc00; font-size: 12px;">🖼️ Tùy chỉnh Ảnh bìa</b>
-                <button type="button" onclick="closeCoverModal()" style="background:none; border:none; color:#ff5555; font-weight:bold; cursor:pointer;">✕</button>
-            </div>
-            
-            <input type="file" id="cover-file-picker" accept="image/*" onchange="initImageEditor(this, 'cover-editor-container', 320, 120)" style="width: 100%; font-size: 11px; color: #ccc; margin-bottom: 8px; background: #000; border: 1px solid #444; padding: 4px; box-sizing: border-box;">
-            
-            <div id="cover-editor-container" style="position: relative; width: 320px; height: 120px; margin: 0 auto 8px auto; background: #000; border: 2px dashed #ffcc00; overflow: hidden; cursor: grab; touch-action: none; display: none;">
-                <img id="cover-edit-img" style="position: absolute; top: 0; left: 0; transform-origin: top left; user-select: none; pointer-events: none;">
-            </div>
-            <div style="font-size: 10px; color: #aaa; margin-bottom: 8px;">💡 Kéo thả ảnh để căn chỉnh khung hình mong muốn.</div>
-
-            <div id="cover-zoom-wrapper" style="display: none; margin-bottom: 8px; font-size: 11px; color: #ffcc00;">
-                Zoom: <input type="range" id="cover-zoom-range" min="0.5" max="3" step="0.05" value="1" oninput="adjustZoom('cover')" style="width: 70%; vertical-align: middle;">
-            </div>
-
-            <form method="POST">
-                <input type="hidden" name="action" value="update_cover">
-                <input type="hidden" id="cover-input-val" name="cover_photo" required>
-                
-                <div style="display: flex; gap: 6px;">
-                    <button type="submit" id="btn-save-cover" class="btn" style="background: #0055ff; color: #fff; flex: 1; display: none;">Lưu Ảnh Bìa</button>
-                    <button type="button" onclick="closeCoverModal()" class="btn" style="background: #333; color: #ccc; flex: 1;">Đóng</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
+    <!-- Modal Đổi Avatar / Ảnh bìa giữ nguyên -->
     <script>
-        let editorState = {
-            prefix: '', container: null, imgEl: null, inputVal: null, btnSave: null,
-            zoomRange: null, zoomWrapper: null, boxW: 0, boxH: 0, natW: 0, natH: 0,
-            posX: 0, posY: 0, scale: 1, minScale: 1, isDragging: false, startX: 0, startY: 0
-        };
-
         function openSettingsModal() { document.getElementById('settings-modal').style.display = 'flex'; }
         function closeSettingsModal() { document.getElementById('settings-modal').style.display = 'none'; }
-        function openAvatarModal() { document.getElementById('avatar-modal').style.display = 'flex'; }
-        function closeAvatarModal() { document.getElementById('avatar-modal').style.display = 'none'; }
-        function openCoverModal() { document.getElementById('cover-modal').style.display = 'flex'; }
-        function closeCoverModal() { document.getElementById('cover-modal').style.display = 'none'; }
-
-        function initImageEditor(fileInput, containerId, boxW, boxH) {
-            const file = fileInput.files[0];
-            if (!file) return;
-
-            const prefix = containerId.includes('avatar') ? 'avatar' : 'cover';
-            editorState.prefix = prefix;
-            editorState.boxW = boxW;
-            editorState.boxH = boxH;
-            editorState.container = document.getElementById(containerId);
-            editorState.imgEl = document.getElementById(prefix + '-edit-img');
-            editorState.inputVal = document.getElementById(prefix + '-input-val');
-            editorState.btnSave = document.getElementById('btn-save-' + prefix);
-            editorState.zoomRange = document.getElementById(prefix + '-zoom-range');
-            editorState.zoomWrapper = document.getElementById(prefix + '-zoom-wrapper');
-
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const img = new Image();
-                img.onload = function() {
-                    editorState.natW = img.width;
-                    editorState.natH = img.height;
-                    editorState.imgEl.src = img.src;
-
-                    const scaleX = boxW / img.width;
-                    const scaleY = boxH / img.height;
-                    editorState.minScale = Math.max(scaleX, scaleY);
-                    editorState.scale = editorState.minScale;
-
-                    editorState.zoomRange.min = editorState.minScale;
-                    editorState.zoomRange.max = editorState.minScale * 3;
-                    editorState.zoomRange.value = editorState.scale;
-
-                    editorState.posX = (boxW - img.width * editorState.scale) / 2;
-                    editorState.posY = (boxH - img.height * editorState.scale) / 2;
-
-                    updateTransform();
-
-                    editorState.container.style.display = 'block';
-                    editorState.zoomWrapper.style.display = 'block';
-                    editorState.btnSave.style.display = 'block';
-
-                    setupDragEvents();
-                };
-                img.src = e.target.result;
-            };
-            reader.readAsDataURL(file);
-        }
-
-        function updateTransform() {
-            editorState.imgEl.style.width = editorState.natW + 'px';
-            editorState.imgEl.style.height = editorState.natH + 'px';
-            editorState.imgEl.style.transform = \`translate(\${editorState.posX}px, \${editorState.posY}px) scale(\${editorState.scale})\`;
-            generateCroppedResult();
-        }
-
-        function adjustZoom(prefix) {
-            if (editorState.prefix !== prefix) return;
-            const newScale = parseFloat(editorState.zoomRange.value);
-            const centerX = editorState.boxW / 2;
-            const centerY = editorState.boxH / 2;
-            editorState.posX = centerX - (centerX - editorState.posX) * (newScale / editorState.scale);
-            editorState.posY = centerY - (centerY - editorState.posY) * (newScale / editorState.scale);
-            editorState.scale = newScale;
-            updateTransform();
-        }
-
-        function setupDragEvents() {
-            const el = editorState.container;
-            el.onmousedown = function(e) {
-                editorState.isDragging = true;
-                editorState.startX = e.clientX - editorState.posX;
-                editorState.startY = e.clientY - editorState.posY;
-                el.style.cursor = 'grabbing';
-            };
-            window.onmousemove = function(e) {
-                if (!editorState.isDragging) return;
-                editorState.posX = e.clientX - editorState.startX;
-                editorState.posY = e.clientY - editorState.startY;
-                updateTransform();
-            };
-            window.onmouseup = function() {
-                editorState.isDragging = false;
-                if (editorState.container) editorState.container.style.cursor = 'grab';
-            };
-            el.ontouchstart = function(e) {
-                if (e.touches.length === 1) {
-                    editorState.isDragging = true;
-                    editorState.startX = e.touches[0].clientX - editorState.posX;
-                    editorState.startY = e.touches[0].clientY - editorState.posY;
-                }
-            };
-            window.ontouchmove = function(e) {
-                if (!editorState.isDragging || e.touches.length !== 1) return;
-                editorState.posX = e.touches[0].clientX - editorState.startX;
-                editorState.posY = e.touches[0].clientY - editorState.startY;
-                updateTransform();
-            };
-            window.ontouchend = function() { editorState.isDragging = false; };
-        }
-
-        function generateCroppedResult() {
-            const canvas = document.createElement('canvas');
-            canvas.width = editorState.boxW;
-            canvas.height = editorState.boxH;
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#000';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.save();
-            ctx.translate(editorState.posX, editorState.posY);
-            ctx.scale(editorState.scale, editorState.scale);
-            ctx.drawImage(editorState.imgEl, 0, 0);
-            ctx.restore();
-            editorState.inputVal.value = canvas.toDataURL('image/jpeg', 0.85);
-        }
     </script>
-
     <div style="text-align: center; margin-top: 10px;"><a href="/">⬅️ Về trang chủ</a></div>
     `;
 
