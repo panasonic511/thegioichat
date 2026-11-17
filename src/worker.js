@@ -10,23 +10,58 @@ export default {
         const path = url.pathname;
         const method = request.method;
 
-        // Ví dụ: API kiểm tra kết nối Database hoặc trạng thái hệ thống
-        if (path === '/api/status' && method === 'GET') {
-          // Thử truy vấn nhanh vào D1 để kiểm tra kết nối
-          const dbCheck = await env.DB.prepare("SELECT 1").first();
+        // Xử lý API ĐĂNG NHẬP (Login)
+        if (path === '/api/login' && method === 'POST') {
+          const body = await request.json();
+          const { username, password } = body;
+
+          // Kiểm tra tài khoản trong cơ sở dữ liệu D1 (ví dụ bảng users)
+          const user = await env.DB.prepare(
+            "SELECT * FROM users WHERE username = ? AND password = ?"
+          ).bind(username, password).first();
+
+          if (!user) {
+            return new Response(JSON.stringify({ error: "Tên tài khoản hoặc mật khẩu không đúng!" }), {
+              status: 400,
+              headers: { "Content-Type": "application/json" }
+            });
+          }
+
           return new Response(JSON.stringify({ 
             success: true, 
-            message: "API Thế Giới Chat đang hoạt động!",
-            dbConnected: !!dbCheck 
+            message: "Đăng nhập thành công!",
+            user: { username: user.username, level: user.level, coins: user.coins } 
           }), {
             status: 200,
             headers: { "Content-Type": "application/json" }
           });
         }
 
-        // --- BẠN CÓ THỂ BỔ SUNG CÁC ROUTE API KHÁC Ở ĐÂY ---
-        // Ví dụ: Đăng ký, Đăng nhập, Đăng bài, Chat...
-        
+        // Xử lý API ĐĂNG KÝ (Register) - nếu cần
+        if (path === '/api/register' && method === 'POST') {
+          const body = await request.json();
+          const { username, password } = body;
+
+          // Kiểm tra tồn tại user
+          const existing = await env.DB.prepare("SELECT * FROM users WHERE username = ?").bind(username).first();
+          if (existing) {
+            return new Response(JSON.stringify({ error: "Tài khoản đã tồn tại!" }), {
+              status: 400,
+              headers: { "Content-Type": "application/json" }
+            });
+          }
+
+          // Thêm mới vào D1 (mặc định level 1, 100 xu)
+          await env.DB.prepare(
+            "INSERT INTO users (username, password, level, coins) VALUES (?, ?, 1, 100)"
+          ).bind(username, password).run();
+
+          return new Response(JSON.stringify({ success: true, message: "Đăng ký thành công!" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
         // Nếu gọi sai hoặc không khớp route API nào:
         return new Response(JSON.stringify({ error: "Không tìm thấy API" }), {
           status: 404,
@@ -34,7 +69,6 @@ export default {
         });
 
       } catch (err) {
-        // Bắt lỗi hệ thống hoặc lỗi cơ sở dữ liệu D1
         return new Response(JSON.stringify({ error: "Lỗi Server: " + err.message }), {
           status: 500,
           headers: { "Content-Type": "application/json" }
@@ -43,10 +77,8 @@ export default {
     }
 
     // ==========================================
-    // 2. PHỤC VỤ GIAO DIỆN TĨNH (HTML, CSS, JS, Ảnh)
+    // 2. PHỤC VỤ GIAO DIỆN TĨNH
     // ==========================================
-    // Mọi truy cập thông thường hoặc khi F5 tải lại trang sẽ đi qua đây 
-    // và trả về file index.html từ thư mục public một cách mượt mà.
     return env.ASSETS.fetch(request);
   }
 };
