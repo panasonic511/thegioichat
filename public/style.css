@@ -1,151 +1,164 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
+
 body {
-  background-color: #090a0f;
-  color: #e2e8f0;
+  background-color: #000000;
+  color: #e5e7eb;
   font-family: Tahoma, Arial, sans-serif;
   font-size: 13px;
   line-height: 1.45;
 }
-a { color: #38bdf8; text-decoration: none; }
+
+a { color: #f59e0b; text-decoration: none; }
 a:hover { text-decoration: underline; }
 .hidden { display: none !important; }
-.muted { color: #94a3b8; font-size: 12px; }
-.error-text { color: #f87171; margin-bottom: 8px; font-size: 12px; }
-.success-text { color: #4ade80; margin-bottom: 8px; font-size: 12px; }
+.bold { font-weight: bold; }
+.muted { color: #9ca3af; font-size: 12px; }
 
-.wap-container {
-  max-width: 640px;
+.c-blue { color: #38bdf8; }
+.c-yellow { color: #facc15; }
+.c-green { color: #22c55e; }
+.orange-link { color: #f59e0b; }
+
+.wap-wrapper {
+  max-width: 680px;
   margin: 0 auto;
-  background-color: #11131a;
-  border-left: 1px solid #1e293b;
-  border-right: 1px solid #1e293b;
+  background-color: #080808;
+  border-left: 1px solid #222;
+  border-right: 1px solid #222;
   min-height: 100vh;
 }
 
-/* Header */
-.wap-header {
-  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
-  padding: 10px;
+/* Banner WAP */
+.wap-banner, .wap-main-header {
+  background: linear-gradient(180deg, #2b2b2b 0%, #141414 100%);
+  text-align: center;
+  padding: 10px 8px;
+  border-bottom: 1px solid #2a2a2a;
+  cursor: pointer;
+}
+.banner-title {
+  font-size: 20px;
+  font-weight: 900;
+  color: #e2e8f0;
+  letter-spacing: 1px;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
+}
+.banner-sub {
+  font-size: 11.5px;
+  font-weight: bold;
+  margin-top: 2px;
+}
+
+/* Thanh điều hướng icon ngang mẫu Pro */
+.main-nav-icons {
+  display: flex;
+  background-color: #0c0c0c;
+  border-bottom: 1px solid #222;
+  justify-content: space-around;
+  padding: 6px 0;
+}
+.nav-icon-item {
+  text-align: center;
+  color: #e5e7eb;
+  font-size: 11px;
+  text-decoration: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.nav-icon-item span.icon { font-size: 16px; }
+.nav-icon-item:hover { color: #f59e0b; }
+
+/* Khung thông tin thành viên */
+.member-info-box {
+  background-color: #0a0a0a;
+  padding: 8px 12px;
+  border-bottom: 1px solid #222;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid #334155;
-}
-.logo {
-  font-weight: bold;
-  font-size: 15px;
-  color: #38bdf8;
-  cursor: pointer;
-  letter-spacing: 0.5px;
 }
 
-/* Top Nav */
-.top-nav {
-  display: flex;
-  flex-wrap: wrap;
-  background-color: #161923;
-  border-bottom: 1px solid #262b3d;
-}
-.top-nav > a, .menu-dropdown-wrap > a {
-  padding: 8px 9px;
-  color: #cbd5e1;
-  font-size: 12px;
-  border-right: 1px solid #262b3d;
-  display: inline-block;
-}
-.top-nav > a.active {
-  background-color: #0284c7;
-  color: #fff;
-  font-weight: bold;
-}
-.badge {
-  background-color: #ef4444;
-  color: #fff;
-  border-radius: 10px;
-  padding: 1px 5px;
-  font-size: 10px;
-  font-weight: bold;
+/* Breadcrumb / Menu phụ */
+.wap-breadcrumb {
+  background-color: #0d0d0d;
+  padding: 7px 10px;
+  border-bottom: 1px solid #222;
+  color: #e5e7eb;
+  font-size: 12.5px;
 }
 
 /* Dropdown Menu */
-.menu-dropdown-wrap { position: relative; }
 .dropdown-menu {
   position: absolute;
   right: 0;
   top: 100%;
-  background-color: #1e2230;
-  border: 1px solid #3b4259;
-  min-width: 175px;
+  background-color: #141414;
+  border: 1px solid #333;
+  min-width: 180px;
   z-index: 99;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.7);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.9);
 }
 .dropdown-menu a {
   display: block;
   padding: 8px 10px;
-  border-bottom: 1px solid #2b3145;
-  color: #e2e8f0;
-  font-size: 12px;
+  border-bottom: 1px solid #222;
+  color: #e5e7eb;
+  font-size: 12.5px;
 }
-.dropdown-menu a:hover { background-color: #2d354c; }
-.admin-link { color: #fbbf24 !important; font-weight: bold; }
+.dropdown-menu a:hover { background-color: #222; }
+.admin-link { color: #facc15 !important; font-weight: bold; }
 .danger-link { color: #f87171 !important; }
 
-/* Sub-bar */
+/* Sub-bar đồng hồ */
 .sub-bar {
-  background-color: #0d1017;
+  background-color: #0a0a0a;
   padding: 6px 10px;
   display: flex;
   justify-content: space-between;
-  font-size: 11.5px;
-  border-bottom: 1px solid #1e293b;
-  color: #94a3b8;
+  font-size: 12px;
+  border-bottom: 1px solid #222;
+  color: #22c55e;
 }
 
-/* Quick Grid 3 Trái - 3 Phải */
+/* Lưới 6 mục chức năng */
 .quick-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  background-color: #131620;
-  border-bottom: 1px solid #262b3d;
+  background-color: #0e0e0e;
+  border-bottom: 1px solid #262626;
 }
-.grid-col:first-child { border-right: 1px solid #262b3d; }
+.grid-col:first-child { border-right: 1px solid #222; }
 .grid-item {
   display: block;
-  padding: 7px 10px;
-  border-bottom: 1px solid #1e2333;
-  color: #e2e8f0;
+  padding: 8px 10px;
+  border-bottom: 1px solid #1c1c1c;
+  color: #e5e7eb;
   font-size: 12.5px;
 }
-.grid-item:hover { background-color: #1c2130; }
+.grid-item:hover { background-color: #18181b; color: #f59e0b; }
 
-/* Boxes */
-.wap-box {
-  margin: 8px;
-  background-color: #161923;
-  border: 1px solid #282e42;
-  border-radius: 3px;
-}
-.box-header {
-  background-color: #1f2433;
+/* Tiêu đề chuyên mục & Phần nội dung */
+.wap-section { border-bottom: 1px solid #222; }
+.section-bar {
+  background: linear-gradient(180deg, #1f1f1f 0%, #121212 100%);
   padding: 7px 10px;
+  color: #22c55e;
   font-weight: bold;
-  font-size: 12.5px;
-  color: #38bdf8;
-  border-bottom: 1px solid #282e42;
+  font-size: 13px;
+  border-top: 1px solid #262626;
+  border-bottom: 1px solid #262626;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
-.box-content { padding: 8px 10px; }
-
-/* Danh sách bài viết / Thành viên */
-.list-row {
-  padding: 8px 0;
-  border-bottom: 1px dashed #2a3045;
+.section-body {
+  padding: 9px 10px;
+  background-color: #080808;
 }
-.list-row:last-child { border-bottom: none; }
 
-/* Huy hiệu chức vụ & Level */
+/* Huy hiệu vai trò & Level */
 .role-badge {
   display: inline-block;
   padding: 1px 5px;
@@ -157,85 +170,45 @@ a:hover { text-decoration: underline; }
 .role-chu-wap { background: #7f1d1d; color: #fca5a5; border: 1px solid #ef4444; }
 .role-admin { background: #78350f; color: #fcd34d; border: 1px solid #f59e0b; }
 .role-mod { background: #064e3b; color: #6ee7b7; border: 1px solid #10b981; }
-.role-member { background: #1e293b; color: #94a3b8; }
+.role-member { background: #1f2937; color: #9ca3af; }
 .lv-tag { color: #38bdf8; font-size: 11px; font-weight: bold; }
 
-/* Forms & Buttons */
-.wap-form .form-group { margin-bottom: 8px; }
-.wap-form label { display: block; margin-bottom: 3px; font-size: 12px; color: #cbd5e1; }
-input, textarea, select {
-  width: 100%;
-  background-color: #0b0d13;
-  border: 1px solid #334155;
-  color: #f8fafc;
-  padding: 7px;
-  border-radius: 3px;
-  font-size: 12.5px;
-}
+/* Nút bấm & Thẻ badge */
 button {
-  background-color: #262d40;
-  color: #e2e8f0;
-  border: 1px solid #3b4563;
+  background-color: #1f1f23;
+  color: #e5e7eb;
+  border: 1px solid #333;
   padding: 6px 10px;
-  border-radius: 3px;
+  border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
 }
-button:hover { background-color: #333c54; }
-.btn-primary { background-color: #0284c7; border-color: #0369a1; color: #fff; font-weight: bold; }
+button:hover { background-color: #2b2b30; }
 .btn-gold { background-color: #b45309; border-color: #d97706; color: #fff; font-weight: bold; }
-.btn-danger { background-color: #b91c1c; border-color: #dc2626; color: #fff; }
 .btn-xs { padding: 3px 7px; font-size: 11px; }
-.btn-block { width: 100%; padding: 8px; }
 
-/* Chat Box Realtime */
-.chat-history {
-  height: 260px;
-  overflow-y: auto;
-  background-color: #0d0f15;
-  border: 1px solid #262b3d;
-  padding: 8px;
-  margin-bottom: 8px;
+.badge {
+  background-color: #ef4444;
+  color: #fff;
+  border-radius: 10px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: bold;
 }
-.chat-bubble {
-  margin-bottom: 8px;
-  padding: 6px 8px;
-  border-radius: 4px;
-  background-color: #1b2030;
-}
-.chat-bubble.mine {
-  background-color: #0c4a6e;
-  text-align: right;
-}
-.chat-input-row { display: flex; gap: 6px; }
 
-/* Modal */
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.8);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 200;
-  padding: 12px;
-}
-.modal-box {
-  background: #161923;
-  border: 1px solid #334155;
-  width: 100%;
-  max-width: 380px;
-  border-radius: 4px;
-}
-.auth-tabs { display: flex; border-bottom: 1px solid #282e42; }
-.auth-tabs button { flex: 1; border: none; border-radius: 0; padding: 8px 4px; }
-.auth-tabs button.active { background: #0284c7; color: #fff; font-weight: bold; }
-.modal-box .wap-form { padding: 10px; }
-
+/* Chân trang (Footer) gọn gàng */
 .wap-footer {
+  background-color: #0b0b0b;
+}
+.footer-links {
+  padding: 7px 10px;
+  border-bottom: 1px solid #1f1f1f;
+  color: #f59e0b;
+  font-size: 12.5px;
+}
+.footer-info {
   text-align: center;
-  padding: 12px;
-  font-size: 11px;
-  color: #64748b;
-  border-top: 1px solid #1e293b;
+  padding: 10px;
+  font-size: 11.5px;
+  color: #6b7280;
 }
