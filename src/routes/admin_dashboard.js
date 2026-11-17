@@ -1,12 +1,10 @@
 export async function handleAdminDashboard(request, env, user, renderLayout) {
-    // Chỉ Chủ Wap, Admin và Mod mới được vào trang quản lý
     if (!user || (user.role !== 'Chủ Wap' && user.role !== 'Admin' && user.role !== 'Mod')) {
         return new Response("Truy cập bị từ chối! Bạn không có quyền quản trị viên.", { status: 403 });
     }
 
     let message = "";
 
-    // Xử lý cập nhật thông tin thành viên
     if (request.method === 'POST') {
         const formData = await request.formData();
         const targetUserId = formData.get('user_id');
@@ -15,7 +13,6 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
         const newLevel = formData.get('level');
 
         try {
-            // Mod không được quyền set chức vụ Chủ Wap hoặc Admin
             if (user.role === 'Mod' && (newRole === 'Chủ Wap' || newRole === 'Admin')) {
                 throw new Error("Mod không có quyền cấp bậc cao hơn!");
             }
@@ -29,7 +26,6 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
         }
     }
 
-    // Lấy danh sách toàn bộ thành viên
     let usersList = { results: [] };
     try {
         usersList = await env.DB.prepare("SELECT id, username, display_name, role, coins, level FROM users ORDER BY id DESC LIMIT 50").all();
@@ -42,7 +38,7 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
         <div class="box-title">⚙️ Bảng Quản Trị Hệ Thống (Ban Quản Trị)</div>
         <div class="box-content">
             <div style="background: #151515; padding: 8px; font-size: 11px; margin-bottom: 8px; color: #ffcc00;">
-                💡 Chào quản trị viên <b>${user.display_name}</b> (${user.role}). Bạn có quyền chỉnh sửa thành viên và kiểm duyệt bảng tin.
+                💡 Chào quản trị viên <b>${user.display_name}</b> (${user.role}). Bạn có toàn quyền quản lý thành viên và kiểm duyệt nội dung.
             </div>
 
             ${message}
