@@ -6,50 +6,12 @@
   <title>Thế Giới Chat - Wap Chát, Kết Bạn, Giải Trí</title>
   <link rel="stylesheet" href="/css/login.css" />
   <link rel="stylesheet" href="/style.css" />
-  <style>
-    /* Bổ sung CSS chuẩn đồng bộ theo ảnh mẫu WAP Pro */
-    .wap-main-header {
-      background: linear-gradient(180deg, #2b2b2b 0%, #141414 100%);
-      text-align: center;
-      padding: 10px 8px;
-      border-bottom: 1px solid #2a2a2a;
-      cursor: pointer;
-    }
-    .main-nav-icons {
-      display: flex;
-      background-color: #0c0c0c;
-      border-bottom: 1px solid #222;
-      justify-content: space-around;
-      padding: 6px 0;
-    }
-    .nav-icon-item {
-      text-align: center;
-      color: #e5e7eb;
-      font-size: 11px;
-      text-decoration: none;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 2px;
-    }
-    .nav-icon-item span.icon { font-size: 16px; }
-    .nav-icon-item:hover { color: #f59e0b; }
-    
-    .member-info-box {
-      background-color: #0a0a0a;
-      padding: 8px 12px;
-      border-bottom: 1px solid #222;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-  </style>
 </head>
 <body>
   <div class="wap-wrapper">
     
     <!-- =================================================================
-         1. GIAO DIỆN KHI CHƯA ĐĂNG NHẬP (GIỮ NGUYÊN FORM ĐĂNG NHẬP)
+         1. GIAO DIỆN KHI CHƯA ĐĂNG NHẬP (TRANG CHỦ KHÁCH)
          ================================================================= -->
     <div id="guest-view">
       <header class="wap-banner" onclick="navigate('home')">
@@ -110,27 +72,27 @@
         <div class="footer-links">
           🏠 <a href="/">Trang chủ</a> · <a href="javascript:void(0)">Điều khoản</a> · <a href="javascript:void(0)">Liên hệ</a>
         </div>
-        <div class="footer-info" style="text-align: center; padding: 8px; font-size: 11.5px; color: #6b7280;">
+        <div class="footer-info">
           Copyright © 2026 - Thế Giới Chat
         </div>
       </footer>
     </div>
 
 
- <!-- =================================================================
-         2. GIAO DIỆN KHI ĐÃ ĐĂNG NHẬP (ĐỒNG BỘ 100% VỚI MẪU)
+    <!-- =================================================================
+         2. GIAO DIỆN KHI ĐÃ ĐĂNG NHẬP (CHUẨN MẪU WAP PRO)
          ================================================================= -->
     <div id="member-view" class="hidden">
       
       <!-- Banner thương hiệu trên cùng -->
       <header class="wap-main-header" onclick="navigate('home')">
-        <div class="banner-title" style="font-size: 19px; font-weight: 900; color: #e2e8f0; letter-spacing: 1px;">THẾ GIỚI CHAT</div>
-        <div class="banner-sub" style="font-size: 11.5px; margin-top: 2px;">
+        <div class="banner-title">THẾ GIỚI CHAT</div>
+        <div class="banner-sub">
           <span class="c-blue">Wap chát</span> - <span class="c-yellow">Kết bạn</span> - <span class="c-green">Giải trí</span>
         </div>
       </header>
 
-      <!-- Thanh icon điều hướng ngang (Home, Trực tuyến, Bảng tin, Thông báo, Tin nhắn, Menu) -->
+      <!-- Thanh icon điều hướng ngang sát banner -->
       <nav class="main-nav-icons">
         <a href="javascript:void(0)" onclick="navigate('home')" class="nav-icon-item">
           <span class="icon">🏠</span><span>Home</span>
@@ -152,7 +114,7 @@
         </a>
       </nav>
 
-      <!-- Menu Dropdown ẩn/hiện khi bấm nút Menu -->
+      <!-- Menu Dropdown mở rộng khi bấm nút Menu -->
       <div id="main-dropdown" class="dropdown-menu hidden" style="position: relative; width: 100%;">
         <a href="javascript:void(0)" onclick="navigate('profile')">👤 Trang cá nhân</a>
         <a href="javascript:void(0)" onclick="navigate('search')">🔍 Tìm kiếm nick</a>
@@ -165,10 +127,10 @@
         <a href="javascript:void(0)" id="menu-logout-link" class="danger-link hidden" onclick="logout()">🚪 Đăng xuất</a>
       </div>
 
-      <!-- KHUNG THÔNG TIN TÀI KHOẢN & SỐ XU (Nằm ngay dưới thanh icon giống hệt mẫu) -->
+      <!-- Khung thông tin thành viên & số Xu (Nằm ngay dưới thanh icon) -->
       <div id="user-mini-bar" class="member-info-box"></div>
 
-      <!-- THANH ĐỒNG HỒ & LỐI TẮT NHANH -->
+      <!-- Thanh đồng hồ & lối tắt phụ -->
       <div class="sub-bar">
         <div class="sub-left" id="live-clock">⏰ 00:00:00</div>
         <div class="sub-right">
@@ -178,7 +140,7 @@
         </div>
       </div>
 
-      <!-- BỐ CỤC 6 MỤC CHỨC NĂNG CHIA ĐÔI -->
+      <!-- Lưới 6 mục chức năng chia đôi -->
       <div class="quick-grid">
         <div class="grid-col">
           <a href="javascript:void(0)" onclick="navigate('forum')" class="grid-item">💬 Diễn đàn</a>
@@ -192,7 +154,7 @@
         </div>
       </div>
 
-      <!-- KHU VỰC THÔNG BÁO TỪ BAN QUẢN TRỊ -->
+      <!-- Khu vực thông báo từ Ban Quản Trị -->
       <section class="wap-section">
         <div class="section-bar">
           <span>📢 Thông báo từ Ban Quản Trị</span>
@@ -203,21 +165,23 @@
         </div>
       </section>
 
-      <!-- KHU VỰC NỘI DUNG ĐỘNG KHI CHUYỂN TRANG -->
+      <!-- Nội dung động cho các mục -->
       <main id="main-view" class="wap-section"></main>
 
-      <!-- FOOTER THÀNH VIÊN -->
+      <!-- Footer thành viên -->
       <footer class="wap-footer">
         <div class="footer-links">
           🏠 <a href="/">Trang chủ</a> · <a href="javascript:void(0)" onclick="navigate('levels')">Cấp độ</a> · <a href="javascript:void(0)" onclick="navigate('ranking')">Bảng xếp hạng</a>
         </div>
-        <div class="footer-info" style="text-align: center; padding: 8px; font-size: 11.5px; color: #6b7280;">
+        <div class="footer-info">
           Copyright © 2026 - Thế Giới Chat
         </div>
       </footer>
     </div>
 
-  <!-- NẠP CÁC MÔ-ĐUN JS CHÍNH -->
+  </div>
+
+  <!-- Các tệp mã nguồn JS -->
   <script src="/js/auth.js"></script>
   <script src="/js/feed.js"></script>
   <script src="/js/social.js"></script>
