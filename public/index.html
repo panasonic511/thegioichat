@@ -117,12 +117,12 @@
     </div>
 
 
-    <!-- =================================================================
-         2. GIAO DIỆN KHI ĐÃ ĐĂNG NHẬP (CHUẨN WAP PRO GIỐNG ẢNH MẪU)
+ <!-- =================================================================
+         2. GIAO DIỆN KHI ĐÃ ĐĂNG NHẬP (ĐỒNG BỘ 100% VỚI MẪU)
          ================================================================= -->
     <div id="member-view" class="hidden">
       
-      <!-- Banner THẾ GIỚI CHAT ở trên cùng -->
+      <!-- Banner thương hiệu trên cùng -->
       <header class="wap-main-header" onclick="navigate('home')">
         <div class="banner-title" style="font-size: 19px; font-weight: 900; color: #e2e8f0; letter-spacing: 1px;">THẾ GIỚI CHAT</div>
         <div class="banner-sub" style="font-size: 11.5px; margin-top: 2px;">
@@ -130,7 +130,7 @@
         </div>
       </header>
 
-      <!-- Thanh menu icon ngang (Home, Trực tuyến, Bảng tin, Thông báo, Tin nhắn, Menu) -->
+      <!-- Thanh icon điều hướng ngang (Home, Trực tuyến, Bảng tin, Thông báo, Tin nhắn, Menu) -->
       <nav class="main-nav-icons">
         <a href="javascript:void(0)" onclick="navigate('home')" class="nav-icon-item">
           <span class="icon">🏠</span><span>Home</span>
@@ -152,7 +152,7 @@
         </a>
       </nav>
 
-      <!-- Menu Dropdown mở rộng khi bấm nút Menu -->
+      <!-- Menu Dropdown ẩn/hiện khi bấm nút Menu -->
       <div id="main-dropdown" class="dropdown-menu hidden" style="position: relative; width: 100%;">
         <a href="javascript:void(0)" onclick="navigate('profile')">👤 Trang cá nhân</a>
         <a href="javascript:void(0)" onclick="navigate('search')">🔍 Tìm kiếm nick</a>
@@ -165,7 +165,7 @@
         <a href="javascript:void(0)" id="menu-logout-link" class="danger-link hidden" onclick="logout()">🚪 Đăng xuất</a>
       </div>
 
-      <!-- Khung thông tin thành viên đăng nhập & số Xu -->
+      <!-- KHUNG THÔNG TIN TÀI KHOẢN & SỐ XU (Nằm ngay dưới thanh icon giống hệt mẫu) -->
       <div id="user-mini-bar" class="member-info-box"></div>
 
       <!-- THANH ĐỒNG HỒ & LỐI TẮT NHANH -->
@@ -178,7 +178,7 @@
         </div>
       </div>
 
-      <!-- BỐ CỤC 6 MỤC CHỨC NĂNG CHIA ĐÔI (Đã loại bỏ hoàn toàn khối Phòng chat) -->
+      <!-- BỐ CỤC 6 MỤC CHỨC NĂNG CHIA ĐÔI -->
       <div class="quick-grid">
         <div class="grid-col">
           <a href="javascript:void(0)" onclick="navigate('forum')" class="grid-item">💬 Diễn đàn</a>
@@ -216,8 +216,6 @@
         </div>
       </footer>
     </div>
-
-  </div>
 
   <!-- NẠP CÁC MÔ-ĐUN JS CHÍNH -->
   <script src="/js/auth.js"></script>
