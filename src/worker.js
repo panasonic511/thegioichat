@@ -28,7 +28,6 @@ function renderLayout(title, content, user) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${title} - Thế Giới Chat</title>
     <style>
-        /* Sử dụng font chữ chuẩn, nét mảnh gọn gàng giống trang mẫu */
         body { 
             background: #000000; 
             color: #00ff00; 
@@ -38,8 +37,6 @@ function renderLayout(title, content, user) {
             font-size: 12px;
             line-height: 1.4;
         }
-        
-        /* Header Banner tối ưu */
         .header { 
             background: linear-gradient(to bottom, #222, #000); 
             text-align: center; 
@@ -59,19 +56,7 @@ function renderLayout(title, content, user) {
             font-size: 10px; 
             margin-top: 3px;
         }
-
-        /* User Panel phía trên */
-        .user-panel { 
-            background: #0d0d0d; 
-            padding: 6px 10px; 
-            border-bottom: 1px solid #222; 
-            display: flex; 
-            align-items: center; 
-            justify-content: space-between; 
-            font-size: 12px; 
-        }
-
-        /* Thanh Menu điều hướng */
+        /* Đã gỡ bỏ hoàn toàn user-panel thừa thãi phía dưới header */
         .nav-bar { 
             background: #111111; 
             text-align: center; 
@@ -87,15 +72,11 @@ function renderLayout(title, content, user) {
         .nav-bar a:hover { 
             text-decoration: underline; 
         }
-
-        /* Khung chứa nội dung chính */
         .container { 
             padding: 6px; 
             max-width: 600px; 
             margin: 0 auto; 
         }
-
-        /* Các Box giao diện chuẩn wap */
         .box { 
             background: #0d0d0d; 
             border: 1px solid #333333; 
@@ -113,12 +94,8 @@ function renderLayout(title, content, user) {
         .box-content { 
             padding: 8px; 
         }
-
-        /* Liên kết chung */
         a { color: #00ff00; text-decoration: none; }
         a:hover { text-decoration: underline; }
-
-        /* Nút bấm (Button) */
         .btn { 
             background: #1c1c1c; 
             color: #00ff00; 
@@ -136,8 +113,6 @@ function renderLayout(title, content, user) {
             background: #333333; 
             border-color: #00ff00; 
         }
-
-        /* Footer chân trang */
         .footer { 
             text-align: center; 
             padding: 10px; 
@@ -155,10 +130,6 @@ function renderLayout(title, content, user) {
     </div>
     
     ${user ? `
-    <div class="user-panel">
-        <div><b>${user.display_name}</b> <span style="color:#ffcc00;">[Lv.${user.level}]</span></div>
-        <div>🪙 ${user.coins.toLocaleString()} Xu | <span style="color:yellow">${user.role}</span></div>
-    </div>
     <div class="nav-bar">
         <a href="/">Home</a> · 
         <a href="/users/feed">Bảng tin</a> · 
