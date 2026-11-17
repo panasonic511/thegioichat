@@ -176,3 +176,6 @@ window.addEventListener('DOMContentLoaded', () => {
   navigate('home');
   setInterval(pollRealtimeNow, 3000);
 });
+if (new URLSearchParams(window.location.search).get('register') === '1') {
+  openAuthModal('register');
+}
