@@ -24,17 +24,18 @@ function renderRoleBadge(role, level) {
 }
 
 function updateUserUI() {
-  const miniBar = document.getElementById('user-mini-bar');
-  const adminLink = document.getElementById('menu-admin-link');
-  const logoutLink = document.getElementById('menu-logout-link');
-  const btnAddAnn = document.getElementById('btn-add-announcement');
-
-  if (currentUser) {
+} else {
     miniBar.innerHTML = `
-      <span>${currentUser.avatar} <b>${currentUser.display_name}</b> (ID:${currentUser.id})</span>
-      <span style="color:#fbbf24;margin-left:6px;">💰${currentUser.coins.toLocaleString()}</span>
+      <div>👋 Chào khách!</div>
+      <div style="display: flex; gap: 6px;">
+        <a href="/login" style="background-color: #1d6ce0; color: #fff; padding: 3px 8px; border-radius: 3px; font-weight: bold; font-size: 11.5px;">Đăng nhập</a>
+        <a href="/register" style="background-color: #15803d; color: #fff; padding: 3px 8px; border-radius: 3px; font-weight: bold; font-size: 11.5px;">Đăng ký</a>
+      </div>
     `;
-    logoutLink.classList.remove('hidden');
+    adminLink.classList.add('hidden');
+    logoutLink.classList.add('hidden');
+    btnAddAnn.classList.add('hidden');
+  }
 
     // Chỉ Mod, Admin, Chủ Wap mới thấy mục Quản Trị
     if (currentUser.role !== 'Thành Viên') {
