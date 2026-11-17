@@ -1,7 +1,6 @@
 import { handleLogin } from './auth.js';
 
 export async function handleIndex(request, env, user, renderLayout) {
-    // Nếu người dùng chưa đăng nhập, hiển thị form đăng nhập trực tiếp ngay tại trang chủ
     if (!user) {
         if (request.method === 'POST') {
             return await handleLogin(request, env);
@@ -35,7 +34,6 @@ export async function handleIndex(request, env, user, renderLayout) {
         });
     }
 
-    // Lấy thông báo hệ thống
     let announcements = { results: [] };
     try {
         announcements = await env.DB.prepare(`
@@ -50,11 +48,11 @@ export async function handleIndex(request, env, user, renderLayout) {
     }
 
     const content = `
-    <!-- Khung thông tin cá nhân giống hệt mẫu Gaubong: Avatar, tên, xu và chức vụ bên phải -->
+    <!-- Khung thông tin cá nhân: Avatar, tên, xu và chức vụ -->
     <div class="box" style="margin-bottom: 8px; background: #0d0d0d; border: 1px solid #333;">
         <div class="box-content" style="display: flex; align-items: center; justify-content: space-between; padding: 8px;">
             <div style="display: flex; align-items: center;">
-                <img src="${user.avatar || 'https://i.imgur.com/7gXvS6v.png'}" width="36" height="36" style="border-radius: 50%; border: 1px solid #555; margin-right: 8px;">
+                <img src="${user.avatar || 'https://i.imgur.com/7gXvS6v.png'}" width="36" height="36" style="border-radius: 50%; border: 1px solid #555; margin-right: 8px; object-fit: cover;">
                 <div>
                     <div>
                         <a href="/profile" style="font-weight: bold; color: #00ff00;">${user.display_name}</a> 
@@ -137,7 +135,6 @@ export async function handleIndex(request, env, user, renderLayout) {
             `).join('')}
         </div>
     </div>
-    <div style="text-align: center;"><a href="/logout" style="color: #ff5555;">🚪 Đăng xuất tài khoản</a></div>
     `;
 
     return new Response(renderLayout('Trang chủ', content, user), {
