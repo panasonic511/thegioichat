@@ -13,7 +13,6 @@ import { handleGame } from './routes/game.js';
 import { handleAdminDashboard } from './routes/admin_dashboard.js';
 import { handleAdminAction } from './routes/admin_action.js';
 
-// Hàm kiểm tra xác thực đăng nhập qua Cookie
 async function checkAuth(request, env) {
     const cookie = request.headers.get('Cookie') || '';
     const match = cookie.match(/user_id=(\d+)/);
@@ -21,7 +20,6 @@ async function checkAuth(request, env) {
     return await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(match[1]).first() || null;
 }
 
-// Khung Layout chuẩn giao diện tông màu đen đặc trưng của Thế Giới Chat
 function renderLayout(title, content, user) {
     return `<!DOCTYPE html>
 <html lang="vi">
@@ -30,7 +28,6 @@ function renderLayout(title, content, user) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${title} - Thế Giới Chat</title>
     <style>
-        /* Reset & Tông màu đặc trưng Wap */
         body { 
             background: #000000; 
             color: #00ff00; 
@@ -40,8 +37,6 @@ function renderLayout(title, content, user) {
             font-size: 13px;
             line-height: 1.4;
         }
-        
-        /* Header Banner */
         .header { 
             background: #111111; 
             text-align: center; 
@@ -60,8 +55,6 @@ function renderLayout(title, content, user) {
             font-size: 11px; 
             margin-top: 2px;
         }
-
-        /* User Panel phía trên */
         .user-panel { 
             background: #0a0a0a; 
             padding: 6px 10px; 
@@ -71,8 +64,6 @@ function renderLayout(title, content, user) {
             justify-content: space-between; 
             font-size: 12px; 
         }
-
-        /* Thanh Menu điều hướng chuẩn Wap (gạch nối phân cách) */
         .nav-bar { 
             background: #111111; 
             text-align: center; 
@@ -88,15 +79,11 @@ function renderLayout(title, content, user) {
         .nav-bar a:hover { 
             text-decoration: underline; 
         }
-
-        /* Khung chứa nội dung chính */
         .container { 
             padding: 6px; 
             max-width: 600px; 
             margin: 0 auto; 
         }
-
-        /* Các Box giao diện (Bo góc 0 để giống wap cổ điển) */
         .box { 
             background: #0d0d0d; 
             border: 1px solid #333333; 
@@ -114,12 +101,8 @@ function renderLayout(title, content, user) {
         .box-content { 
             padding: 8px; 
         }
-
-        /* Liên kết chung */
         a { color: #00ff00; text-decoration: none; }
         a:hover { text-decoration: underline; }
-
-        /* Nút bấm (Button) */
         .btn { 
             background: #222222; 
             color: #00ff00; 
@@ -137,8 +120,6 @@ function renderLayout(title, content, user) {
             background: #333333; 
             border-color: #00ff00; 
         }
-
-        /* Footer chân trang */
         .footer { 
             text-align: center; 
             padding: 10px; 
@@ -193,11 +174,7 @@ export default {
     const path = url.pathname;
     const user = await checkAuth(request, env);
 
-    // 1. Các route không bắt buộc đăng nhập
-    if (path === '/login' || path === '/register' && request.method === 'GET') {
-        return path === '/login' ? await handleLogin(request, env) : await handleRegister(request, env);
-    }
-    if (path === '/login' || path === '/register' && request.method === 'POST') {
+    if (path === '/login' || path === '/register') {
         return path === '/login' ? await handleLogin(request, env) : await handleRegister(request, env);
     }
     if (path === '/logout') {
@@ -207,22 +184,20 @@ export default {
         return await handleRealtimeApi(request, env);
     }
 
-    // 2. Kiểm tra bảo mật: Nếu chưa đăng nhập mà truy cập trang khác -> Chuyển về /login
     if (!user && path !== '/') {
         return Response.redirect(new URL('/login', request.url), 302);
     }
 
-    // 3. Phân phối các route đã phân tách file
-    if (path === '/') return await handleIndex(request, env, user, );
-    if (path === '/profile') return await handleProfile(request, env, user, , url);
-    if (path === '/profile/level') return await handleLevel(request, env, user, );
-    if (path === '/shop') return await handleShop(request, env, user, );
-    if (path === '/mail/box') return await handleMailBox(request, env, user, );
-    if (path === '/mail/chat') return await handleMailChat(request, env, user, , url);
-    if (path === '/mail/notification') return await handleMailNotification(request, env, user, );
-    if (path === '/users/feed') return await handleFeed(request, env, user, );
-    if (path === '/game') return await handleGame(request, env, user, );
-    if (path === '/admin') return await handleAdminDashboard(request, env, user, );
+    if (path === '/') return await handleIndex(request, env, user, renderLayout);
+    if (path === '/profile') return await handleProfile(request, env, user, renderLayout, url);
+    if (path === '/profile/level') return await handleLevel(request, env, user, renderLayout);
+    if (path === '/shop') return await handleShop(request, env, user, renderLayout);
+    if (path === '/mail/box') return await handleMailBox(request, env, user, renderLayout);
+    if (path === '/mail/chat') return await handleMailChat(request, env, user, renderLayout, url);
+    if (path === '/mail/notification') return await handleMailNotification(request, env, user, renderLayout);
+    if (path === '/users/feed') return await handleFeed(request, env, user, renderLayout);
+    if (path === '/game') return await handleGame(request, env, user, renderLayout);
+    if (path === '/admin') return await handleAdminDashboard(request, env, user, renderLayout);
     if (path === '/admin/update-role') return await handleAdminAction(request, env, user);
 
     return new Response("Không tìm thấy trang (404)", { status: 404 });
