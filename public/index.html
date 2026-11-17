@@ -13,7 +13,7 @@
       <div class="logo" onclick="navigate('home')">🌐 THẾ GIỚI CHAT</div>
       <div id="user-mini-bar" class="user-mini-bar">
         <a href="/login" class="btn-xs btn-primary" style="display:inline-block; line-height:normal; text-align:center;">Đăng nhập</a>
-        <button class="btn-xs" onclick="openAuthModal('register')">Đăng ký</button>
+        <a href="/login?action=register" class="btn-xs" style="display:inline-block; line-height:normal; text-align:center; color:#e2e8f0;">Đăng ký</a>
       </div>
     </header>
 
@@ -90,35 +90,6 @@
     </footer>
   </div>
 
-  <!-- MODAL ĐĂNG NHẬP / ĐĂNG KÝ / ĐĂNG NHẬP BẰNG ID -->
-  <div id="auth-modal" class="modal-backdrop hidden">
-    <div class="modal-box">
-      <div class="box-header">
-        <span id="auth-modal-title">ĐĂNG NHẬP THẾ GIỚI CHAT</span>
-        <button class="btn-xs" onclick="closeAuthModal()">✖</button>
-      </div>
-      <div class="auth-tabs">
-        <button id="tab-login-user" class="active" onclick="switchAuthTab('login')">Tên đăng nhập</button>
-        <button id="tab-login-id" onclick="switchAuthTab('id')">Đăng nhập bằng ID</button>
-        <button id="tab-register" onclick="switchAuthTab('register')">Đăng ký</button>
-      </div>
-      <form id="auth-form" onsubmit="handleAuthSubmit(event)" class="wap-form">
-        <div id="field-display-name" class="form-group hidden">
-          <label>Tên hiển thị (Tiếng Việt):</label>
-          <input type="text" id="auth-display-name" placeholder="Ví dụ: Hoàng Tử Bóng Đêm" />
-        </div>
-        <div class="form-group">
-          <label id="label-account">Tên đăng nhập:</label>
-          <input type="text" id="auth-account" required placeholder="Nhập tên tài khoản..." />
-        </div>
-        <div class="form-group">
-          <label>Mật khẩu:</label>
-          <input type="password" id="auth-password" required placeholder="Nhập mật khẩu..." />
-        </div>
-        <div id="auth-error" class="error-text hidden"></div>
-        <button type="submit" id="auth-submit-btn" class="btn-block btn-primary">Đăng Nhập</button>
-      </form>
-    </div>
   </div>
 
   <!-- NẠP CÁC MÔ-ĐUN JS TÁCH BIỆT -->
