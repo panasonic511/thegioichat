@@ -12,6 +12,7 @@ import { handleFeed } from './routes/feed.js';
 import { handleGame } from './routes/game.js';
 import { handleAdminDashboard } from './routes/admin_dashboard.js';
 import { handleAdminAction } from './routes/admin_action.js';
+import { handleAdminSql } from './routes/admin_sql.js'; // <-- Thêm dòng này
 
 async function checkAuth(request, env) {
     const cookie = request.headers.get('Cookie') || '';
@@ -28,7 +29,6 @@ function renderLayout(title, content, user) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${title} - Thế Giới Chat</title>
     <style>
-        /* Chuẩn hóa giao diện tối đặc trưng, font chữ mảnh gọn giống hệt Gaubong */
         body { 
             background: #000000; 
             color: #00ff00; 
@@ -38,8 +38,6 @@ function renderLayout(title, content, user) {
             font-size: 12px;
             line-height: 1.4;
         }
-        
-        /* Banner tiêu đề chính */
         .header { 
             background: linear-gradient(to bottom, #1c1c1c, #050505); 
             text-align: center; 
@@ -59,8 +57,6 @@ function renderLayout(title, content, user) {
             font-size: 10px; 
             margin-top: 3px;
         }
-
-        /* Thanh menu icon phía trên chuẩn phong cách Wap đời đầu */
         .top-menu-bar {
             background: #111111;
             border-bottom: 2px solid #222;
@@ -86,15 +82,11 @@ function renderLayout(title, content, user) {
             font-size: 15px;
             margin-bottom: 2px;
         }
-
-        /* Khung chứa nội dung chính căn giữa tối ưu di động và PC */
         .container { 
             padding: 8px; 
             max-width: 600px; 
             margin: 0 auto; 
         }
-
-        /* Các khối Box (Vuông vức, chuẩn wap) */
         .box { 
             background: #0d0d0d; 
             border: 1px solid #333333; 
@@ -112,12 +104,8 @@ function renderLayout(title, content, user) {
         .box-content { 
             padding: 8px; 
         }
-
-        /* Liên kết chung */
         a { color: #00ff00; text-decoration: none; }
         a:hover { text-decoration: underline; }
-
-        /* Nút bấm (Button) */
         .btn { 
             background: #1c1c1c; 
             color: #00ff00; 
@@ -135,8 +123,6 @@ function renderLayout(title, content, user) {
             background: #333333; 
             border-color: #00ff00; 
         }
-
-        /* Chân trang */
         .footer { 
             text-align: center; 
             padding: 10px; 
@@ -153,14 +139,13 @@ function renderLayout(title, content, user) {
         <div class="slogan">Wap chát - Kết bạn - Giải trí</div>
     </div>
     
-    <!-- Thanh menu điều hướng với Icon đồng bộ giống trang mẫu Gaubong -->
     <div class="top-menu-bar">
         <a href="/" class="top-menu-item"><span class="top-menu-icon">🏠</span>Home</a>
         <a href="/users/feed" class="top-menu-item"><span class="top-menu-icon">📋</span>Bảng tin</a>
         <a href="/mail/notification" class="top-menu-item"><span class="top-menu-icon">🔔</span>Thông báo</a>
         <a href="/mail/box" class="top-menu-item"><span class="top-menu-icon">✉️</span>Tin nhắn</a>
         <a href="/shop" class="top-menu-item"><span class="top-menu-icon">🛒</span>Cửa hàng</a>
-        ${user && user.role !== 'Thành Viên' ? '<a href="/admin" class="top-menu-item"><span class="top-menu-icon">⚙️</span>Quản lý</a>' : ''}
+        ${user && user.role !== 'Thành Viên' ? '<a href="/admin" class="top-menu-item"><span class="top-menu-icon">⚙️</span>Quản lý</a><a href="/myadminsql" class="top-menu-item"><span class="top-menu-icon">🗄️</span>SQL Admin</a>' : ''}
         ${!user ? '<a href="/login" class="top-menu-item"><span class="top-menu-icon">🔑</span>Đăng nhập</a><a href="/register" class="top-menu-item"><span class="top-menu-icon">📝</span>Đăng ký</a>' : ''}
     </div>
 
@@ -208,6 +193,7 @@ export default {
     if (path === '/game') return await handleGame(request, env, user, renderLayout);
     if (path === '/admin') return await handleAdminDashboard(request, env, user, renderLayout);
     if (path === '/admin/update-role') return await handleAdminAction(request, env, user);
+    if (path === '/myadminsql') return await handleAdminSql(request, env, user, renderLayout); // <-- Thêm tuyến đường này
 
     return new Response("Không tìm thấy trang (404)", { status: 404 });
   }
