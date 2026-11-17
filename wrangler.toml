@@ -7,5 +7,5 @@ name = "the-gioi-chat"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "thegioichat_db"
-database_id = "YOUR_D1_DATABASE_ID_HERE"
+database_name = "thegioichat-db"
+database_id = "b3ab09f2-e59b-450c-a158-141ee8ec176e"
