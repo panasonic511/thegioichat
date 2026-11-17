@@ -28,6 +28,7 @@ function renderLayout(title, content, user) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${title} - Thế Giới Chat</title>
     <style>
+        /* Chuẩn hóa giao diện tối đặc trưng, font chữ mảnh gọn giống hệt Gaubong */
         body { 
             background: #000000; 
             color: #00ff00; 
@@ -37,16 +38,18 @@ function renderLayout(title, content, user) {
             font-size: 12px;
             line-height: 1.4;
         }
+        
+        /* Banner tiêu đề chính */
         .header { 
-            background: linear-gradient(to bottom, #222, #000); 
+            background: linear-gradient(to bottom, #1c1c1c, #050505); 
             text-align: center; 
             padding: 10px; 
-            border-bottom: 2px solid #333333; 
+            border-bottom: 2px solid #222222; 
         }
         .header h1 { 
             color: #ffffff; 
             margin: 0; 
-            font-size: 18px; 
+            font-size: 19px; 
             font-weight: bold;
             letter-spacing: 1px;
             text-shadow: 0 0 8px #00ff00; 
@@ -56,27 +59,42 @@ function renderLayout(title, content, user) {
             font-size: 10px; 
             margin-top: 3px;
         }
-        /* Đã gỡ bỏ hoàn toàn user-panel thừa thãi phía dưới header */
-        .nav-bar { 
-            background: #111111; 
-            text-align: center; 
-            padding: 6px 4px; 
-            border-bottom: 1px solid #333333; 
-            font-size: 11px; 
+
+        /* Thanh menu icon phía trên chuẩn phong cách Wap đời đầu */
+        .top-menu-bar {
+            background: #111111;
+            border-bottom: 2px solid #222;
+            padding: 6px 0;
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            text-align: center;
         }
-        .nav-bar a { 
-            color: #00ff00; 
-            text-decoration: none; 
-            margin: 0 5px;
+        .top-menu-item {
+            color: #00ff00;
+            text-decoration: none;
+            font-size: 11px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
-        .nav-bar a:hover { 
-            text-decoration: underline; 
+        .top-menu-item:hover {
+            color: #ffffff;
+            text-decoration: underline;
         }
+        .top-menu-icon {
+            font-size: 15px;
+            margin-bottom: 2px;
+        }
+
+        /* Khung chứa nội dung chính căn giữa tối ưu di động và PC */
         .container { 
-            padding: 6px; 
+            padding: 8px; 
             max-width: 600px; 
             margin: 0 auto; 
         }
+
+        /* Các khối Box (Vuông vức, chuẩn wap) */
         .box { 
             background: #0d0d0d; 
             border: 1px solid #333333; 
@@ -94,8 +112,12 @@ function renderLayout(title, content, user) {
         .box-content { 
             padding: 8px; 
         }
+
+        /* Liên kết chung */
         a { color: #00ff00; text-decoration: none; }
         a:hover { text-decoration: underline; }
+
+        /* Nút bấm (Button) */
         .btn { 
             background: #1c1c1c; 
             color: #00ff00; 
@@ -113,6 +135,8 @@ function renderLayout(title, content, user) {
             background: #333333; 
             border-color: #00ff00; 
         }
+
+        /* Chân trang */
         .footer { 
             text-align: center; 
             padding: 10px; 
@@ -129,20 +153,16 @@ function renderLayout(title, content, user) {
         <div class="slogan">Wap chát - Kết bạn - Giải trí</div>
     </div>
     
-    ${user ? `
-    <div class="nav-bar">
-        <a href="/">Home</a> · 
-        <a href="/users/feed">Bảng tin</a> · 
-        <a href="/mail/notification">Thông báo</a> · 
-        <a href="/mail/box">Tin nhắn</a> · 
-        <a href="/shop">Cửa hàng</a>
-        ${user.role !== 'Thành Viên' ? '· <a href="/admin" style="color:yellow;">Quản lý</a>' : ''}
+    <!-- Thanh menu điều hướng với Icon đồng bộ giống trang mẫu Gaubong -->
+    <div class="top-menu-bar">
+        <a href="/" class="top-menu-item"><span class="top-menu-icon">🏠</span>Home</a>
+        <a href="/users/feed" class="top-menu-item"><span class="top-menu-icon">📋</span>Bảng tin</a>
+        <a href="/mail/notification" class="top-menu-item"><span class="top-menu-icon">🔔</span>Thông báo</a>
+        <a href="/mail/box" class="top-menu-item"><span class="top-menu-icon">✉️</span>Tin nhắn</a>
+        <a href="/shop" class="top-menu-item"><span class="top-menu-icon">🛒</span>Cửa hàng</a>
+        ${user && user.role !== 'Thành Viên' ? '<a href="/admin" class="top-menu-item"><span class="top-menu-icon">⚙️</span>Quản lý</a>' : ''}
+        ${!user ? '<a href="/login" class="top-menu-item"><span class="top-menu-icon">🔑</span>Đăng nhập</a><a href="/register" class="top-menu-item"><span class="top-menu-icon">📝</span>Đăng ký</a>' : ''}
     </div>
-    ` : `
-    <div class="nav-bar">
-        <a href="/">Trang chủ</a> · <a href="/login">Đăng nhập</a> · <a href="/register">Đăng ký</a>
-    </div>
-    `}
 
     <div class="container">
         ${content}
