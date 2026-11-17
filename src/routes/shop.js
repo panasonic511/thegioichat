@@ -66,7 +66,8 @@ export async function handleShop(request, env, user, renderLayout) {
                     <span style="color: #555; font-size: 12px;">›</span>
                 </a>
 
-                <a href="#" style="background: #141414; border: 1px solid #333; padding: 8px; display: flex; justify-content: space-between; align-items: center; text-decoration: none; color: inherit; grid-column: span 2;">
+                <!-- Trỏ trực tiếp tới trang Mua màu /shop/buycolor -->
+                <a href="/shop/buycolor" style="background: #141414; border: 1px solid #333; padding: 8px; display: flex; justify-content: space-between; align-items: center; text-decoration: none; color: inherit; grid-column: span 2;">
                     <div>
                         <div style="font-weight: bold; font-size: 11px; color: #fff;">🎨 Trang trí màu sắc</div>
                         <div style="font-size: 9px; color: #888; margin-top: 1px;">Màu tên, viền và hiệu ứng sáng</div>
