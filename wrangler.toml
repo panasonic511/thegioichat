@@ -1,9 +1,9 @@
-name = "the-gioi-chat"
+name = "thegioichat"
 main = "src/worker.js"
 compatibility_date = "2024-11-18"
 
 [env.production]
-name = "the-gioi-chat"
+name = "thegioichat"
 
 [[d1_databases]]
 binding = "DB"
