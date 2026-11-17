@@ -12,7 +12,6 @@ import { handleFeed } from './routes/feed.js';
 import { handleGame } from './routes/game.js';
 import { handleAdminDashboard } from './routes/admin_dashboard.js';
 import { handleAdminAction } from './routes/admin_action.js';
-import { handleAdminSql } from './routes/admin_sql.js'; // <-- Thêm dòng này
 
 async function checkAuth(request, env) {
     const cookie = request.headers.get('Cookie') || '';
@@ -145,7 +144,7 @@ function renderLayout(title, content, user) {
         <a href="/mail/notification" class="top-menu-item"><span class="top-menu-icon">🔔</span>Thông báo</a>
         <a href="/mail/box" class="top-menu-item"><span class="top-menu-icon">✉️</span>Tin nhắn</a>
         <a href="/shop" class="top-menu-item"><span class="top-menu-icon">🛒</span>Cửa hàng</a>
-        ${user && user.role !== 'Thành Viên' ? '<a href="/admin" class="top-menu-item"><span class="top-menu-icon">⚙️</span>Quản lý</a><a href="/myadminsql" class="top-menu-item"><span class="top-menu-icon">🗄️</span>SQL Admin</a>' : ''}
+        ${user && user.role !== 'Thành Viên' ? '<a href="/admin" class="top-menu-item"><span class="top-menu-icon">⚙️</span>Quản lý</a>' : ''}
         ${!user ? '<a href="/login" class="top-menu-item"><span class="top-menu-icon">🔑</span>Đăng nhập</a><a href="/register" class="top-menu-item"><span class="top-menu-icon">📝</span>Đăng ký</a>' : ''}
     </div>
 
@@ -193,7 +192,6 @@ export default {
     if (path === '/game') return await handleGame(request, env, user, renderLayout);
     if (path === '/admin') return await handleAdminDashboard(request, env, user, renderLayout);
     if (path === '/admin/update-role') return await handleAdminAction(request, env, user);
-    if (path === '/myadminsql') return await handleAdminSql(request, env, user, renderLayout); // <-- Thêm tuyến đường này
 
     return new Response("Không tìm thấy trang (404)", { status: 404 });
   }
