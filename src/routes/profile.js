@@ -4,7 +4,6 @@ export async function handleProfile(request, env, user, renderLayout, url) {
     let message = "";
     const targetId = parseInt(url.searchParams.get('user') || user.id);
 
-    // Tự động kiểm tra và thêm các cột cần thiết vào DB
     const cols = ['name_color', 'name_glow', 'name_border', 'name_border_glow', 'border_color', 'avatar_glow', 'cover_photo', 'gender', 'relationship', 'province', 'birthday', 'online_minutes', 'created_at'];
     for (const col of cols) {
         try { await env.DB.prepare(`ALTER TABLE users ADD COLUMN ${col} TEXT;`).run(); } catch(e) {}
@@ -54,6 +53,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             if (isOwner) {
                 if (action === 'update_cover') {
                     const coverPhoto = formData.get('cover_photo');
+                    if (!coverPhoto) throw new Error("Vui lòng chọn ảnh bìa hợp lệ!");
                     await env.DB.prepare("UPDATE users SET cover_photo = ? WHERE id = ?").bind(coverPhoto.trim(), user.id).run();
                     message = `<div style="color: #00ff00; background: #001a00; border: 1px solid #005500; padding: 6px; text-align: center; margin-bottom: 8px;">✅ Cập nhật ảnh bìa thành công!</div>`;
                 } else if (action === 'delete_cover') {
@@ -61,6 +61,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                     message = `<div style="color: #ffcc00; background: #1a1a00; border: 1px solid #555500; padding: 6px; text-align: center; margin-bottom: 8px;">⚠️ Đã xóa ảnh bìa!</div>`;
                 } else if (action === 'update_avatar') {
                     const avatar = formData.get('avatar');
+                    if (!avatar) throw new Error("Vui lòng chọn ảnh đại diện hợp lệ!");
                     await env.DB.prepare("UPDATE users SET avatar = ? WHERE id = ?").bind(avatar.trim(), user.id).run();
                     message = `<div style="color: #00ff00; background: #001a00; border: 1px solid #005500; padding: 6px; text-align: center; margin-bottom: 8px;">✅ Cập nhật ảnh đại diện thành công!</div>`;
                 } else if (action === 'update_info') {
@@ -163,9 +164,10 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             </div>
             ` : ''}
 
+            <!-- Avatar kèm nút icon máy ảnh mở modal -->
             <div style="position: relative; margin-top: -35px; margin-bottom: 4px; display: inline-block;">
                 <img src="${profileUser.avatar && !profileUser.avatar.includes('7gXvS6v') ? profileUser.avatar : 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'><rect width=\'100\' height=\'100\' fill=\'%231a1a1a\'/><circle cx=\'50\' cy=\'38\' r=\'18\' fill=\'%2300ff00\'/></svg>'}" width="66" height="66" style="${profileUI.avatarStyle} display: block;">
-                ${isOwner ? `<button type="button" onclick="openAvatarModal()" title="Đổi ảnh đại diện" style="position: absolute; bottom: -2px; right: -2px; background: #111; color: #00ff00; border: 1px solid #00ff00; border-radius: 50%; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0;">📷</button>` : ''}
+                ${isOwner ? `<button type="button" onclick="openAvatarModal()" title="Đổi ảnh đại diện" style="position: absolute; bottom: -2px; right: -2px; background: #111; color: #00ff00; border: 1px solid #00ff00; border-radius: 50%; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; box-shadow: 0 0 4px #000;">📷</button>` : ''}
             </div>
             
             <div style="font-size: 13px; margin-bottom: 2px;">
@@ -225,7 +227,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         </div>
     </div>
 
-    <!-- Modal Cài đặt thông tin -->
+    <!-- Popup Modal Cài đặt thông tin -->
     ${isOwner ? `
     <div id="settings-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.88); z-index: 999; justify-content: center; align-items: center; padding: 10px; box-sizing: border-box;">
         <div style="background: #111; border: 1px solid #444; width: 100%; max-width: 400px; padding: 12px; box-sizing: border-box; max-height: 90vh; overflow-y: auto;">
@@ -259,10 +261,147 @@ export async function handleProfile(request, env, user, renderLayout, url) {
     </div>
     ` : ''}
 
+    <!-- Popup Modal Đổi Avatar (Có kéo/zoom) -->
+    <div id="avatar-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.88); z-index: 999; justify-content: center; align-items: center; padding: 10px; box-sizing: border-box;">
+        <div style="background: #111; border: 1px solid #444; width: 100%; max-width: 380px; padding: 12px; box-sizing: border-box; text-align: center;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 6px; margin-bottom: 8px;">
+                <b style="color: #00ff00; font-size: 12px;">📷 Tùy chỉnh Ảnh đại diện</b>
+                <button type="button" onclick="closeAvatarModal()" style="background:none; border:none; color:#ff5555; font-weight:bold; cursor:pointer;">✕</button>
+            </div>
+            <input type="file" accept="image/*" onchange="initImageEditor(this, 'avatar-editor-container', 200, 200)" style="width: 100%; font-size: 11px; color: #ccc; margin-bottom: 8px; background: #000; border: 1px solid #444; padding: 4px;">
+            <div id="avatar-editor-container" style="position: relative; width: 200px; height: 200px; margin: 0 auto 8px auto; background: #000; border: 2px dashed #00ff00; overflow: hidden; cursor: grab; display: none;">
+                <img id="avatar-edit-img" style="position: absolute; top: 0; left: 0; transform-origin: top left; pointer-events: none;">
+            </div>
+            <form method="POST">
+                <input type="hidden" name="action" value="update_avatar">
+                <input type="hidden" id="avatar-input-val" name="avatar" required>
+                <div style="display: flex; gap: 6px;">
+                    <button type="submit" id="btn-save-avatar" class="btn" style="background: #0055ff; color: #fff; flex: 1; display: none;">Lưu Avatar</button>
+                    <button type="button" onclick="closeAvatarModal()" class="btn" style="background: #333; color: #ccc; flex: 1;">Đóng</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Popup Modal Đổi Ảnh bìa -->
+    <div id="cover-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.88); z-index: 999; justify-content: center; align-items: center; padding: 10px; box-sizing: border-box;">
+        <div style="background: #111; border: 1px solid #444; width: 100%; max-width: 380px; padding: 12px; box-sizing: border-box; text-align: center;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 6px; margin-bottom: 8px;">
+                <b style="color: #ffcc00; font-size: 12px;">🖼️ Tùy chỉnh Ảnh bìa</b>
+                <button type="button" onclick="closeCoverModal()" style="background:none; border:none; color:#ff5555; font-weight:bold; cursor:pointer;">✕</button>
+            </div>
+            <input type="file" accept="image/*" onchange="initImageEditor(this, 'cover-editor-container', 320, 120)" style="width: 100%; font-size: 11px; color: #ccc; margin-bottom: 8px; background: #000; border: 1px solid #444; padding: 4px;">
+            <div id="cover-editor-container" style="position: relative; width: 320px; height: 120px; margin: 0 auto 8px auto; background: #000; border: 2px dashed #ffcc00; overflow: hidden; cursor: grab; display: none;">
+                <img id="cover-edit-img" style="position: absolute; top: 0; left: 0; transform-origin: top left; pointer-events: none;">
+            </div>
+            <form method="POST">
+                <input type="hidden" name="action" value="update_cover">
+                <input type="hidden" id="cover-input-val" name="cover_photo" required>
+                <div style="display: flex; gap: 6px;">
+                    <button type="submit" id="btn-save-cover" class="btn" style="background: #0055ff; color: #fff; flex: 1; display: none;">Lưu Ảnh Bìa</button>
+                    <button type="button" onclick="closeCoverModal()" class="btn" style="background: #333; color: #ccc; flex: 1;">Đóng</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- JavaScript kích hoạt Modal và Cắt/Kéo ảnh -->
     <script>
         function openSettingsModal() { document.getElementById('settings-modal').style.display = 'flex'; }
         function closeSettingsModal() { document.getElementById('settings-modal').style.display = 'none'; }
+        
+        function openAvatarModal() { document.getElementById('avatar-modal').style.display = 'flex'; }
+        function closeAvatarModal() { document.getElementById('avatar-modal').style.display = 'none'; }
+        
+        function openCoverModal() { document.getElementById('cover-modal').style.display = 'flex'; }
+        function closeCoverModal() { document.getElementById('cover-modal').style.display = 'none'; }
+
+        let editorState = { prefix: '', container: null, imgEl: null, inputVal: null, btnSave: null, boxW: 0, boxH: 0, natW: 0, natH: 0, posX: 0, posY: 0, scale: 1, isDragging: false, startX: 0, startY: 0 };
+
+        function initImageEditor(fileInput, containerId, boxW, boxH) {
+            const file = fileInput.files[0];
+            if (!file) return;
+            const prefix = containerId.includes('avatar') ? 'avatar' : 'cover';
+            editorState.prefix = prefix;
+            editorState.boxW = boxW;
+            editorState.boxH = boxH;
+            editorState.container = document.getElementById(containerId);
+            editorState.imgEl = document.getElementById(prefix + '-edit-img');
+            editorState.inputVal = document.getElementById(prefix + '-input-val');
+            editorState.btnSave = document.getElementById('btn-save-' + prefix);
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    editorState.natW = img.width;
+                    editorState.natH = img.height;
+                    editorState.imgEl.src = img.src;
+                    const scaleX = boxW / img.width;
+                    const scaleY = boxH / img.height;
+                    editorState.scale = Math.max(scaleX, scaleY);
+                    editorState.posX = (boxW - img.width * editorState.scale) / 2;
+                    editorState.posY = (boxH - img.height * editorState.scale) / 2;
+                    updateTransform();
+                    editorState.container.style.display = 'block';
+                    editorState.btnSave.style.display = 'block';
+                    setupDragEvents();
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function updateTransform() {
+            editorState.imgEl.style.width = editorState.natW + 'px';
+            editorState.imgEl.style.height = editorState.natH + 'px';
+            editorState.imgEl.style.transform = \`translate(\${editorState.posX}px, \${editorState.posY}px) scale(\${editorState.scale})\`;
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = editorState.boxW;
+            canvas.height = editorState.boxH;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.save();
+            ctx.translate(editorState.posX, editorState.posY);
+            ctx.scale(editorState.scale, editorState.scale);
+            ctx.drawImage(editorState.imgEl, 0, 0);
+            ctx.restore();
+            editorState.inputVal.value = canvas.toDataURL('image/jpeg', 0.85);
+        }
+
+        function setupDragEvents() {
+            const el = editorState.container;
+            el.onmousedown = function(e) {
+                editorState.isDragging = true;
+                editorState.startX = e.clientX - editorState.posX;
+                editorState.startY = e.clientY - editorState.posY;
+            };
+            window.onmousemove = function(e) {
+                if (!editorState.isDragging) return;
+                editorState.posX = e.clientX - editorState.startX;
+                editorState.posY = e.clientY - editorState.startY;
+                updateTransform();
+            };
+            window.onmouseup = function() { editorState.isDragging = false; };
+            el.ontouchstart = function(e) {
+                if (e.touches.length === 1) {
+                    editorState.isDragging = true;
+                    editorState.startX = e.touches[0].clientX - editorState.posX;
+                    editorState.startY = e.touches[0].clientY - editorState.posY;
+                }
+            };
+            window.ontouchmove = function(e) {
+                if (!editorState.isDragging || e.touches.length !== 1) return;
+                editorState.posX = e.touches[0].clientX - editorState.startX;
+                editorState.posY = e.touches[0].clientY - editorState.startY;
+                updateTransform();
+            };
+            window.ontouchend = function() { editorState.isDragging = false; };
+        }
     </script>
+
     <div style="text-align: center; margin-top: 10px;"><a href="/">⬅️ Về trang chủ</a></div>
     `;
 
