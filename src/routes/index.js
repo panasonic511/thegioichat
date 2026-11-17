@@ -3,7 +3,6 @@ import { handleLogin } from './auth.js';
 export async function handleIndex(request, env, user, renderLayout) {
     // Nếu người dùng chưa đăng nhập, hiển thị form đăng nhập trực tiếp ngay tại trang chủ
     if (!user) {
-        // Xử lý nếu người dùng bấm nút gửi form đăng nhập (POST ngay tại trang chủ)
         if (request.method === 'POST') {
             return await handleLogin(request, env);
         }
@@ -36,7 +35,7 @@ export async function handleIndex(request, env, user, renderLayout) {
         });
     }
 
-    // Nếu ĐÃ ĐĂNG NHẬP: Hiển thị giao diện phòng chat và menu đầy đủ bên trong
+    // Lấy thông báo hệ thống
     let announcements = { results: [] };
     try {
         announcements = await env.DB.prepare(`
@@ -51,6 +50,30 @@ export async function handleIndex(request, env, user, renderLayout) {
     }
 
     const content = `
+    <!-- Khung thông tin cá nhân giống hệt mẫu Gaubong: Avatar, tên, xu và chức vụ bên phải -->
+    <div class="box" style="margin-bottom: 8px; background: #0d0d0d; border: 1px solid #333;">
+        <div class="box-content" style="display: flex; align-items: center; justify-content: space-between; padding: 8px;">
+            <div style="display: flex; align-items: center;">
+                <img src="${user.avatar || 'https://i.imgur.com/7gXvS6v.png'}" width="36" height="36" style="border-radius: 50%; border: 1px solid #555; margin-right: 8px;">
+                <div>
+                    <div>
+                        <a href="/profile" style="font-weight: bold; color: #00ff00;">${user.display_name}</a> 
+                        <span style="color: #ffcc00; font-size: 11px;">[Lv.${user.level}]</span>
+                    </div>
+                    <div style="font-size: 11px; color: #ccc; margin-top: 2px;">
+                        🪙 ${user.coins ? user.coins.toLocaleString() : 0} Xu 
+                        ${user.gold ? `| 👑 ${user.gold.toLocaleString()} Vàng` : ''}
+                    </div>
+                </div>
+            </div>
+            <div>
+                <span style="background: #1a1a1a; color: #ffcc00; padding: 3px 8px; border: 1px solid #444; font-size: 11px; font-weight: bold;">
+                    ${user.role}
+                </span>
+            </div>
+        </div>
+    </div>
+
     <!-- Phòng chát -->
     <div class="box">
         <div class="box-title">🟢 Phòng chát</div>
@@ -70,7 +93,7 @@ export async function handleIndex(request, env, user, renderLayout) {
         <div class="box-content">
             <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #222; padding-bottom: 6px; margin-bottom: 6px; font-size: 11px; color: #aaa;">
                 <div>
-                    <b style="color: #fff; font-size: 13px;">04:24</b><br>
+                    <b style="color: #fff; font-size: 13px;">04:31</b><br>
                     Thứ Tư - 18/11/2026
                 </div>
                 <div style="text-align: right; line-height: 1.6;">
