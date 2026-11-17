@@ -1,5 +1,5 @@
 name = "the-gioi-chat"
-main = "worker.js"
+main = "src/worker.js"
 compatibility_date = "2024-11-18"
 
 [env.production]
