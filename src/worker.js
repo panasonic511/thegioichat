@@ -10,7 +10,7 @@ export default {
         const path = url.pathname;
         const method = request.method;
 
-        // Xử lý API ĐĂNG NHẬP (Login)
+                // Xử lý API ĐĂNG NHẬP (Login)
         if (path === '/api/login' && method === 'POST') {
           let body;
           try {
@@ -22,10 +22,10 @@ export default {
             });
           }
 
-          const username = body?.username;
-          const password = body?.password;
+          // Hỗ trợ bắt đa dạng tên biến từ phía giao diện (username/user/account và password/pass)
+          const username = body?.username || body?.user || body?.account;
+          const password = body?.password || body?.pass;
 
-          // Kiểm tra nếu thiếu thông tin
           if (!username || !password) {
             return new Response(JSON.stringify({ error: "Vui lòng nhập đầy đủ tên tài khoản và mật khẩu!" }), {
               status: 400,
@@ -54,6 +54,7 @@ export default {
             headers: { "Content-Type": "application/json" }
           });
         }
+
 
         // Xử lý API ĐĂNG KÝ (Register)
         if (path === '/api/register' && method === 'POST') {
