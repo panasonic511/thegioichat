@@ -12,6 +12,8 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 sender_id INTEGER,
                 receiver_id INTEGER,
+                user_id INTEGER,
+                partner_id INTEGER,
                 message TEXT,
                 image_url TEXT,
                 is_read INTEGER DEFAULT 0,
@@ -29,21 +31,16 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
             const imageUrl = formData.get('image_url');
             
             if ((message && message.trim() !== '') || (imageUrl && imageUrl.trim() !== '')) {
-                try {
-                    await env.DB.prepare(
-                        "INSERT INTO mail_box (sender_id, receiver_id, message, image_url, is_read, created_at) VALUES (?, ?, ?, ?, 0, datetime('now'))"
-                    ).bind(user.id, partnerId, message || '', imageUrl || '').run();
-                } catch (err) {
-                    await env.DB.prepare(
-                        "INSERT INTO mail_box (user_id, partner_id, message, image_url, is_read, created_at) VALUES (?, ?, ?, ?, 0, datetime('now'))"
-                    ).bind(user.id, partnerId, message || '', imageUrl || '').run();
-                }
+                // Lưu đồng thời cả 2 chuẩn cột (sender_id/receiver_id và user_id/partner_id) để tương thích tuyệt đối mọi bảng dữ liệu cũ/mới
+                await env.DB.prepare(
+                    "INSERT INTO mail_box (sender_id, receiver_id, user_id, partner_id, message, image_url, is_read, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, datetime('now'))"
+                ).bind(user.id, partnerId, user.id, partnerId, message || '', imageUrl || '').run();
             }
         } catch (e) {}
         return Response.redirect(new URL(`/mail/chat?user=${partnerId}`, request.url), 302);
     }
 
-    // Lấy thông tin đối phương (bao gồm đầy đủ các trường style tên)
+    // Lấy thông tin đối phương (đầy đủ style tên)
     let partner = null;
     try {
         partner = await env.DB.prepare(`
@@ -59,13 +56,10 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
 
     // Đánh dấu đã đọc
     try {
-        await env.DB.prepare("UPDATE mail_box SET is_read = 1 WHERE receiver_id = ? AND sender_id = ?").bind(user.id, partnerId).run();
-    } catch (e) {}
-    try {
-        await env.DB.prepare("UPDATE mail_box SET is_read = 1 WHERE partner_id = ? AND user_id = ?").bind(user.id, partnerId).run();
+        await env.DB.prepare("UPDATE mail_box SET is_read = 1 WHERE (receiver_id = ? AND sender_id = ?) OR (partner_id = ? AND user_id = ?)").bind(user.id, partnerId, user.id, partnerId).run();
     } catch (e) {}
 
-    // Lấy lịch sử tin nhắn an toàn (Hỗ trợ cả 2 chuẩn cột sender_id/receiver_id và user_id/partner_id)
+    // Lấy lịch sử tin nhắn toàn diện
     let messages = [];
     try {
         let history = await env.DB.prepare(`
@@ -98,7 +92,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                         const senderId = m.sender_id || m.user_id;
                         const isMe = Number(senderId) === Number(user.id);
                         
-                        // Gán đúng thông tin user hoặc partner để render avatar và style tên
+                        // Lấy thông tin người gửi chính xác (nếu là mình thì lấy từ user hiện tại, ngược lại lấy từ partner)
                         const msgUser = isMe ? user : partner;
                         const rMsgUser = renderUser(msgUser);
 
