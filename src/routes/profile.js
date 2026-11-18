@@ -171,11 +171,14 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             </div>
             
             <div style="font-size: 13px; margin-bottom: 2px;">
-    ${rProfile.nameHtml}
-    <span style="color: #ffcc00; font-size: 11px;">[Lv.${profileUser.level || 1}]</span>
-</div>
+                ${rProfile.nameHtml}
+                <span style="color: #ffcc00; font-size: 11px;">[Lv.${profileUser.level || 1}]</span>
             </div>
-            <div style="font-size: 10px; color: #aaa; margin-bottom: 8px;">ID ${profileUser.id} · <span style="color: yellow;">${profileUser.role}</span></div>
+
+            <!-- PHẦN ĐÃ CHỈNH SỬA: Căn giữa, phóng to font chữ và in đậm ID & Chức vụ -->
+            <div style="text-align: center; font-size: 13px; font-weight: bold; color: #ccc; margin: 4px 0 8px 0;">
+                ID ${profileUser.id} <span style="margin: 0 4px; color: #666;">·</span> <span style="color: #ffcc00; font-size: 13px;">${profileUser.role || 'Thành Viên'}</span>
+            </div>
 
             ${!isOwner ? `
             <div style="padding-bottom: 8px; display: flex; justify-content: center; gap: 6px;">
