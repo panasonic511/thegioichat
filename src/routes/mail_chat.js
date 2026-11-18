@@ -4,7 +4,6 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         return Response.redirect(new URL('/mail/box', request.url), 302);
     }
 
-    // Tự động tạo bảng nếu chưa có
     try {
         await env.DB.prepare(`
             CREATE TABLE IF NOT EXISTS mail_box (
@@ -18,7 +17,6 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         `).run();
     } catch (e) {}
 
-    // Xử lý gửi tin nhắn mới (POST)
     if (request.method === 'POST') {
         try {
             const formData = await request.formData();
@@ -42,7 +40,6 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         return Response.redirect(new URL(`/mail/chat?user=${partnerId}`, request.url), 302);
     }
 
-    // Lấy thông tin đối phương
     let partner = null;
     try {
         partner = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(partnerId).first();
@@ -52,7 +49,6 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         return new Response("Không tìm thấy thành viên này.", { status: 404 });
     }
 
-    // NGAY KHI VÀO TRANG CHAT: Đánh dấu tất cả tin nhắn từ người này thành ĐÃ ĐỌC (is_read = 1) để tắt thông báo/bong bóng
     try {
         await env.DB.prepare(
             "UPDATE mail_box SET is_read = 1 WHERE receiver_id = ? AND sender_id = ?"
@@ -64,7 +60,6 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         ).bind(user.id, partnerId).run();
     } catch (e) {}
 
-    // Lấy lịch sử tin nhắn
     let messages = [];
     try {
         let history = await env.DB.prepare(`
@@ -92,7 +87,6 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         <div class="box-title">🟢 Trò chuyện với ${partner.display_name || partner.username}</div>
         <div class="box-content" style="padding: 8px;">
             
-            <!-- Khung chứa tin nhắn -->
             <div id="chatMessageBox" style="height: 350px; overflow-y: scroll; background: #000; border: 1px solid #333; padding: 10px; display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px;">
                 ${messages.length === 0 ? '<div style="color: #777; text-align: center; margin-top: 140px;">Chưa có tin nhắn nào. Hãy gửi tin nhắn mở lời!</div>' : 
                     messages.map(m => {
@@ -107,7 +101,6 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                     }).join('')}
             </div>
 
-            <!-- Form gửi tin nhắn -->
             <form method="POST" id="chatForm" style="display: flex; gap: 6px;">
                 <input type="text" name="message" id="messageInput" placeholder="Nhập nội dung chát..." required autocomplete="off" style="flex: 1; background: #000; color: #fff; border: 1px solid #444; padding: 8px; font-size: 14px; box-sizing: border-box;">
                 <button type="submit" class="btn" style="background: #0055ff; color: #fff; padding: 8px 14px; font-size: 14px;">Gửi</button>
@@ -119,7 +112,6 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         </div>
     </div>
 
-    <!-- Script tự động cập nhật tin nhắn ngầm -->
     <script>
         const currentUserId = ${user.id};
         const partnerId = ${partnerId};
