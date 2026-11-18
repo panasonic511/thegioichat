@@ -181,6 +181,15 @@ export async function handleFeed(request, env, user, renderLayout) {
 
                 const imageTag = p.image_url ? `<div style="margin-top: 8px; background: #000; text-align: center; border-radius: 4px; overflow: hidden;"><img src="${p.image_url}" style="width: 100%; max-height: 450px; object-fit: contain; display: block; margin: 0 auto;"></div>` : '';
 
+                // Xây dựng logic hiển thị chức vụ: Quản lý/Chủ Wap có khung, Thành viên hiển thị chữ bình thường
+                const roleDisplayHtml = (p.role && p.role !== 'Thành Viên') ? `
+                    <span style="display: inline-block; background: #1a1a1a; border: 1px solid #444; color: #ffcc00; font-size: 10px; font-weight: bold; padding: 1px 6px; border-radius: 4px; text-shadow: 0 0 4px rgba(255,204,0,0.4);">
+                        ${p.role}
+                    </span>
+                ` : `
+                    <span style="color: #888; font-size: 11px;">${p.role || 'Thành viên'}</span>
+                `;
+
                 postsHtml += `
                 <div style="background: #121212; border: 1px solid #2c2c2c; border-radius: 6px; padding: 12px; margin-bottom: 12px;">
                     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
@@ -189,7 +198,9 @@ export async function handleFeed(request, env, user, renderLayout) {
                         </div>
                         <div>
                             <div>${rUser.nameHtml} <span style="font-size: 10px; color: #888; margin-left: 6px;">${p.created_at || ''}</span></div>
-                            <div style="font-size: 11px; color: #ffcc00;">${p.role || 'Thành viên'} • 🌍 Công khai</div>
+                            <div style="font-size: 11px; margin-top: 2px; display: flex; align-items: center; gap: 4px;">
+                                ${roleDisplayHtml} <span style="color: #666;">•</span> <span style="color: #aaa;">🌍 Công khai</span>
+                            </div>
                         </div>
                     </div>
                     <div style="color: #ddd; font-size: 13px; word-break: break-word; white-space: pre-wrap; margin-bottom: 6px;">${p.content || ''}</div>
@@ -385,7 +396,7 @@ export async function handleFeed(request, env, user, renderLayout) {
                     body: formData
                 });
                 if (res.ok) {
-                    window.location.reload(); // Reload nhẹ để đồng bộ hiển thị đúng tên và hiệu phong cách cá nhân của user vừa bình luận
+                    window.location.reload(); // Reload nhẹ để đồng bộ hiển thị đúng tên và phong cách cá nhân của user vừa bình luận
                 }
             } catch (e) {
                 window.location.reload();
