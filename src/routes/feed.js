@@ -1,37 +1,83 @@
-import { renderUser } from '../utils/userStyle.js';
+import { renderUser } from '../worker.js';
 
 export async function handleFeed(request, env, user, renderLayout) {
-    // ... (phần xử lý POST đăng bài giữ nguyên)
-    let feeds = { results: [] };
     try {
-        feeds = await env.DB.prepare(`
-            SELECT f.*, u.display_name, u.avatar, u.role, u.level, u.name_color, u.name_glow, u.name_border, u.name_border_glow, u.border_color, u.avatar_glow
-            FROM feeds f 
-            JOIN users u ON f.user_id = u.id 
-            ORDER BY f.id DESC LIMIT 20
-        `).all();
+        await env.DB.prepare(`
+            CREATE TABLE IF NOT EXISTS posts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                content TEXT,
+                created_at TEXT
+            )
+        `).run();
     } catch (e) {}
+
+    let message = '';
+    if (request.method === 'POST') {
+        try {
+            const formData = await request.formData();
+            const postContent = formData.get('content');
+            if (postContent && postContent.trim() !== '') {
+                await env.DB.prepare(
+                    "INSERT INTO posts (user_id, content, created_at) VALUES (?, ?, datetime('now'))"
+                ).bind(user.id, postContent.trim()).run();
+                message = '<div style="color: #00ff00; text-align: center; margin-bottom: 10px; font-weight: bold;">Đăng bài thành công!</div>';
+            }
+        } catch (e) {
+            message = `<div style="color: #ff3333; text-align: center; margin-bottom: 10px;">Lỗi: ${e.message}</div>`;
+        }
+    }
+
+    let posts = [];
+    try {
+        const res = await env.DB.prepare(`
+            SELECT posts.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow, 
+                   users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role
+            FROM posts 
+            JOIN users ON posts.user_id = users.id 
+            ORDER BY posts.id DESC LIMIT 20
+        `).all();
+        if (res.results) posts = res.results;
+    } catch (e) {}
+
+    let postsHtml = '';
+    if (posts.length === 0) {
+        postsHtml = '<div style="text-align: center; color: #777; padding: 20px;">Chưa có bài viết nào trên bảng tin.</div>';
+    } else {
+        postsHtml = posts.map(p => {
+            const rUser = renderUser(p);
+            return `
+            <div style="background: #121212; border: 1px solid #2c2c2c; border-radius: 6px; padding: 12px; margin-bottom: 10px;">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                    <div style="width: 36px; height: 36px;">${rUser.avatarHtml}</div>
+                    <div>
+                        <div>${rUser.nameHtml} <span style="font-size: 10px; color: #888; margin-left: 6px;">${p.created_at || ''}</span></div>
+                        <div style="font-size: 11px; color: #ffcc00;">${p.role || 'Thành viên'}</div>
+                    </div>
+                </div>
+                <div style="color: #ddd; font-size: 13px; word-break: break-word; white-space: pre-wrap; padding-left: 46px;">${p.content}</div>
+            </div>`;
+        }).join('');
+    }
 
     const content = `
     <div class="box">
-        <div class="box-title">📋 Bảng tin hoạt động</div>
-        <div class="box-content" style="padding: 4px;">
-            ${feeds.results.map(f => {
-                const fUI = renderUser(f);
-                return `
-                <div style="border-bottom: 1px solid #222; padding: 8px 4px; margin-bottom: 6px;">
-                    <div style="display: flex; align-items: center; margin-bottom: 4px;">
-                        <div style="width: 28px; height: 28px; margin-right: 6px;">
-                            <img src="${f.avatar && !f.avatar.includes('7gXvS6v') ? f.avatar : 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'><rect width=\'100\' height=\'100\' fill=\'%231a1a1a\'/><circle cx=\'50\' cy=\'38\' r=\'18\' fill=\'%2300ff00\'/></svg>'}" width="28" height="28" style="${fUI.avatarStyle} display:block;">
-                        </div>
-                        <div>
-                            <a href="/profile?user=${f.user_id}" style="${fUI.nameStyle}">${f.display_name}</a> 
-                            <span style="color: #ffcc00; font-size: 10px;">[Lv.${f.level}]</span>
-                        </div>
-                    </div>
-                    ${f.content ? `<div style="font-size: 12px; color: #fff; margin-bottom: 6px;">${f.content}</div>` : ''}
-                </div>`;
-            }).join('')}
+        <div class="box-title">📋 Đăng bài lên bảng tin</div>
+        <div class="box-content">
+            ${message}
+            <form method="POST">
+                <textarea name="content" rows="3" placeholder="Bạn đang nghĩ gì thế..." style="width: 100%; background: #141414; color: #00ff00; border: 1px solid #444; padding: 8px; border-radius: 4px; box-sizing: border-box; font-size: 13px; resize: vertical;"></textarea>
+                <div style="text-align: right; margin-top: 6px;">
+                    <button type="submit" class="btn" style="background: #00aa00; color: #fff; padding: 6px 16px; border-radius: 4px;">Đăng bài</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="box">
+        <div class="box-title">📰 Bảng tin cộng đồng</div>
+        <div class="box-content">
+            ${postsHtml}
         </div>
     </div>
     `;
