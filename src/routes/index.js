@@ -47,33 +47,50 @@ export async function handleIndex(request, env, user, renderLayout) {
         recentUsers = rUsers.results || [];
     } catch (e) {}
 
-    function safeRenderUser(u) {
-        const safe = u || {};
-        const defaultAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/></svg>";
-        const avt = (safe.avatar && !String(safe.avatar).includes('7gXvS6v')) ? safe.avatar : defaultAvatar;
-        
-        const borderColor = safe.border_color || '#ffcc00';
-        let avtStyle = `border-radius: 50%; object-fit: cover; border: 2px solid ${borderColor};`;
-        if (safe.avatar_glow && safe.avatar_glow !== '#000000') avtStyle += ` box-shadow: 0 0 10px ${safe.avatar_glow};`;
+   export function renderUser(u) {
+    const safeUser = new Proxy(u || {}, {
+        get(target, prop) {
+            if (prop === 'id' || prop === 'user_id') return target[prop] || 0;
+            return target[prop] !== undefined && target[prop] !== null ? target[prop] : '';
+        }
+    });
 
-        const nameColor = safe.name_color || '#00ff00';
-        let nameStyle = `color: ${nameColor}; font-weight: bold;`;
-        let shadows = [];
-        if (safe.name_glow && safe.name_glow !== '#000000') shadows.push(`0 0 6px ${safe.name_glow}`);
-        if (safe.name_border_glow && safe.name_border_glow !== '#000000') shadows.push(`0 0 4px ${safe.name_border_glow}`);
-        if (shadows.length > 0) nameStyle += ` text-shadow: ${shadows.join(', ')};`;
-        if (safe.name_border && safe.name_border !== '#000000') nameStyle += ` -webkit-text-stroke: 0.5px ${safe.name_border};`;
+    const defaultAvatarMale = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'><rect width='120' height='120' fill='%230f172a'/><circle cx='60' cy='45' r='22' fill='%2338bdf8'/><path d='M20 105 C20 80, 100 80, 100 105' fill='%2338bdf8'/></svg>";
+    const defaultAvatarFemale = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'><rect width='120' height='120' fill='%231f1025'/><circle cx='60' cy='45' r='22' fill='%23f472b6'/><path d='M20 105 C20 80, 100 80, 100 105' fill='%23f472b6'/></svg>";
 
-        const name = safe.display_name || 'Thành viên';
-        const uid = safe.user_id || safe.id || '';
+    const userGender = String(safeUser.gender || 'male');
+    const systemDefaultAvatar = userGender === 'female' ? defaultAvatarFemale : defaultAvatarMale;
 
-        return {
+    const avatarVal = String(safeUser.avatar || '');
+    const avatarUrl = (avatarVal && !avatarVal.includes('7gXvS6v')) ? avatarVal : systemDefaultAvatar;
+
+    const borderColor = String(safeUser.border_color || '#ffcc00');
+    let avatarStyle = `border-radius: 50%; object-fit: cover; border: 2px solid ${borderColor};`;
+    if (safeUser.avatar_glow && safeUser.avatar_glow !== '#000000') {
+        avatarStyle += ` box-shadow: 0 0 10px ${safeUser.avatar_glow};`;
+    }
+
+    const nameColor = String(safeUser.name_color || '#00ff00');
+    let nameStyle = `color: ${nameColor}; font-weight: bold;`;
+    let shadows = [];
+    if (safeUser.name_glow && safeUser.name_glow !== '#000000') shadows.push(`0 0 6px ${safeUser.name_glow}`);
+    if (safeUser.name_border_glow && safeUser.name_border_glow !== '#000000') shadows.push(`0 0 4px ${safeUser.name_border_glow}`);
+    if (shadows.length > 0) nameStyle += ` text-shadow: ${shadows.join(', ')};`;
+    if (safeUser.name_border && safeUser.name_border !== '#000000') nameStyle += ` -webkit-text-stroke: 0.5px ${safeUser.name_border};`;
+
+    const displayName = safeUser.display_name || safeUser.username || 'Thành viên';
+    const userId = safeUser.user_id || safeUser.id || 0;
+    
+    // Tự động gắn Icon trước tên người dùng trên toàn bộ hệ thống Wap
+    const activeIcon = safeUser.active_icon ? `${safeUser.active_icon} ` : '';
+
+    return {
         nameStyle,
         avatarStyle,
         nameHtml: `<a href="/profile?user=${userId}" style="${nameStyle}">${activeIcon}${displayName}</a>`,
         avatarHtml: `<a href="/profile?user=${userId}"><img src="${avatarUrl}" style="${avatarStyle}"></a>`
-        };
-    }
+    };
+}
 
     const currentUserUI = safeRenderUser(user);
 
