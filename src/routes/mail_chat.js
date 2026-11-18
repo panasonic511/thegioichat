@@ -119,7 +119,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
 
         let messageText = m.message || '';
         if (messageText.startsWith('http') && (messageText.includes('.gif') || messageText.includes('giphy') || messageText.includes('tenor'))) {
-            messageText = `<img src="${messageText}" style="max-width: 120px; max-height: 120px; border-radius: 6px; display: block;" />`;
+            messageText = `<img src="${messageText}" style="max-width: 140px; max-height: 140px; border-radius: 6px; display: block;" />`;
         } else {
             messageText = `<div>${messageText}</div>`;
         }
@@ -144,7 +144,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
     };
 
     const content = `
-    <div class="box">
+    <div class="box" style="position: relative;">
         <div class="box-title" style="display: flex; align-items: center; gap: 8px; font-size: 15px;">
             <span>🟢 Trò chuyện với</span> ${rPartnerHeader.nameHtml}
         </div>
@@ -156,7 +156,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
             </div>
 
             <!-- Form Gửi tin nhắn qua Ajax không load lại trang -->
-            <form id="chatForm" onsubmit="sendChatMessage(event)" style="display: flex; flex-direction: column; gap: 8px;">
+            <form id="chatForm" onsubmit="sendChatMessage(event)" style="display: flex; flex-direction: column; gap: 8px; position: relative;">
                 <div style="display: flex; gap: 8px; align-items: center;">
                     <label style="display: inline-flex; align-items: center; justify-content: center; background: #1a1a1a; border: 1px solid #444; color: #00ff00; width: 40px; height: 40px; border-radius: 6px; cursor: pointer; font-size: 20px;" title="Gửi ảnh">
                         📷
@@ -164,24 +164,35 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                     </label>
                     <input type="hidden" id="chat-image-val" name="image_url">
 
-                    <input type="text" name="message" id="messageInput" placeholder="Nhập nội dung chát hoặc chọn GIF bên dưới..." autocomplete="off" style="flex: 1; background: #000; color: #fff; border: 1px solid #444; padding: 10px 12px; font-size: 14px; box-sizing: border-box; border-radius: 6px;" required>
+                    <input type="text" name="message" id="messageInput" placeholder="Nhập nội dung chát..." autocomplete="off" style="flex: 1; background: #000; color: #fff; border: 1px solid #444; padding: 10px 12px; font-size: 14px; box-sizing: border-box; border-radius: 6px;" required>
                     
+                    <!-- Nút mở Popup bộ sưu tập GIF Meme -->
+                    <button type="button" onclick="toggleGifPopup()" class="btn" style="background: #333; color: #ffcc00; padding: 10px 12px; font-size: 14px; border-radius: 6px; cursor: pointer; border: 1px solid #551a8b;" title="Kho Sticker GIF Meme">🎁 GIF</button>
+
                     <button type="submit" id="sendBtn" class="btn" style="background: #0055ff; color: #fff; padding: 10px 18px; font-size: 14px; border-radius: 6px; cursor: pointer; font-weight: bold;">Gửi</button>
                 </div>
 
-                <!-- Bảng chọn nhanh bộ Icon GIF động sinh động -->
-                <div style="display: flex; gap: 8px; align-items: center; background: #0d0d0d; padding: 6px 8px; border: 1px solid #222; border-radius: 6px; overflow-x: auto;">
-                    <span style="font-size: 11px; color: #888; white-space: nowrap;">Icon GIF:</span>
-                    <button type="button" onclick="sendGifIcon('https://media.giphy.com/media/3o7TKoWXm3okO1kgHC/giphy.gif')" style="background:none; border:none; cursor:pointer; padding:2px;"><img src="https://media.giphy.com/media/3o7TKoWXm3okO1kgHC/giphy.gif" style="width:26px; height:26px; object-fit:cover; border-radius:4px;"></button>
-                    <button type="button" onclick="sendGifIcon('https://media.giphy.com/media/26vUDlO9wK7fyOpls/giphy.gif')" style="background:none; border:none; cursor:pointer; padding:2px;"><img src="https://media.giphy.com/media/26vUDlO9wK7fyOpls/giphy.gif" style="width:26px; height:26px; object-fit:cover; border-radius:4px;"></button>
-                    <button type="button" onclick="sendGifIcon('https://media.giphy.com/media/l0HlvcHy69b5H9e9i/giphy.gif')" style="background:none; border:none; cursor:pointer; padding:2px;"><img src="https://media.giphy.com/media/l0HlvcHy69b5H9e9i/giphy.gif" style="width:26px; height:26px; object-fit:cover; border-radius:4px;"></button>
-                    <button type="button" onclick="sendGifIcon('https://media.giphy.com/media/3oKIPnAiaMCws8nOsE/giphy.gif')" style="background:none; border:none; cursor:pointer; padding:2px;"><img src="https://media.giphy.com/media/3oKIPnAiaMCws8nOsE/giphy.gif" style="width:26px; height:26px; object-fit:cover; border-radius:4px;"></button>
-                    <button type="button" onclick="sendGifIcon('https://media.giphy.com/media/xT5LMFZDsj0AKUDYTS/giphy.gif')" style="background:none; border:none; cursor:pointer; padding:2px;"><img src="https://media.giphy.com/media/xT5LMFZDsj0AKUDYTS/giphy.gif" style="width:26px; height:26px; object-fit:cover; border-radius:4px;"></button>
-                    <button type="button" onclick="sendGifIcon('https://media.giphy.com/media/3oEjI6SIIHBdRxXI40/giphy.gif')" style="background:none; border:none; cursor:pointer; padding:2px;"><img src="https://media.giphy.com/media/3oEjI6SIIHBdRxXI40/giphy.gif" style="width:26px; height:26px; object-fit:cover; border-radius:4px;"></button>
-                    <button type="button" onclick="sendGifIcon('https://media.giphy.com/media/5GoVL4DAbWw1gTWrdh/giphy.gif')" style="background:none; border:none; cursor:pointer; padding:2px;"><img src="https://media.giphy.com/media/5GoVL4DAbWw1gTWrdh/giphy.gif" style="width:26px; height:26px; object-fit:cover; border-radius:4px;"></button>
-                    <button type="button" onclick="sendGifIcon('https://media.giphy.com/media/26u4lOMA8JKSnL9Uk/giphy.gif')" style="background:none; border:none; cursor:pointer; padding:2px;"><img src="https://media.giphy.com/media/26u4lOMA8JKSnL9Uk/giphy.gif" style="width:26px; height:26px; object-fit:cover; border-radius:4px;"></button>
-                    <div id="chat-compress-status" style="font-size: 11px; color: #00ff00; margin-left: auto; white-space: nowrap;"></div>
+                <!-- Popup chứa bộ sưu tập Icon GIF Meme hài hước & dễ thương -->
+                <div id="gifPopup" style="display: none; position: absolute; bottom: 55px; right: 0; background: #111; border: 1px solid #444; padding: 10px; border-radius: 8px; width: 300px; max-height: 220px; overflow-y: auto; box-shadow: 0 4px 15px rgba(0,0,0,0.8); z-index: 999; display: none; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+                    <div style="grid-column: span 3; font-size: 12px; color: #ffcc00; font-weight: bold; border-bottom: 1px solid #333; padding-bottom: 4px; display: flex; justify-content: space-between; align-items: center;">
+                        <span>😂 Kho GIF Meme & Đáng Yêu</span>
+                        <span onclick="toggleGifPopup()" style="cursor: pointer; color: #ff5555; padding: 0 4px;">✕</span>
+                    </div>
+                    <img src="https://media.giphy.com/media/26vUDlO9wK7fyOpls/giphy.gif" onclick="sendGifIcon('https://media.giphy.com/media/26vUDlO9wK7fyOpls/giphy.gif')" style="width: 100%; height: 70px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 1px solid #333;">
+                    <img src="https://media.giphy.com/media/3o7TKoWXm3okO1kgHC/giphy.gif" onclick="sendGifIcon('https://media.giphy.com/media/3o7TKoWXm3okO1kgHC/giphy.gif')" style="width: 100%; height: 70px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 1px solid #333;">
+                    <img src="https://media.giphy.com/media/l0HlvcHy69b5H9e9i/giphy.gif" onclick="sendGifIcon('https://media.giphy.com/media/l0HlvcHy69b5H9e9i/giphy.gif')" style="width: 100%; height: 70px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 1px solid #333;">
+                    <img src="https://media.giphy.com/media/3oKIPnAiaMCws8nOsE/giphy.gif" onclick="sendGifIcon('https://media.giphy.com/media/3oKIPnAiaMCws8nOsE/giphy.gif')" style="width: 100%; height: 70px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 1px solid #333;">
+                    <img src="https://media.giphy.com/media/xT5LMFZDsj0AKUDYTS/giphy.gif" onclick="sendGifIcon('https://media.giphy.com/media/xT5LMFZDsj0AKUDYTS/giphy.gif')" style="width: 100%; height: 70px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 1px solid #333;">
+                    <img src="https://media.giphy.com/media/3oEjI6SIIHBdRxXI40/giphy.gif" onclick="sendGifIcon('https://media.giphy.com/media/3oEjI6SIIHBdRxXI40/giphy.gif')" style="width: 100%; height: 70px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 1px solid #333;">
+                    <img src="https://media.giphy.com/media/5GoVL4DAbWw1gTWrdh/giphy.gif" onclick="sendGifIcon('https://media.giphy.com/media/5GoVL4DAbWw1gTWrdh/giphy.gif')" style="width: 100%; height: 70px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 1px solid #333;">
+                    <img src="https://media.giphy.com/media/26u4lOMA8JKSnL9Uk/giphy.gif" onclick="sendGifIcon('https://media.giphy.com/media/26u4lOMA8JKSnL9Uk/giphy.gif')" style="width: 100%; height: 70px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 1px solid #333;">
+                    <img src="https://media.giphy.com/media/3o7abKhOpu0NwenH3O/giphy.gif" onclick="sendGifIcon('https://media.giphy.com/media/3o7abKhOpu0NwenH3O/giphy.gif')" style="width: 100%; height: 70px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 1px solid #333;">
+                    <img src="https://media.giphy.com/media/9uIW81bE27zV6/giphy.gif" onclick="sendGifIcon('https://media.giphy.com/media/9uIW81bE27zV6/giphy.gif')" style="width: 100%; height: 70px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 1px solid #333;">
+                    <img src="https://media.giphy.com/media/10ECejnDra1Dbq/giphy.gif" onclick="sendGifIcon('https://media.giphy.com/media/10ECejnDra1Dbq/giphy.gif')" style="width: 100%; height: 70px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 1px solid #333;">
+                    <img src="https://media.giphy.com/media/jpbnoe3UIa8TU8LM13/giphy.gif" onclick="sendGifIcon('https://media.giphy.com/media/jpbnoe3UIa8TU8LM13/giphy.gif')" style="width: 100%; height: 70px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 1px solid #333;">
                 </div>
+
+                <div id="chat-compress-status" style="font-size: 11px; color: #00ff00; text-align: right;"></div>
             </form>
             
             <div style="text-align: center; margin-top: 12px; font-size: 13px;">
@@ -202,7 +213,18 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         }
         scrollToBottom();
 
+        // Đóng/Mở popup chọn GIF
+        function toggleGifPopup() {
+            const popup = document.getElementById('gifPopup');
+            if (popup.style.display === 'none' || popup.style.display === '') {
+                popup.style.display = 'grid';
+            } else {
+                popup.style.display = 'none';
+            }
+        }
+
         async function sendGifIcon(gifUrl) {
+            toggleGifPopup(); // Đóng popup sau khi chọn
             const formData = new FormData();
             formData.append('message', gifUrl);
 
@@ -316,7 +338,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                             
                             let messageText = m.message || '';
                             if (messageText.startsWith('http') && (messageText.includes('.gif') || messageText.includes('giphy') || messageText.includes('tenor'))) {
-                                messageText = '<img src="' + messageText + '" style="max-width: 120px; max-height: 120px; border-radius: 6px; display: block;" />';
+                                messageText = '<img src="' + messageText + '" style="max-width: 140px; max-height: 140px; border-radius: 6px; display: block;" />';
                             } else {
                                 messageText = '<div>' + messageText + '</div>';
                             }
