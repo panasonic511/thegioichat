@@ -44,15 +44,25 @@ export async function handleFeed(request, env, user, renderLayout) {
                 created_at TEXT
             )
         `).run();
+
+        // Bảng lưu thông tin Theo dõi (Follows) để phục vụ tab Theo dõi
+        await env.DB.prepare(`
+            CREATE TABLE IF NOT EXISTS follows (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                follower_id INTEGER,
+                following_id INTEGER
+            )
+        `).run();
     } catch (e) {}
 
-    // Lấy số trang hiện tại từ URL (Ví dụ: ?page=2)
+    // Lấy thông tin tab và số trang từ URL
     const urlObj = new URL(request.url);
+    const tab = urlObj.searchParams.get('tab') || 'new'; // Mặc định là 'new' (Mới nhất)
     const page = parseInt(urlObj.searchParams.get('page')) || 1;
     const limit = 10; // Giới hạn 10 bài viết mỗi trang
     const offset = (page - 1) * limit;
 
-    // 2. Xử lý các yêu cầu POST siêu tốc (Hỗ trợ đăng bài, thả tim, bình luận và xóa bài viết)
+    // 2. Xử lý các yêu cầu POST siêu tốc
     if (request.method === 'POST') {
         try {
             const formData = await request.formData();
@@ -92,19 +102,16 @@ export async function handleFeed(request, env, user, renderLayout) {
                 }
             } else if (action === 'delete_post') {
                 const postId = formData.get('post_id');
-                // Kiểm tra xem người dùng có phải là Chủ Wap/Admin hoặc là chủ nhân bài viết không
                 const targetPost = await env.DB.prepare("SELECT user_id FROM posts WHERE id = ?").bind(postId).first();
                 const isManager = (user.role && user.role !== 'Thành Viên');
                 
                 if (targetPost && (isManager || targetPost.user_id === user.id)) {
-                    // Xóa triệt để bài viết kèm theo toàn bộ lượt thích và bình luận để tối ưu database
                     await env.DB.prepare("DELETE FROM posts WHERE id = ?").bind(postId).run();
                     await env.DB.prepare("DELETE FROM post_likes WHERE post_id = ?").bind(postId).run();
                     await env.DB.prepare("DELETE FROM post_comments WHERE post_id = ?").bind(postId).run();
                 }
             }
 
-            // Nếu là gọi ngầm AJAX thì trả về kết quả JSON siêu tốc không load trang
             if (request.headers.get('X-Requested-With') === 'XMLHttpRequest') {
                 return new Response(JSON.stringify({ success: true }), {
                     headers: { 'Content-Type': 'application/json;charset=UTF-8' }
@@ -153,28 +160,77 @@ export async function handleFeed(request, env, user, renderLayout) {
         storiesHtml = '';
     }
 
-    // 4. Lấy tổng số bài viết để tính toán phân trang
-    let totalPosts = 0;
-    try {
-        const countRes = await env.DB.prepare("SELECT COUNT(*) as total FROM posts").first();
-        totalPosts = countRes ? countRes.total : 0;
-    } catch (e) {}
-    const totalPages = Math.ceil(totalPosts / limit) || 1;
+    // 4. Xây dựng câu truy vấn theo từng tab (Mới nhất, Đề xuất, Theo dõi)
+    let postsQuery = '';
+    let countQuery = '';
+    let queryParams = [];
 
-    // 5. Lấy danh sách Bài viết theo giới hạn phân trang (LIMIT & OFFSET)
-    let postsHtml = '';
-    try {
-        const res = await env.DB.prepare(`
+    if (tab === 'trending') {
+        // Tab Đề xuất: Sắp xếp theo số lượng tương tác (Like + Comment) nhiều nhất
+        countQuery = "SELECT COUNT(*) as total FROM posts";
+        postsQuery = `
+            SELECT posts.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow, 
+                   users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role,
+                   (SELECT COUNT(*) FROM post_likes WHERE post_id = posts.id) + 
+                   (SELECT COUNT(*) FROM post_comments WHERE post_id = posts.id) as total_interactions
+            FROM posts 
+            JOIN users ON posts.user_id = users.id 
+            ORDER BY total_interactions DESC, posts.id DESC LIMIT ? OFFSET ?
+        `;
+        queryParams = [limit, offset];
+    } else if (tab === 'following') {
+        // Tab Theo dõi: Chỉ lấy bài viết của những người mà user hiện tại đang follow
+        countQuery = `
+            SELECT COUNT(*) as total FROM posts 
+            WHERE user_id IN (SELECT following_id FROM follows WHERE follower_id = ?)
+        `;
+        postsQuery = `
+            SELECT posts.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow, 
+                   users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role
+            FROM posts 
+            JOIN users ON posts.user_id = users.id 
+            WHERE posts.user_id IN (SELECT following_id FROM follows WHERE follower_id = ?)
+            ORDER BY posts.id DESC LIMIT ? OFFSET ?
+        `;
+        queryParams = [user.id, limit, offset];
+    } else {
+        // Tab Mới nhất (Mặc định)
+        countQuery = "SELECT COUNT(*) as total FROM posts";
+        postsQuery = `
             SELECT posts.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow, 
                    users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role
             FROM posts 
             JOIN users ON posts.user_id = users.id 
             ORDER BY posts.id DESC LIMIT ? OFFSET ?
-        `).bind(limit, offset).all();
+        `;
+        queryParams = [limit, offset];
+    }
+
+    // Tính tổng số bài viết của tab hiện tại để làm phân trang
+    let totalPosts = 0;
+    try {
+        let countRes;
+        if (tab === 'following') {
+            countRes = await env.DB.prepare(countQuery).bind(user.id).first();
+        } else {
+            countRes = await env.DB.prepare(countQuery).first();
+        }
+        totalPosts = countRes ? countRes.total : 0;
+    } catch (e) {}
+    const totalPages = Math.ceil(totalPosts / limit) || 1;
+
+    // Lấy danh sách bài viết
+    let postsHtml = '';
+    try {
+        let stmt = env.DB.prepare(postsQuery);
+        const res = tab === 'following' 
+            ? await stmt.bind(user.id, limit, offset).all() 
+            : await stmt.bind(limit, offset).all();
+        
         const posts = res.results || [];
 
         if (posts.length === 0) {
-            postsHtml = '<div style="text-align: center; color: #777; padding: 20px;">Chưa có bài viết nào trên bảng tin.</div>';
+            postsHtml = '<div style="text-align: center; color: #777; padding: 20px;">Chưa có bài viết nào trong mục này.</div>';
         } else {
             const isUserAdmin = (user.role && user.role !== 'Thành Viên');
 
@@ -208,7 +264,6 @@ export async function handleFeed(request, env, user, renderLayout) {
 
                 const imageTag = p.image_url ? `<div style="margin-top: 8px; background: #000; text-align: center; border-radius: 4px; overflow: hidden;"><img src="${p.image_url}" style="width: 100%; max-height: 450px; object-fit: contain; display: block; margin: 0 auto;"></div>` : '';
 
-                // Logic chức vụ: Quản lý/Chủ Wap có khung, Thành viên hiển thị chữ bình thường
                 const roleDisplayHtml = (p.role && p.role !== 'Thành Viên') ? `
                     <span style="display: inline-block; background: #1a1a1a; border: 1px solid #444; color: #ffcc00; font-size: 10px; font-weight: bold; padding: 1px 6px; border-radius: 4px; text-shadow: 0 0 4px rgba(255,204,0,0.4);">
                         ${p.role}
@@ -217,7 +272,6 @@ export async function handleFeed(request, env, user, renderLayout) {
                     <span style="color: #888; font-size: 11px;">${p.role || 'Thành viên'}</span>
                 `;
 
-                // Nút Xóa bài viết dành cho Admin hoặc chủ nhân bài viết
                 const canDelete = isUserAdmin || p.user_id === user.id;
                 const deleteBtnHtml = canDelete ? `
                     <form onsubmit="deletePostAjax(event, ${p.id})" style="margin: 0;">
@@ -246,10 +300,8 @@ export async function handleFeed(request, env, user, renderLayout) {
                     <div style="color: #ddd; font-size: 13px; word-break: break-word; white-space: pre-wrap; margin-bottom: 6px;">${p.content || ''}</div>
                     ${imageTag}
 
-                    <!-- Thanh Tương tác Thả tim & Nút Mở khung Bình luận gọn gàng -->
                     <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #222; margin-top: 10px; padding-top: 8px;">
                         <div style="display: flex; align-items: center; gap: 14px;">
-                            <!-- Nút Thả tim AJAX -->
                             <form onsubmit="submitAjax(event, this)" style="margin: 0;">
                                 <input type="hidden" name="action" value="like_post">
                                 <input type="hidden" name="post_id" value="${p.id}">
@@ -258,7 +310,6 @@ export async function handleFeed(request, env, user, renderLayout) {
                                 </button>
                             </form>
                             
-                            <!-- Nút Icon Bình luận để bật/tắt khung soạn thảo -->
                             <button type="button" onclick="toggleCommentBox(${p.id})" style="background: none; border: none; color: #aaa; cursor: pointer; font-size: 13px; padding: 0; display: flex; align-items: center; gap: 4px;">
                                 💬 <span style="font-size: 11px;" id="comm-count-${p.id}">${comments.length}</span> bình luận
                             </button>
@@ -266,12 +317,10 @@ export async function handleFeed(request, env, user, renderLayout) {
                         <span style="font-size: 10px; color: #666;">Tương tác</span>
                     </div>
 
-                    <!-- Khung hiển thị danh sách bình luận -->
                     <div style="margin-top: 6px;" id="comment-list-${p.id}">
                         ${commentsHtml}
                     </div>
 
-                    <!-- Form gửi bình luận (Ẩn mặc định, chỉ hiện khi bấm icon 💬) -->
                     <div id="comment-box-${p.id}" style="display: none; margin-top: 8px;">
                         <form onsubmit="submitCommentAjax(event, ${p.id})" style="display: flex; gap: 6px;">
                             <input type="hidden" name="action" value="add_comment">
@@ -285,35 +334,40 @@ export async function handleFeed(request, env, user, renderLayout) {
         }
     } catch (e) {}
 
-    // 6. Giao diện Phân trang (Pagination)
+    // 5. Giao diện Phân trang (Giữ lại tab đang chọn)
     let paginationHtml = '';
     if (totalPages > 1) {
         paginationHtml = `<div style="display: flex; justify-content: center; align-items: center; gap: 6px; margin: 15px 0; font-size: 12px;">`;
         if (page > 1) {
-            paginationHtml += `<a href="?page=${page - 1}" style="background: #1a1a1a; color: #00ff00; border: 1px solid #444; padding: 4px 10px; border-radius: 4px; text-decoration: none;">« Trước</a>`;
+            paginationHtml += `<a href="?tab=${tab}&page=${page - 1}" style="background: #1a1a1a; color: #00ff00; border: 1px solid #444; padding: 4px 10px; border-radius: 4px; text-decoration: none;">« Trước</a>`;
         }
         for (let i = 1; i <= totalPages; i++) {
             if (i === page) {
                 paginationHtml += `<span style="background: #00ff00; color: #000; font-weight: bold; padding: 4px 10px; border-radius: 4px;">${i}</span>`;
             } else {
-                paginationHtml += `<a href="?page=${i}" style="background: #1a1a1a; color: #ccc; border: 1px solid #444; padding: 4px 10px; border-radius: 4px; text-decoration: none;">${i}</a>`;
+                paginationHtml += `<a href="?tab=${tab}&page=${i}" style="background: #1a1a1a; color: #ccc; border: 1px solid #444; padding: 4px 10px; border-radius: 4px; text-decoration: none;">${i}</a>`;
             }
         }
         if (page < totalPages) {
-            paginationHtml += `<a href="?page=${page + 1}" style="background: #1a1a1a; color: #00ff00; border: 1px solid #444; padding: 4px 10px; border-radius: 4px; text-decoration: none;">Sau »</a>`;
+            paginationHtml += `<a href="?tab=${tab}&page=${page + 1}" style="background: #1a1a1a; color: #00ff00; border: 1px solid #444; padding: 4px 10px; border-radius: 4px; text-decoration: none;">Sau »</a>`;
         }
         paginationHtml += `</div>`;
     }
 
-    // 7. Giao diện hoàn chỉnh kèm Script AJAX, Nén ảnh, Phân trang & Xóa bài viết
+    // Định nghĩa màu sắc làm nổi bật tab đang được chọn
+    const newColor = (tab === 'new') ? '#00ff00' : '#aaa';
+    const trendingColor = (tab === 'trending') ? '#00ff00' : '#aaa';
+    const followingColor = (tab === 'following') ? '#00ff00' : '#aaa';
+
+    // 6. Giao diện hoàn chỉnh
     const content = `
     <div class="box">
         <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
             <span>📰 Bảng tin cộng đồng</span>
             <div style="font-size: 10px;">
-                <a href="#" style="color: #00ff00; margin-right: 6px;">Đề xuất</a>
-                <a href="#" style="color: #aaa; margin-right: 6px;">Mới nhất</a>
-                <a href="#" style="color: #aaa;">Theo dõi</a>
+                <a href="?tab=new" style="color: ${newColor}; margin-right: 6px; text-decoration: none; font-weight: ${tab==='new'?'bold':'normal'};">Mới nhất</a>
+                <a href="?tab=trending" style="color: ${trendingColor}; margin-right: 6px; text-decoration: none; font-weight: ${tab==='trending'?'bold':'normal'};">Đề xuất</a>
+                <a href="?tab=following" style="color: ${followingColor}; text-decoration: none; font-weight: ${tab==='following'?'bold':'normal'};">Theo dõi</a>
             </div>
         </div>
         <div class="box-content">
@@ -322,7 +376,6 @@ export async function handleFeed(request, env, user, renderLayout) {
                 <input type="hidden" name="action" value="create_post">
                 <textarea name="content" rows="2" placeholder="Bạn đang nghĩ gì thế..." style="width: 100%; background: #141414; color: #00ff00; border: 1px solid #444; padding: 8px; border-radius: 4px; box-sizing: border-box; font-size: 13px; resize: vertical;"></textarea>
                 
-                <!-- Nút Icon Máy ảnh thay thế cho chọn tệp mặc định -->
                 <div style="margin-top: 6px; display: flex; align-items: center; gap: 8px;">
                     <label style="display: inline-flex; align-items: center; gap: 6px; background: #1a1a1a; border: 1px solid #444; color: #00ff00; padding: 5px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">
                         📷 Thêm ảnh
@@ -371,7 +424,6 @@ export async function handleFeed(request, env, user, renderLayout) {
         function openStoryModal() { document.getElementById('story-modal').style.display = 'flex'; }
         function closeStoryModal() { document.getElementById('story-modal').style.display = 'none'; }
 
-        // Hàm ẩn/hiện khung viết bình luận khi bấm vào icon 💬
         function toggleCommentBox(postId) {
             const box = document.getElementById('comment-box-' + postId);
             if (box.style.display === 'none' || box.style.display === '') {
@@ -382,7 +434,6 @@ export async function handleFeed(request, env, user, renderLayout) {
             }
         }
 
-        // Hàm tự động nén ảnh giữ trọn vẹn (MaxWidth 1000px, Quality 0.80)
         function compressAndSetImage(fileInput, targetInputSelector) {
             const file = fileInput.files[0];
             const statusId = targetInputSelector.includes('post') ? 'post-compress-status' : 'story-compress-status';
@@ -412,7 +463,7 @@ export async function handleFeed(request, env, user, renderLayout) {
 
                     const compressedBase64 = canvas.toDataURL('image/jpeg', 0.80);
                     document.querySelector(targetInputSelector).value = compressedBase64;
-                    statusEl.innerText = "✅ Đã chọn & nén ảnh thành công!";
+                    statusEl.innerText = "✅ Đã nén thành công!";
                     statusEl.style.color = "#00ff00";
                 };
                 img.src = e.target.result;
@@ -420,7 +471,6 @@ export async function handleFeed(request, env, user, renderLayout) {
             reader.readAsDataURL(file);
         }
 
-        // Xử lý Thả tim mượt mà không load trang
         async function submitAjax(event, form) {
             event.preventDefault();
             const formData = new FormData(form);
@@ -447,7 +497,6 @@ export async function handleFeed(request, env, user, renderLayout) {
             }
         }
 
-        // Xử lý Gửi bình luận mượt mà
         async function submitCommentAjax(event, postId) {
             event.preventDefault();
             const input = document.getElementById('comment-input-' + postId);
@@ -473,7 +522,6 @@ export async function handleFeed(request, env, user, renderLayout) {
             }
         }
 
-        // Xử lý Xóa bài viết ngay lập tức không cần tải lại toàn trang
         async function deletePostAjax(event, postId) {
             event.preventDefault();
             if (!confirm("Bạn có chắc chắn muốn xóa vĩnh viễn bài viết này không?")) return;
@@ -500,7 +548,6 @@ export async function handleFeed(request, env, user, renderLayout) {
             }
         }
 
-        // Xử lý Đăng bài viết siêu tốc
         async function submitPostAjax(event, form) {
             event.preventDefault();
             const formData = new FormData(form);
