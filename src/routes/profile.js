@@ -171,7 +171,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             </div>
             
             <div style="font-size: 13px; margin-bottom: 2px;">
-                <a href="/profile?user=${profileUser.id}" style="${profileUser.nameStyle}">${pIcon}${profileUser.display_name}</a> 
+                <a href="/profile?user=${profileUser.id}" style="${rProfile.nameHtml}</a> 
                 <span style="color: #ffcc00; font-size: 11px;">[Lv.${profileUser.level || 1}]</span>
             </div>
             <div style="font-size: 10px; color: #aaa; margin-bottom: 8px;">ID ${profileUser.id} · <span style="color: yellow;">${profileUser.role}</span></div>
