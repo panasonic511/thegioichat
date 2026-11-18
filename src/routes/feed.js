@@ -1,6 +1,6 @@
 import { renderUser } from '../worker.js';
 
-export default async function handleFeed(request, env, user, renderLayout) {
+export async function handleFeed(request, env, user, renderLayout) {
     try {
         await env.DB.prepare(`
             CREATE TABLE IF NOT EXISTS posts (
