@@ -48,17 +48,15 @@ export function renderUser(u) {
     if (shadows.length > 0) nameStyle += ` text-shadow: ${shadows.join(', ')};`;
     if (safeUser.name_border && safeUser.name_border !== '#000000') nameStyle += ` -webkit-text-stroke: 0.5px ${safeUser.name_border};`;
 
-    const displayName = safeUser.display_name || safeUser.username || 'Thành viên';
-    const userId = safeUser.user_id || safeUser.id || 0;
-    
-    // Tự động gắn Icon trước tên người dùng trên toàn bộ hệ thống Wap
-    const activeIcon = safeUser.active_icon ? `${safeUser.active_icon} ` : '';
+    const name = safe.display_name || 'Thành viên';
+        const uid = safe.user_id || safe.id || '';
 
-    return {
+        return {
         nameStyle,
         avatarStyle,
         nameHtml: `<a href="/profile?user=${userId}" style="${nameStyle}">${activeIcon}${displayName}</a>`,
         avatarHtml: `<a href="/profile?user=${userId}"><img src="${avatarUrl}" style="${avatarStyle}"></a>`
+        };
     };
 }
 
