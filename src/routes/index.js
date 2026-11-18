@@ -71,7 +71,8 @@ export async function handleIndex(request, env, user, renderLayout) {
             avatarStyle: avtStyle,
             avatarUrl: avt,
             nameStyle,
-            nameHtml: `<a href="/profile?user=${uid}" style="${nameStyle}">${name}</a>`
+        nameHtml: `<a href="/profile?user=${userId}" style="${nameStyle}">${activeIcon}${displayName}</a>`,
+        avatarHtml: `<a href="/profile?user=${userId}"><img src="${avatarUrl}" style="${avatarStyle}"></a>`
         };
     }
 
