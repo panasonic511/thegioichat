@@ -120,43 +120,42 @@ function renderLayout(title, content, user) {
 
         .footer { text-align: center; padding: 16px; font-size: 13px; color: #777; border-top: 1px solid #222; background: #050505; margin-bottom: 40px; }
 
-        /* --- BONG BÓNG THÔNG BÁO NỔI GÓC MÀN HÌNH --- */
         @keyframes pulseBubble {
-            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7); }
-            70% { transform: scale(1.08); box-shadow: 0 0 0 10px rgba(255, 0, 0, 0); }
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.8); }
+            70% { transform: scale(1.12); box-shadow: 0 0 0 14px rgba(255, 0, 0, 0); }
             100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
         }
         .floating-bubble {
             position: fixed;
-            bottom: 20px;
-            right: 20px;
+            bottom: 30px;
+            right: 30px;
             background: #111;
-            border: 2px solid #ff3333;
+            border: 3px solid #ff3333;
             color: #fff;
-            width: 50px;
-            height: 50px;
+            width: 58px;
+            height: 58px;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 22px;
+            font-size: 26px;
             text-decoration: none;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.8);
-            z-index: 9999;
-            animation: pulseBubble 2s infinite;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.9);
+            z-index: 99999;
+            animation: pulseBubble 1.8s infinite;
             display: none;
         }
         .floating-bubble .badge-count {
             position: absolute;
-            top: -5px;
-            right: -5px;
+            top: -6px;
+            right: -6px;
             background: #ff0000;
             color: #fff;
-            font-size: 11px;
+            font-size: 12px;
             font-weight: bold;
-            padding: 2px 6px;
+            padding: 3px 8px;
             border-radius: 50px;
-            border: 1px solid #fff;
+            border: 2px solid #fff;
         }
     </style>
 </head>
@@ -174,7 +173,6 @@ function renderLayout(title, content, user) {
 
     <div class="container">${content}</div>
 
-    <!-- Bong bóng thông báo nổi góc màn hình -->
     ${user ? `
     <a href="/mail/box" id="floatingMsgBubble" class="floating-bubble" title="Bạn có tin nhắn mới!">
         ✉️
@@ -190,7 +188,6 @@ function renderLayout(title, content, user) {
                     const unreadNoti = data.unread_notifications || 0;
                     const totalUnread = unreadMsg + unreadNoti;
 
-                    // Cập nhật số lượng trên menu Tin nhắn
                     const msgBadge = document.getElementById('msgBadge');
                     if (msgBadge) {
                         if (unreadMsg > 0) {
@@ -201,7 +198,6 @@ function renderLayout(title, content, user) {
                         }
                     }
 
-                    // Cập nhật số lượng trên menu Thông báo
                     const notiBadge = document.getElementById('notiBadge');
                     if (notiBadge) {
                         if (unreadNoti > 0) {
@@ -212,7 +208,6 @@ function renderLayout(title, content, user) {
                         }
                     }
 
-                    // Cập nhật bong bóng nổi góc màn hình
                     const bubble = document.getElementById('floatingMsgBubble');
                     const countSpan = document.getElementById('bubbleCount');
                     if (bubble && countSpan) {
@@ -226,9 +221,8 @@ function renderLayout(title, content, user) {
                 }
             } catch (e) {}
         }
-        // Gọi ngay khi tải trang và lặp lại ngầm mỗi 5 giây
         updateRealtimeData();
-        setInterval(updateRealtimeData, 5000);
+        setInterval(updateRealtimeData, 4000);
     </script>
     ` : ''}
 
