@@ -3,7 +3,7 @@ import { renderUser } from '../worker.js';
 export async function handleGameLudo(request, env, user, renderLayout, url) {
     const path = url.pathname;
 
-    // Khởi tạo cơ sở dữ liệu D1 cho phòng game, người chơi, bảng cờ và chat
+    // Khởi tạo cơ sở dữ liệu D1 cho phòng game, người chơi và chat
     try {
         await env.DB.prepare(`
             CREATE TABLE IF NOT EXISTS ludo_rooms (
@@ -179,49 +179,82 @@ export async function handleGameLudo(request, env, user, renderLayout, url) {
                             `}
                         </div>
 
-                        <!-- BÀN CỜ LUDO SVG CHUẨN ĐẸP SẮC NÉT -->
-                        <svg viewBox="0 0 500 500" style="width: 260px; height: 260px; background: #fff; border-radius: 4px; box-shadow: 0 0 10px rgba(0,0,0,0.5);">
-                            <!-- Nhà Đỏ -->
+                        <!-- BÀN CỜ LUDO SVG CHI TIẾT (CÓ Ô DI CHUYỂN, Ô AN TOÀN SAO ⭐, VÀ NGỰA DI CHUYỂN) -->
+                        <svg viewBox="0 0 500 500" style="width: 280px; height: 280px; background: #fff; border-radius: 4px; box-shadow: 0 0 10px rgba(0,0,0,0.5);">
+                            <!-- 4 Khu nhà chính -->
                             <rect x="0" y="0" width="200" height="200" fill="#cc0000" />
                             <circle cx="70" cy="70" r="16" fill="#fff" /><text x="70" y="75" font-size="14" text-anchor="middle">🐴</text>
                             <circle cx="130" cy="70" r="16" fill="#fff" /><text x="130" y="75" font-size="14" text-anchor="middle">🐴</text>
                             <circle cx="70" cy="130" r="16" fill="#fff" /><text x="70" y="135" font-size="14" text-anchor="middle">🐴</text>
                             <circle cx="130" cy="130" r="16" fill="#fff" /><text x="130" y="135" font-size="14" text-anchor="middle">🐴</text>
 
-                            <!-- Nhà Xanh Lá -->
                             <rect x="300" y="0" width="200" height="200" fill="#00aa00" />
                             <circle cx="370" cy="70" r="16" fill="#fff" /><text x="370" y="75" font-size="14" text-anchor="middle">🐴</text>
                             <circle cx="430" cy="70" r="16" fill="#fff" /><text x="430" y="75" font-size="14" text-anchor="middle">🐴</text>
                             <circle cx="370" cy="130" r="16" fill="#fff" /><text x="370" y="135" font-size="14" text-anchor="middle">🐴</text>
                             <circle cx="430" cy="130" r="16" fill="#fff" /><text x="430" y="135" font-size="14" text-anchor="middle">🐴</text>
 
-                            <!-- Nhà Xanh Dương -->
                             <rect x="0" y="300" width="200" height="200" fill="#0033cc" />
                             <circle cx="70" cy="370" r="16" fill="#fff" /><text x="70" y="375" font-size="14" text-anchor="middle">🐴</text>
                             <circle cx="130" cy="370" r="16" fill="#fff" /><text x="130" y="375" font-size="14" text-anchor="middle">🐴</text>
                             <circle cx="70" cy="430" r="16" fill="#fff" /><text x="70" y="435" font-size="14" text-anchor="middle">🐴</text>
                             <circle cx="130" cy="430" r="16" fill="#fff" /><text x="130" y="435" font-size="14" text-anchor="middle">🐴</text>
 
-                            <!-- Nhà Vàng -->
                             <rect x="300" y="300" width="200" height="200" fill="#ffcc00" />
                             <circle cx="370" cy="370" r="16" fill="#fff" /><text x="370" y="375" font-size="14" text-anchor="middle">🐴</text>
                             <circle cx="430" cy="370" r="16" fill="#fff" /><text x="430" y="375" font-size="14" text-anchor="middle">🐴</text>
                             <circle cx="370" cy="430" r="16" fill="#fff" /><text x="370" y="435" font-size="14" text-anchor="middle">🐴</text>
                             <circle cx="430" cy="430" r="16" fill="#fff" /><text x="430" y="435" font-size="14" text-anchor="middle">🐴</text>
 
-                            <!-- Đường đi chữ thập & Ô sao an toàn -->
-                            <rect x="0" y="200" width="200" height="100" fill="#f8f9fa" stroke="#ddd" />
-                            <rect x="300" y="200" width="200" height="100" fill="#f8f9fa" stroke="#ddd" />
-                            <rect x="200" y="0" width="100" height="200" fill="#f8f9fa" stroke="#ddd" />
-                            <rect x="200" y="300" width="100" height="200" fill="#f8f9fa" stroke="#ddd" />
+                            <!-- Đường đi chữ thập & Lưới ô vuông nhỏ (Grid cells) -->
+                            <!-- Trục ngang trái -->
+                            <g fill="#fff" stroke="#ccc">
+                                <rect x="0" y="200" width="33.3" height="33.3"/><rect x="33.3" y="200" width="33.3" height="33.3"/><rect x="66.6" y="200" width="33.3" height="33.3"/><rect x="99.9" y="200" width="33.3" height="33.3"/><rect x="133.2" y="200" width="33.3" height="33.3"/><rect x="166.5" y="200" width="33.3" height="33.3"/>
+                                <rect x="0" y="233.3" width="33.3" height="33.3" fill="#ffcccc"/><rect x="33.3" y="233.3" width="33.3" height="33.3"/><rect x="66.6" y="233.3" width="33.3" height="33.3"/><rect x="99.9" y="233.3" width="33.3" height="33.3"/><rect x="133.2" y="233.3" width="33.3" height="33.3"/><rect x="166.5" y="233.3" width="33.3" height="33.3"/>
+                                <rect x="0" y="266.6" width="33.3" height="33.3"/><rect x="33.3" y="266.6" width="33.3" height="33.3"/><rect x="66.6" y="266.6" width="33.3" height="33.3"/><rect x="99.9" y="266.6" width="33.3" height="33.3"/><rect x="133.2" y="266.6" width="33.3" height="33.3"/><rect x="166.5" y="266.6" width="33.3" height="33.3"/>
 
-                            <circle cx="215" cy="215" r="8" fill="#ffcc00" /><text x="215" y="219" font-size="10" text-anchor="middle">⭐</text>
-                            <circle cx="285" cy="285" r="8" fill="#ffcc00" /><text x="285" y="289" font-size="10" text-anchor="middle">⭐</text>
+                                <!-- Trục ngang phải -->
+                                <rect x="300" y="200" width="33.3" height="33.3"/><rect x="333.3" y="200" width="33.3" height="33.3"/><rect x="366.6" y="200" width="33.3" height="33.3"/><rect x="399.9" y="200" width="33.3" height="33.3"/><rect x="433.2" y="200" width="33.3" height="33.3"/><rect x="466.5" y="200" width="33.3" height="33.3"/>
+                                <rect x="300" y="233.3" width="33.3" height="33.3"/><rect x="333.3" y="233.3" width="33.3" height="33.3"/><rect x="366.6" y="233.3" width="33.3" height="33.3"/><rect x="399.9" y="233.3" width="33.3" height="33.3"/><rect x="433.2" y="233.3" width="33.3" height="33.3"/><rect x="466.5" y="233.3" width="33.3" height="33.3" fill="#ffffcc"/>
+                                <rect x="300" y="266.6" width="33.3" height="33.3"/><rect x="333.3" y="266.6" width="33.3" height="33.3"/><rect x="366.6" y="266.6" width="33.3" height="33.3"/><rect x="399.9" y="266.6" width="33.3" height="33.3"/><rect x="433.2" y="266.6" width="33.3" height="33.3"/><rect x="466.5" y="266.6" width="33.3" height="33.3"/>
 
+                                <!-- Trục dọc trên -->
+                                <rect x="200" y="0" width="33.3" height="33.3"/><rect x="233.3" y="0" width="33.3" height="33.3" fill="#ccffcc"/><rect x="266.6" y="0" width="33.3" height="33.3"/>
+                                <rect x="200" y="33.3" width="33.3" height="33.3"/><rect x="233.3" y="33.3" width="33.3" height="33.3"/><rect x="266.6" y="33.3" width="33.3" height="33.3"/>
+                                <rect x="200" y="66.6" width="33.3" height="33.3"/><rect x="233.3" y="66.6" width="33.3" height="33.3"/><rect x="266.6" y="66.6" width="33.3" height="33.3"/>
+                                <rect x="200" y="99.9" width="33.3" height="33.3"/><rect x="233.3" y="99.9" width="33.3" height="33.3"/><rect x="266.6" y="99.9" width="33.3" height="33.3"/>
+                                <rect x="200" y="133.2" width="33.3" height="33.3"/><rect x="233.3" y="133.2" width="33.3" height="33.3"/><rect x="266.6" y="133.2" width="33.3" height="33.3"/>
+                                <rect x="200" y="166.5" width="33.3" height="33.3"/><rect x="233.3" y="166.5" width="33.3" height="33.3"/><rect x="266.6" y="166.5" width="33.3" height="33.3"/>
+
+                                <!-- Trục dọc dưới -->
+                                <rect x="200" y="300" width="33.3" height="33.3"/><rect x="233.3" y="300" width="33.3" height="33.3"/><rect x="266.6" y="300" width="33.3" height="33.3"/>
+                                <rect x="200" y="333.3" width="33.3" height="33.3"/><rect x="233.3" y="333.3" width="33.3" height="33.3"/><rect x="266.6" y="333.3" width="33.3" height="33.3"/>
+                                <rect x="200" y="366.6" width="33.3" height="33.3"/><rect x="233.3" y="366.6" width="33.3" height="33.3"/><rect x="266.6" y="366.6" width="33.3" height="33.3"/>
+                                <rect x="200" y="399.9" width="33.3" height="33.3"/><rect x="233.3" y="399.9" width="33.3" height="33.3" fill="#cce6ff"/><rect x="266.6" y="399.9" width="33.3" height="33.3"/>
+                                <rect x="200" y="433.2" width="33.3" height="33.3"/><rect x="233.3" y="433.2" width="33.3" height="33.3"/><rect x="266.6" y="433.2" width="33.3" height="33.3"/>
+                                <rect x="200" y="466.5" width="33.3" height="33.3"/><rect x="233.3" y="466.5" width="33.3" height="33.3"/><rect x="266.6" y="466.5" width="33.3" height="33.3"/>
+                            </g>
+
+                            <!-- Các ô an toàn (⭐) -->
+                            <text x="50" y="222" font-size="12" text-anchor="middle">⭐</text>
+                            <text x="216" y="55" font-size="12" text-anchor="middle">⭐</text>
+                            <text x="450" y="285" font-size="12" text-anchor="middle">⭐</text>
+                            <text x="283" y="452" font-size="12" text-anchor="middle">⭐</text>
+
+                            <!-- Tâm nhà chung & Mũi tên chỉ hướng -->
                             <polygon points="250,250 200,200 200,300" fill="#cc0000" />
                             <polygon points="250,250 200,200 300,200" fill="#00aa00" />
                             <polygon points="250,250 300,200 300,300" fill="#ffcc00" />
                             <polygon points="250,250 200,300 300,300" fill="#0033cc" />
+
+                            <!-- QUÂN NGỰA ĐANG DI CHUYỂN TRÊN BÀN CỜ (ĐỘNG) -->
+                            <g id="gamePieces">
+                                <circle id="horseRed" cx="70" cy="70" r="14" fill="#ff0000" stroke="#fff" stroke-width="2" style="transition: all 0.5s ease; cursor: pointer;" />
+                                <text id="textRed" x="70" y="75" font-size="12" text-anchor="middle" fill="#fff" font-weight="bold">1</text>
+
+                                <circle id="horseBlue" cx="70" cy="370" r="14" fill="#0033cc" stroke="#fff" stroke-width="2" style="transition: all 0.5s ease; cursor: pointer;" />
+                                <text id="textBlue" x="70" y="375" font-size="12" text-anchor="middle" fill="#fff" font-weight="bold">2</text>
+                            </g>
                         </svg>
 
                         <!-- Ghế Vàng (Phải) -->
@@ -252,18 +285,18 @@ export async function handleGameLudo(request, env, user, renderLayout, url) {
                     </div>
                 </div>
 
-                <!-- BẢNG ĐIỀU KHIỂN XÚC XẮC & LUẬT LUDO -->
+                <!-- BẢNG ĐIỀU KHIỂN XÚC XẮC & DI CHUYỂN NGỰA -->
                 <div style="margin-top: 10px; background: #111; padding: 10px; border-radius: 6px; border: 1px solid #333;">
                     <div id="turnInfo" style="font-size: 12px; color: #00ff00; font-weight: bold; margin-bottom: 4px;">🎯 Lượt đi: Sẵn sàng tranh tài</div>
                     
                     <div id="diceResult" style="font-size: 26px; font-weight: bold; color: #ffcc00; margin-bottom: 4px; transition: transform 0.2s;">🎲 [ ⚀ ]</div>
                     
                     <div style="font-size: 11px; color: #ff5555; margin-bottom: 8px;">
-                        💡 <b>Luật Ludo: Ra số 6 (⚅) được xuất quân & đi thêm lượt. 3 lần 6 liên tiếp sẽ bị QUẮC mất lượt!</b>
+                        💡 <b>Luật Ludo: Ra số 6 (⚅) xuất quân ra ô xuất phát và phi nước đại!</b>
                     </div>
 
                     <div style="display: flex; justify-content: center; gap: 8px;">
-                        <button id="rollBtn" onclick="rollDiceWithSound()" class="btn" style="background: #0055ff; padding: 6px 14px; font-size: 13px; font-weight: bold; cursor: pointer;">🎲 Tung Xúc Xắc</button>
+                        <button id="rollBtn" onclick="rollDiceAndMove()" class="btn" style="background: #0055ff; padding: 6px 14px; font-size: 13px; font-weight: bold; cursor: pointer;">🎲 Tung Xúc Xắc</button>
                         
                         ${isHost && room.status !== 'playing' ? `
                             <button onclick="startGame()" class="btn" style="background: #00aa00; padding: 6px 14px; font-size: 13px; font-weight: bold; cursor: pointer;">🚀 Bắt đầu trận đấu</button>
@@ -295,7 +328,32 @@ export async function handleGameLudo(request, env, user, renderLayout, url) {
             const chatBox = document.getElementById('roomChatBox');
             chatBox.scrollTop = chatBox.scrollHeight;
 
-            let consecutiveSix = 0;
+            let horsePosition = 0; // 0 nằm trong chuồng, >0 là các tọa độ ô trên bàn cờ
+            const trackCoordinates = [
+                {cx: 70, cy: 70},   // Vị trí chuồng Đỏ
+                {cx: 50, cy: 216},  // Ô xuất phát
+                {cx: 83, cy: 216},
+                {cx: 116, cy: 216},
+                {cx: 149, cy: 216},
+                {cx: 182, cy: 216},
+                {cx: 216, cy: 182},  // Quẹo lên trên
+                {cx: 216, cy: 149},
+                {cx: 216, cy: 116},
+                {cx: 216, cy: 83},
+                {cx: 216, cy: 50},
+                {cx: 250, cy: 50},   // Đỉnh bàn cờ
+                {cx: 283, cy: 50},
+                {cx: 283, cy: 83},
+                {cx: 283, cy: 116},
+                {cx: 283, cy: 149},
+                {cx: 283, cy: 182},
+                {cx: 316, cy: 216},  // Quẹo sang phải
+                {cx: 349, cy: 216},
+                {cx: 382, cy: 216},
+                {cx: 415, cy: 216},
+                {cx: 448, cy: 216},
+                {cx: 481, cy: 216}
+            ];
 
             async function actionSeat(action, seatIndex = null) {
                 const formData = new FormData();
@@ -318,7 +376,7 @@ export async function handleGameLudo(request, env, user, renderLayout, url) {
                 const formData = new FormData();
                 formData.append('action', 'start');
                 try {
-                    const res = await fetch(window.location.href, {
+                    await fetch(window.location.href, {
                         method: 'POST',
                         headers: { 'X-Requested-With': 'XMLHttpRequest' },
                         body: formData
@@ -329,12 +387,12 @@ export async function handleGameLudo(request, env, user, renderLayout, url) {
                 }
             }
 
-            function rollDiceWithSound() {
-                // Phát âm thanh lắc xúc xắc từ GitHub Assets
+            function rollDiceAndMove() {
+                // Phát âm thanh lắc xúc xắc
                 const diceAudio = document.getElementById('diceSound');
                 if (diceAudio) {
                     diceAudio.currentTime = 0;
-                    diceAudio.play().catch(e => console.log("Audio play blocked", e));
+                    diceAudio.play().catch(e => {});
                 }
 
                 const dices = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
@@ -354,26 +412,43 @@ export async function handleGameLudo(request, env, user, renderLayout, url) {
                         diceEl.innerText = '🎲 [ ' + dices[finalRand] + ' ] (Ra số ' + resultNum + ')';
                         diceEl.style.transform = 'scale(1) rotate(0deg)';
 
-                        if (resultNum === 6) {
-                            consecutiveSix++;
-                            if (consecutiveSix >= 3) {
-                                document.getElementById('gameNotice').innerText = '💥 QUẮC! Ra số 6 lần thứ 3 liên tiếp. Mất lượt!';
-                                const laughAudio = document.getElementById('laughSound');
-                                if (laughAudio) laughAudio.play().catch(e => {});
-                                consecutiveSix = 0;
+                        // Xử lý di chuyển ngựa trên bàn cờ
+                        if (horsePosition === 0) {
+                            if (resultNum === 6) {
+                                horsePosition = 1; // Ra quân xuất phát
+                                document.getElementById('gameNotice').innerText = '🎉 Tung được số 6! Ngựa đã xuất chuồng ra ô xuất phát!';
+                                moveHorseToStep(horsePosition);
                             } else {
-                                document.getElementById('gameNotice').innerText = '🎉 Tuyệt vời! Ra số 6 (Lần ' + consecutiveSix + ') - Xuất quân & Đi thêm lượt!';
-                                const moveAudio = document.getElementById('moveSound');
-                                if (moveAudio) moveAudio.play().catch(e => {});
+                                document.getElementById('gameNotice').innerText = '⚠️ Cần tung được số 6 (⚅) để xuất quân!';
                             }
                         } else {
-                            consecutiveSix = 0;
-                            document.getElementById('gameNotice').innerText = '🐎 Ngựa di chuyển ' + resultNum + ' bước an toàn.';
-                            const moveAudio = document.getElementById('moveSound');
-                            if (moveAudio) moveAudio.play().catch(e => {});
+                            horsePosition = (horsePosition + resultNum) % trackCoordinates.length;
+                            if (horsePosition === 0) horsePosition = 1;
+                            document.getElementById('gameNotice').innerText = '🐎 Ngựa phi nước đại tiến lên ' + resultNum + ' bước!';
+                            moveHorseToStep(horsePosition);
+                        }
+
+                        // Phát âm thanh di chuyển quân cờ
+                        const moveAudio = document.getElementById('moveSound');
+                        if (moveAudio) {
+                            moveAudio.currentTime = 0;
+                            moveAudio.play().catch(e => {});
                         }
                     }
                 }, 50);
+            }
+
+            function moveHorseToStep(stepIndex) {
+                const target = trackCoordinates[stepIndex] || trackCoordinates[1];
+                const horse = document.getElementById('horseRed');
+                const label = document.getElementById('textRed');
+                
+                if (horse && label) {
+                    horse.setAttribute('cx', target.cx);
+                    horse.setAttribute('cy', target.cy);
+                    label.setAttribute('x', target.cx);
+                    label.setAttribute('y', target.cy + 4);
+                }
             }
 
             async function sendRoomChat(event) {
