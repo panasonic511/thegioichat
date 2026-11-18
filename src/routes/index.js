@@ -43,7 +43,7 @@ export async function handleIndex(request, env, user, renderLayout) {
         totalUsers = uCount?.total || 1;
         const fCount = await env.DB.prepare("SELECT COUNT(*) as total FROM feeds").first();
         totalFeeds = fCount?.total || 0;
-        const rUsers = await env.DB.prepare("SELECT id, display_name, role, level, name_color, name_glow, name_border, name_border_glow, border_color, avatar_glow, avatar FROM users ORDER BY id DESC LIMIT 5").all();
+        const rUsers = await env.DB.prepare("SELECT id, active_icon, display_name, role, level, name_color, name_glow, name_border, name_border_glow, border_color, avatar_glow, avatar FROM users ORDER BY id DESC LIMIT 5").all();
         recentUsers = rUsers.results || [];
     } catch (e) {}
 
@@ -71,7 +71,9 @@ export async function handleIndex(request, env, user, renderLayout) {
             avatarStyle: avtStyle,
             avatarUrl: avt,
             nameStyle,
-            nameHtml: `<a href="/profile?user=${uid}" style="${nameStyle}">${name}</a>`
+            const icon = safe.active_icon ? `${safe.active_icon} ` : '';
+            // ...
+            nameHtml: `<a href="/profile?user=${uid}" style="${nameStyle}">${icon}${name}</a>`
         };
     }
 
