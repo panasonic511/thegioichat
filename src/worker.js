@@ -24,9 +24,15 @@ export function renderUser(u) {
         }
     });
 
-    const defaultAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/><path d='M20 88 C20 65, 80 65, 80 88' fill='%2300ff00'/></svg>";
+    // Định nghĩa 2 avatar mặc định riêng biệt cho Nam và Nữ
+    const defaultAvatarMale = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'><rect width='120' height='120' fill='%230f172a'/><circle cx='60' cy='45' r='22' fill='%2338bdf8'/><path d='M20 105 C20 80, 100 80, 100 105' fill='%2338bdf8'/></svg>";
+    const defaultAvatarFemale = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'><rect width='120' height='120' fill='%231f1025'/><circle cx='60' cy='45' r='22' fill='%23f472b6'/><path d='M20 105 C20 80, 100 80, 100 105' fill='%23f472b6'/></svg>";
+
+    const userGender = String(safeUser.gender || 'male');
+    const systemDefaultAvatar = userGender === 'female' ? defaultAvatarFemale : defaultAvatarMale;
+
     const avatarVal = String(safeUser.avatar || '');
-    const avatarUrl = (avatarVal && !avatarVal.includes('7gXvS6v')) ? avatarVal : defaultAvatar;
+    const avatarUrl = (avatarVal && !avatarVal.includes('7gXvS6v')) ? avatarVal : systemDefaultAvatar;
 
     const borderColor = String(safeUser.border_color || '#ffcc00');
     let avatarStyle = `border-radius: 50%; object-fit: cover; border: 2px solid ${borderColor};`;
