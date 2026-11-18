@@ -112,7 +112,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         }
     }
 
-    const profileUI = renderUser(profileUser);
+    const rProfile = renderUser(profileUser);
     const pIcon = profileUser.active_icon ? `${profileUser.active_icon} ` : '';
     const followingRow = await env.DB.prepare("SELECT COUNT(*) as total FROM follows WHERE follower_id = ?").bind(targetId).first();
     const followerRow = await env.DB.prepare("SELECT COUNT(*) as total FROM follows WHERE following_id = ?").bind(targetId).first();
@@ -171,7 +171,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             </div>
             
             <div style="font-size: 13px; margin-bottom: 2px;">
-            ${profileUi.nameHtml} 
+            ${rProfile.nameHtml} 
                 <span style="color: #ffcc00; font-size: 11px;">[Lv.${profileUser.level || 1}]</span>
             </div>
             <div style="font-size: 10px; color: #aaa; margin-bottom: 8px;">ID ${profileUser.id} · <span style="color: yellow;">${profileUser.role}</span></div>
