@@ -1,7 +1,7 @@
 import { renderUser } from '../worker.js';
 
 export async function handleFeed(request, env, user, renderLayout) {
-    // 1. Tự động khởi tạo bảng posts, post_likes, post_comments và stories nếu chưa có
+    // 1. Tự động khởi tạo và kiểm tra cấu trúc bảng dữ liệu an toàn
     try {
         await env.DB.prepare(`
             CREATE TABLE IF NOT EXISTS posts (
@@ -13,11 +13,14 @@ export async function handleFeed(request, env, user, renderLayout) {
             )
         `).run();
 
+        try { await env.DB.prepare("ALTER TABLE posts ADD COLUMN image_url TEXT").run(); } catch (e) {}
+
         await env.DB.prepare(`
             CREATE TABLE IF NOT EXISTS post_likes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 post_id INTEGER,
-                user_id INTEGER
+                user_id INTEGER,
+                reaction TEXT DEFAULT '❤️'
             )
         `).run();
 
@@ -35,15 +38,15 @@ export async function handleFeed(request, env, user, renderLayout) {
             CREATE TABLE IF NOT EXISTS stories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
-                image_url TEXT,
+                media_url TEXT,
+                media_type TEXT DEFAULT 'image',
                 caption TEXT,
                 created_at TEXT
             )
         `).run();
     } catch (e) {}
 
-    // 2. Xử lý các hành động POST (Đăng bài, Thả tim, Bình luận, Đăng story)
-    let message = '';
+    // 2. Xử lý các yêu cầu POST siêu tốc (Hỗ trợ cả AJAX fetch request)
     if (request.method === 'POST') {
         try {
             const formData = await request.formData();
@@ -56,7 +59,6 @@ export async function handleFeed(request, env, user, renderLayout) {
                     await env.DB.prepare(
                         "INSERT INTO posts (user_id, content, image_url, created_at) VALUES (?, ?, ?, datetime('now'))"
                     ).bind(user.id, content || '', imageUrl || '').run();
-                    message = '<div style="color: #00ff00; text-align: center; margin-bottom: 10px; font-weight: bold;">Đăng bài thành công!</div>';
                 }
             } else if (action === 'like_post') {
                 const postId = formData.get('post_id');
@@ -83,8 +85,19 @@ export async function handleFeed(request, env, user, renderLayout) {
                     ).bind(user.id, imageUrl.trim(), caption || '').run();
                 }
             }
+
+            // Nếu là gọi ngầm AJAX thì trả về kết quả JSON siêu tốc không load trang
+            if (request.headers.get('X-Requested-With') === 'XMLHttpRequest') {
+                return new Response(JSON.stringify({ success: true }), {
+                    headers: { 'Content-Type': 'application/json;charset=UTF-8' }
+                });
+            }
         } catch (e) {
-            message = `<div style="color: #ff3333; text-align: center; margin-bottom: 10px;">Lỗi: ${e.message}</div>`;
+            if (request.headers.get('X-Requested-With') === 'XMLHttpRequest') {
+                return new Response(JSON.stringify({ success: false, error: e.message }), {
+                    headers: { 'Content-Type': 'application/json;charset=UTF-8' }
+                });
+            }
         }
     }
 
@@ -140,15 +153,12 @@ export async function handleFeed(request, env, user, renderLayout) {
             for (let p of posts) {
                 const rUser = renderUser(p);
 
-                // Đếm số tim
                 const likeCountRes = await env.DB.prepare("SELECT COUNT(*) as cnt FROM post_likes WHERE post_id = ?").bind(p.id).first();
                 const likeCount = likeCountRes ? likeCountRes.cnt : 0;
 
-                // Kiểm tra xem user hiện tại đã thích chưa
                 const userLiked = await env.DB.prepare("SELECT id FROM post_likes WHERE post_id = ? AND user_id = ?").bind(p.id, user.id).first();
                 const heartColor = userLiked ? '#ff3333' : '#888';
 
-                // Lấy danh sách bình luận
                 const commRes = await env.DB.prepare(`
                     SELECT post_comments.*, users.username, users.display_name, users.name_color 
                     FROM post_comments 
@@ -183,28 +193,28 @@ export async function handleFeed(request, env, user, renderLayout) {
                     <div style="color: #ddd; font-size: 13px; word-break: break-word; white-space: pre-wrap; margin-bottom: 6px;">${p.content || ''}</div>
                     ${imageTag}
 
-                    <!-- Thanh Tương tác Thả tim & Bình luận -->
+                    <!-- Thanh Tương tác Thả tim & Bình luận (AJAX Mượt mà không reload) -->
                     <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #222; margin-top: 10px; padding-top: 8px;">
-                        <form method="POST" style="margin: 0;">
+                        <form onsubmit="submitAjax(event, this)" style="margin: 0;">
                             <input type="hidden" name="action" value="like_post">
                             <input type="hidden" name="post_id" value="${p.id}">
                             <button type="submit" style="background: none; border: none; color: ${heartColor}; cursor: pointer; font-size: 14px;">
-                                ❤️ <span style="font-size: 11px; color: #ccc;">${likeCount}</span>
+                                ❤️ <span style="font-size: 11px; color: #ccc;" id="like-count-${p.id}">${likeCount}</span>
                             </button>
                         </form>
                         <span style="font-size: 11px; color: #888;">💬 ${comments.length} bình luận</span>
                     </div>
 
                     <!-- Khung hiển thị bình luận -->
-                    <div style="margin-top: 6px;">
+                    <div style="margin-top: 6px;" id="comment-list-${p.id}">
                         ${commentsHtml}
                     </div>
 
-                    <!-- Form gửi bình luận -->
-                    <form method="POST" style="margin-top: 8px; display: flex; gap: 6px;">
+                    <!-- Form gửi bình luận AJAX -->
+                    <form onsubmit="submitCommentAjax(event, ${p.id})" style="margin-top: 8px; display: flex; gap: 6px;">
                         <input type="hidden" name="action" value="add_comment">
                         <input type="hidden" name="post_id" value="${p.id}">
-                        <input type="text" name="comment" placeholder="Viết bình luận..." style="flex: 1; background: #0a0a0a; color: #fff; border: 1px solid #333; padding: 6px; font-size: 11px; border-radius: 4px;" required>
+                        <input type="text" name="comment" id="comment-input-${p.id}" placeholder="Viết bình luận..." style="flex: 1; background: #0a0a0a; color: #fff; border: 1px solid #333; padding: 6px; font-size: 11px; border-radius: 4px;" required>
                         <button type="submit" style="background: #0055ff; color: #fff; border: none; padding: 6px 12px; font-size: 11px; border-radius: 4px; cursor: pointer;">Gửi</button>
                     </form>
                 </div>`;
@@ -212,7 +222,7 @@ export async function handleFeed(request, env, user, renderLayout) {
         }
     } catch (e) {}
 
-    // 5. Lắp ráp giao diện hoàn chỉnh
+    // 5. Giao diện hoàn chỉnh kèm Script AJAX siêu tốc
     const content = `
     <div class="box">
         <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
@@ -225,14 +235,13 @@ export async function handleFeed(request, env, user, renderLayout) {
         </div>
         <div class="box-content">
             ${storiesHtml}
-            ${message}
-            <form method="POST">
+            <form onsubmit="submitPostAjax(event, this)">
                 <input type="hidden" name="action" value="create_post">
                 <textarea name="content" rows="2" placeholder="Bạn đang nghĩ gì thế..." style="width: 100%; background: #141414; color: #00ff00; border: 1px solid #444; padding: 8px; border-radius: 4px; box-sizing: border-box; font-size: 13px; resize: vertical;"></textarea>
                 <input type="text" name="image_url" placeholder="Dán link ảnh đính kèm (tuỳ chọn)..." style="width: 100%; background: #141414; color: #fff; border: 1px solid #444; padding: 6px; box-sizing: border-box; font-size: 11px; border-radius: 4px; margin-top: 6px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
                     <span style="font-size: 10px; color: #888;">📷 Hỗ trợ đăng trạng thái & hình ảnh</span>
-                    <button type="submit" class="btn" style="background: #00aa00; color: #fff; padding: 6px 16px; border-radius: 4px;">Đăng bài</button>
+                    <button type="submit" class="btn" style="background: #00aa00; color: #fff; padding: 6px 16px; border-radius: 4px; cursor: pointer;">Đăng bài</button>
                 </div>
             </form>
         </div>
@@ -251,7 +260,7 @@ export async function handleFeed(request, env, user, renderLayout) {
                 <input type="text" name="image_url" placeholder="https://..." required style="width: 100%; background: #000; color: #fff; border: 1px solid #444; padding: 6px; box-sizing: border-box; margin-bottom: 8px; font-size: 11px;">
                 <label style="color: #ccc; font-size: 10px; display: block; margin-bottom: 2px;">Chú thích (Caption):</label>
                 <input type="text" name="caption" placeholder="Khoảnh khắc hôm nay..." style="width: 100%; background: #000; color: #fff; border: 1px solid #444; padding: 6px; box-sizing: border-box; margin-bottom: 8px; font-size: 11px;">
-                <button type="submit" class="btn" style="width: 100%; background: #0055ff; color: #fff; padding: 6px; font-size: 11px; border: none; border-radius: 3px;">Đăng Story</button>
+                <button type="submit" class="btn" style="width: 100%; background: #0055ff; color: #fff; padding: 6px; font-size: 11px; border: none; border-radius: 3px; cursor: pointer;">Đăng Story</button>
             </form>
         </div>
     </div>
@@ -259,6 +268,79 @@ export async function handleFeed(request, env, user, renderLayout) {
     <script>
         function openStoryModal() { document.getElementById('story-modal').style.display = 'flex'; }
         function closeStoryModal() { document.getElementById('story-modal').style.display = 'none'; }
+
+        // Xử lý Thả tim mượt mà không load trang
+        async function submitAjax(event, form) {
+            event.preventDefault();
+            const formData = new FormData(form);
+            const btn = form.querySelector('button');
+            try {
+                const res = await fetch(window.location.href, {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    body: formData
+                });
+                if (res.ok) {
+                    const spanCount = btn.querySelector('span:nth-child(2)');
+                    let count = parseInt(spanCount.innerText);
+                    if (btn.style.color === 'rgb(255, 51, 51)') {
+                        btn.style.color = '#888';
+                        spanCount.innerText = count - 1;
+                    } else {
+                        btn.style.color = '#ff3333';
+                        spanCount.innerText = count + 1;
+                    }
+                }
+            } catch (e) {
+                window.location.reload();
+            }
+        }
+
+        // Xử lý Gửi bình luận mượt mà
+        async function submitCommentAjax(event, postId) {
+            event.preventDefault();
+            const input = document.getElementById('comment-input-' + postId);
+            const text = input.value.trim();
+            if (!text) return;
+
+            const formData = new FormData();
+            formData.append('action', 'add_comment');
+            formData.append('post_id', postId);
+            formData.append('comment', text);
+
+            try {
+                const res = await fetch(window.location.href, {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    body: formData
+                });
+                if (res.ok) {
+                    const list = document.getElementById('comment-list-' + postId);
+                    list.innerHTML += \`<div style="font-size: 11px; margin-top: 4px; border-top: 1px solid #222; padding-top: 4px;"><span style="color: #00ff00; font-weight: bold;">Bạn:</span> <span style="color: #ddd;">\${text}</span></div>\`;
+                    input.value = '';
+                }
+            } catch (e) {
+                window.location.reload();
+            }
+        }
+
+        // Xử lý Đăng bài viết siêu tốc
+        async function submitPostAjax(event, form) {
+            event.preventDefault();
+            const formData = new FormData(form);
+            try {
+                const res = await fetch(window.location.href, {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    body: formData
+                });
+                if (res.ok) {
+                    window.location.reload();
+                }
+            } catch (e) {
+                window.location.reload();
+            }
+        }
     </script>
 
     <div class="box">
