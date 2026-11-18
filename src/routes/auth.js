@@ -13,7 +13,6 @@ export async function handleLogin(request, env) {
                 if (!user || user.password !== password) {
                     error = 'Tên đăng nhập hoặc mật khẩu không chính xác.';
                 } else {
-                    // Đăng nhập thành công, lưu cookie user_id
                     return new Response(null, {
                         status: 302,
                         headers: {
@@ -86,27 +85,26 @@ export async function handleRegister(request, env) {
             if (!username || !password) {
                 error = 'Vui lòng điền đầy đủ tên đăng nhập và mật khẩu.';
             } else {
-                // Kiểm tra tài khoản đã tồn tại chưa
                 const existing = await env.DB.prepare("SELECT id FROM users WHERE username = ?").bind(username).first();
                 if (existing) {
                     error = 'Tên đăng nhập này đã tồn tại, vui lòng chọn tên khác.';
                 } else {
-                    // Tạo Avatar mặc định riêng biệt cho Nam và Nữ bằng SVG siêu nhẹ
+                    // Tạo Avatar mặc định riêng biệt cho Nam và Nữ bằng SVG
                     const defaultAvatarMale = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'><rect width='120' height='120' fill='%230f172a'/><circle cx='60' cy='45' r='22' fill='%2338bdf8'/><path d='M20 105 C20 80, 100 80, 100 105' fill='%2338bdf8'/></svg>";
                     const defaultAvatarFemale = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'><rect width='120' height='120' fill='%231f1025'/><circle cx='60' cy='45' r='22' fill='%23f472b6'/><path d='M20 105 C20 80, 100 80, 100 105' fill='%23f472b6'/></svg>";
                     
                     const userAvatar = gender === 'female' ? defaultAvatarFemale : defaultAvatarMale;
+                    const dummyEmail = `${username}@thegioichat.local`;
 
-                    // Tự động tạo bảng users nếu chưa có cột gender
-                    try {
-                        await env.DB.prepare("ALTER TABLE users ADD COLUMN gender TEXT DEFAULT 'male'").run();
-                    } catch (e) {}
+                    // Tự động bổ sung các cột cần thiết nếu bảng users thiếu
+                    try { await env.DB.prepare("ALTER TABLE users ADD COLUMN gender TEXT DEFAULT 'male'").run(); } catch (e) {}
+                    try { await env.DB.prepare("ALTER TABLE users ADD COLUMN email TEXT").run(); } catch (e) {}
 
-                    // Lưu vào Database
+                    // Lưu vào Database với email mặc định để tránh lỗi NOT NULL
                     await env.DB.prepare(`
-                        INSERT INTO users (username, password, display_name, gender, avatar, role, level, coins, gold, created_at) 
-                        VALUES (?, ?, ?, ?, ?, 'Thành Viên', 1, 1000, 0, datetime('now'))
-                    `).bind(username, password, displayName, gender, userAvatar).run();
+                        INSERT INTO users (username, password, display_name, email, gender, avatar, role, level, coins, gold, created_at) 
+                        VALUES (?, ?, ?, ?, ?, ?, 'Thành Viên', 1, 1000, 0, datetime('now'))
+                    `).bind(username, password, displayName, dummyEmail, gender, userAvatar).run();
 
                     return new Response(null, {
                         status: 302,
