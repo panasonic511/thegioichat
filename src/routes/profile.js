@@ -219,22 +219,18 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         <span>Thông tin chi tiết</span>
         ${isOwner ? `<a href="javascript:void(0)" onclick="openSettingsModal()" style="font-size: 10px; color: #ffcc00;">[Chỉnh sửa]</a>` : ''}
     </div>
-    <div class="box-content" style="font-size: 11px; line-height: 1.8;">
-        <!-- Nội dung thông tin chi tiết -->
+    <div class="box-content" style="font-size: 11px; line-height: 1.8; padding: 8px;">
+        <div>❤️ Hẹn hò: <b>${profileUser.relationships || 'Đang độc thân'}</b></div>
+        <div>👤 Giới tính: <b>${profileUser.gender || 'Chưa cập nhật'}</b></div>
+        <div>⭐ Level: <b style="color: #ffcc00;">${profileUser.level || 1}</b> - <a href="/profile/level" style="color: #00ff00;">Kiểm tra</a></div>
+        <div>🪙 Xu: <b style="color: #00ff00;">${(profileUser.coins || 0).toLocaleString()} Xu</b></div>
+        <div>💰 Vàng: <b style="color: #ffcc00;">${(profileUser.gold || 0).toLocaleString()} Vàng</b></div>
+        <div>📝 Bài viết: <b>${postCount}</b></div>
+        <div>🏙️ Tỉnh thành: <b>${profileUser.province || 'Chưa cập nhật'}</b></div>
+        <div>🎂 Sinh nhật: <b>${profileUser.birthday || 'Chưa cập nhật'}</b></div>
+        <div>📅 Ngày đăng ký: <b>${profileUser.created_at || 'Thành viên hệ thống'}</b></div>
     </div>
 </div>
-        <div class="box-content" style="font-size: 11px; line-height: 1.8;">
-            <div>💖 Hẹn hò: <b>${profileUser.relationship || 'Đang độc thân'}</b></div>
-            <div>🚻 Giới tính: <b>${profileUser.gender || 'Chưa cập nhật'}</b></div>
-            <div>📊 Level: <b style="color: #ffcc00;">${profileUser.level || 1}</b> · <a href="/profile/level" style="color: #00ff00;">Kiểm tra</a></div>
-            <div>🪙 Xu: <b style="color: #00ff00;">${(profileUser.coins || 0).toLocaleString()} Xu</b></div>
-            <div>👑 Vàng: <b style="color: #ffcc00;">${(profileUser.gold || 0).toLocaleString()} Vàng</b></div>
-            <div>💬 Bài viết: <b>${postCount}</b></div>
-            <div>🌍 Tỉnh thành: <b>${profileUser.province || 'Chưa cập nhật'}</b></div>
-            <div>🎂 Sinh nhật: <b>${profileUser.birthday || 'Chưa cập nhật'}</b></div>
-            <div>📅 Ngày đăng ký: <b>${profileUser.created_at || 'Thành viên hệ thống'}</b></div>
-        </div>
-    </div>
 
     <!-- Popup Modal Cài đặt thông tin -->
     ${isOwner ? `
