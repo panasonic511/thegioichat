@@ -14,7 +14,7 @@ export async function handleShopColor(request, env, user, renderLayout) {
             const action = formData.get('action');
 
             if (action === 'update_color') {
-                const targetType = formData.get('target_type'); // color, glow, border, border_glow, avt_border, avt_glow
+                const targetType = formData.get('target_type'); 
                 const colorVal = formData.get('color_val') || '#000000';
 
                 let sqlField = 'name_color';
@@ -39,12 +39,18 @@ export async function handleShopColor(request, env, user, renderLayout) {
 
     const defaultAvatarMale = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'><rect width='120' height='120' fill='%230f172a'/><circle cx='60' cy='45' r='22' fill='%2338bdf8'/><path d='M20 105 C20 80, 100 80, 100 105' fill='%2338bdf8'/></svg>";
     const avt = (user.avatar && !String(user.avatar).includes('7gXvS6v')) ? user.avatar : defaultAvatarMale;
-    const activeIcon = user.active_icon ? `${user.active_icon} ` : ''; const displayName = user.display_name \vert{}\vert{} user.username \vert{}\vert{} 'Thành viên';  // Tạo style xem trước let previewStyle = `color: ${user.name_color || '#00ff00'}; font-weight: bold;`;
-    let shadows = [];
-    if (user.name_glow && user.name_glow !== '#000000') shadows.push(`0 0 6px ${user.name_glow}`); if (user.name_border_glow && user.name_border_glow !== '#000000') shadows.push(`0 0 4px ${user.name_border_glow}`);
-    if (shadows.length > 0) previewStyle += ` text-shadow: ${shadows.join(', ')};`; if (user.name_border && user.name_border !== '#000000') previewStyle += ` -webkit-text-stroke: 0.5px ${user.name_border};`;
+    const activeIcon = user.active_icon ? `${user.active_icon} ` : '';
+    const displayName = user.display_name || user.username || 'Thành viên';
 
-    let avtStyle = `width: 50px; height: 50px; border-radius: 50%; object-fit: cover; border: 2px solid ${user.border_color \vert{}\vert{} '#ffcc00'};`; if (user.avatar_glow && user.avatar_glow !== '#000000') avtStyle += ` box-shadow: 0 0 10px ${user.avatar_glow};`;
+    let previewStyle = `color: ${user.name_color || '#00ff00'}; font-weight: bold;`;
+    let shadows = [];
+    if (user.name_glow && user.name_glow !== '#000000') shadows.push(`0 0 6px ${user.name_glow}`);
+    if (user.name_border_glow && user.name_border_glow !== '#000000') shadows.push(`0 0 4px ${user.name_border_glow}`);
+    if (shadows.length > 0) previewStyle += ` text-shadow: ${shadows.join(', ')};`;
+    if (user.name_border && user.name_border !== '#000000') previewStyle += ` -webkit-text-stroke: 0.5px ${user.name_border};`;
+
+    let avtStyle = `width: 50px; height: 50px; border-radius: 50%; object-fit: cover; border: 2px solid ${user.border_color || '#ffcc00'};`;
+    if (user.avatar_glow && user.avatar_glow !== '#000000') avtStyle += ` box-shadow: 0 0 10px ${user.avatar_glow};`;
 
     const content = `
     <div class="box">
@@ -54,7 +60,6 @@ export async function handleShopColor(request, env, user, renderLayout) {
         </div>
         <div class="box-content">
             ${message}
-            <!-- Khung xem trước (Preview) -->
             <div style="background: #141414; border: 1px solid #2a2a2a; padding: 12px; margin-bottom: 15px; border-radius: 6px; text-align: center;">
                 <div style="font-size: 12px; color: #aaa; margin-bottom: 8px;">Xem trước thay đổi:</div>
                 <div style="display: flex; align-items: center; justify-content: center; gap: 12px;">
@@ -63,7 +68,6 @@ export async function handleShopColor(request, env, user, renderLayout) {
                 </div>
             </div>
 
-            <!-- Form tùy chỉnh màu sắc -->
             <form method="POST" style="background: #121212; border: 1px solid #2c2c2c; padding: 12px; border-radius: 6px; margin-bottom: 12px;">
                 <input type="hidden" name="action" value="update_color">
                 <div style="font-weight: bold; color: #00ff00; margin-bottom: 8px; font-size: 13px;">⚙️ Tùy chỉnh màu sắc chuyên sâu:</div>
@@ -96,7 +100,6 @@ export async function handleShopColor(request, env, user, renderLayout) {
                 </div>
             </form>
 
-            <!-- Bộ mẫu phối sẵn -->
             <div style="background: #121212; border: 1px solid #2c2c2c; padding: 12px; border-radius: 6px;">
                 <div style="font-weight: bold; color: #ffcc00; margin-bottom: 8px; font-size: 13px;">🌟 Bộ màu phối sẵn nhanh:</div>
                 <div style="display: flex; gap: 6px; flex-wrap: wrap;">
