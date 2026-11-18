@@ -1,19 +1,38 @@
 import { handleLogin } from './auth.js';
-import { renderUser } from '../utils/userStyle.js';
 
 export async function handleIndex(request, env, user, renderLayout) {
     if (!user) {
         if (request.method === 'POST') return await handleLogin(request, env);
-        // ... (phần form đăng nhập giữ nguyên như trước)
+        
+        const loginContent = `
+        <div class="box">
+            <div class="box-title">🔑 Đăng nhập hệ thống</div>
+            <div class="box-content">
+                <form method="POST">
+                    <label style="color: #00ff00; display: block; margin-bottom: 2px;">Tên đăng nhập / ID:</label>
+                    <input type="text" name="username" required style="width: 100%; background: #000; color: #fff; border: 1px solid #444; padding: 6px; box-sizing: border-box; margin-bottom: 8px;">
+                    <label style="color: #00ff00; display: block; margin-bottom: 2px;">Mật khẩu:</label>
+                    <input type="password" name="password" required style="width: 100%; background: #000; color: #fff; border: 1px solid #444; padding: 6px; box-sizing: border-box; margin-bottom: 8px;">
+                    <button type="submit" class="btn" style="width: 100%; background: #0055ff; color: #fff; padding: 6px;">Đăng nhập</button>
+                </form>
+                <div style="text-align: center; margin-top: 8px; font-size: 11px;">
+                    Chưa có tài khoản? <a href="/register">Đăng ký ngay</a>
+                </div>
+            </div>
+        </div>`;
+        return new Response(renderLayout('Đăng nhập', loginContent, null), {
+            headers: { 'Content-Type': 'text/html;charset=UTF-8' }
+        });
     }
 
+    // Lấy thông báo an toàn tuyệt đối
     let announcements = { results: [] };
     try {
         announcements = await env.DB.prepare(`
             SELECT announcements.*, users.display_name, users.role, users.level, 
-                   users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.border_color, users.avatar_glow 
+                   users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.border_color, users.avatar_glow, users.avatar 
             FROM announcements 
-            JOIN users ON announcements.user_id = users.id 
+            LEFT JOIN users ON announcements.user_id = users.id 
             ORDER BY announcements.id DESC 
             LIMIT 5
         `).all();
@@ -25,11 +44,40 @@ export async function handleIndex(request, env, user, renderLayout) {
         totalUsers = uCount?.total || 1;
         const fCount = await env.DB.prepare("SELECT COUNT(*) as total FROM feeds").first();
         totalFeeds = fCount?.total || 0;
-        const rUsers = await env.DB.prepare("SELECT id, display_name, role, level, name_color, name_glow, name_border, name_border_glow, border_color, avatar_glow FROM users ORDER BY id DESC LIMIT 5").all();
+        const rUsers = await env.DB.prepare("SELECT id, display_name, role, level, name_color, name_glow, name_border, name_border_glow, border_color, avatar_glow, avatar FROM users ORDER BY id DESC LIMIT 5").all();
         recentUsers = rUsers.results || [];
     } catch (e) {}
 
-    const currentUserUI = renderUser(user);
+    // Hàm render cục bộ cực kỳ an toàn bên trong index.js để chống lỗi null
+    function safeRenderUser(u) {
+        const safe = u || {};
+        const defaultAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/></svg>";
+        const avt = (safe.avatar && !String(safe.avatar).includes('7gXvS6v')) ? safe.avatar : defaultAvatar;
+        
+        const borderColor = safe.border_color || '#ffcc00';
+        let avtStyle = `border-radius: 50%; object-fit: cover; border: 2px solid ${borderColor};`;
+        if (safe.avatar_glow && safe.avatar_glow !== '#000000') avtStyle += ` box-shadow: 0 0 10px ${safe.avatar_glow};`;
+
+        const nameColor = safe.name_color || '#00ff00';
+        let nameStyle = `color: ${nameColor}; font-weight: bold;`;
+        let shadows = [];
+        if (safe.name_glow && safe.name_glow !== '#000000') shadows.push(`0 0 6px ${safe.name_glow}`);
+        if (safe.name_border_glow && safe.name_border_glow !== '#000000') shadows.push(`0 0 4px ${safe.name_border_glow}`);
+        if (shadows.length > 0) nameStyle += ` text-shadow: ${shadows.join(', ')};`;
+        if (safe.name_border && safe.name_border !== '#000000') nameStyle += ` -webkit-text-stroke: 0.5px ${safe.name_border};`;
+
+        const name = safe.display_name || 'Thành viên';
+        const uid = safe.user_id || safe.id || '';
+
+        return {
+            avatarStyle: avtStyle,
+            avatarUrl: avt,
+            nameStyle,
+            nameHtml: `<a href="/profile?user=${uid}" style="${nameStyle}">${name}</a>`
+        };
+    }
+
+    const currentUserUI = safeRenderUser(user);
 
     const content = `
     <!-- Khung thông tin cá nhân ngoài Trang chủ -->
@@ -37,11 +85,11 @@ export async function handleIndex(request, env, user, renderLayout) {
         <div class="box-content" style="display: flex; align-items: center; justify-content: space-between; padding: 8px;">
             <div style="display: flex; align-items: center;">
                 <div style="width: 38px; height: 38px; margin-right: 8px;">
-                    <a href="/profile"><img src="${user.avatar && !user.avatar.includes('7gXvS6v') ? user.avatar : 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'><rect width=\'100\' height=\'100\' fill=\'%231a1a1a\'/><circle cx=\'50\' cy=\'38\' r=\'18\' fill=\'%2300ff00\'/></svg>'}" width="38" height="38" style="${currentUserUI.avatarStyle} display:block;"></a>
+                    <a href="/profile"><img src="${currentUserUI.avatarUrl}" width="38" height="38" style="${currentUserUI.avatarStyle} display:block;"></a>
                 </div>
                 <div>
                     <div>
-                        <a href="/profile" style="${currentUserUI.nameStyle}">${user.display_name}</a> 
+                        ${currentUserUI.nameHtml} 
                         <span style="color: #ffcc00; font-size: 11px;">[Lv.${user.level || 1}]</span>
                     </div>
                     <div style="font-size: 11px; color: #ccc; margin-top: 2px;">
@@ -52,7 +100,7 @@ export async function handleIndex(request, env, user, renderLayout) {
             </div>
             <div>
                 <span style="background: #1a1a1a; color: #ffcc00; padding: 3px 8px; border: 1px solid #444; font-size: 11px; font-weight: bold;">
-                    ${user.role}
+                    ${user.role || 'Thành Viên'}
                 </span>
             </div>
         </div>
@@ -87,8 +135,8 @@ export async function handleIndex(request, env, user, renderLayout) {
         <div class="box-title">👥 Thành viên thật (${totalUsers})</div>
         <div class="box-content" style="font-size: 11px;">
             ${recentUsers.map(u => {
-                const uUI = renderUser(u);
-                return `<span style="display:inline-block; margin-right:8px; margin-bottom:4px;"><a href="/profile?user=${u.id}" style="${uUI.nameStyle}">${u.display_name}</a> <span style="color:#ffcc00;">[Lv.${u.level || 1}]</span></span>`;
+                const uUI = safeRenderUser(u);
+                return `<span style="display:inline-block; margin-right:8px; margin-bottom:4px;">${uUI.nameHtml} <span style="color:#ffcc00;">[Lv.${u.level || 1}]</span></span>`;
             }).join(' · ')}
         </div>
     </div>
@@ -99,11 +147,11 @@ export async function handleIndex(request, env, user, renderLayout) {
         <div class="box-content" style="font-size: 11px;">
             ${announcements.results.length === 0 ? '<div style="color: #888; text-align: center;">Chưa có thông báo nào.</div>' : 
                 announcements.results.map(item => {
-                    const itemUI = renderUser(item);
+                    const itemUI = safeRenderUser(item);
                     return `
                     <div style="margin-bottom: 6px;">
-                        <span style="color: #ffcc00;">[Lv.${item.level}]</span> <a href="/profile?user=${item.user_id}" style="${itemUI.nameStyle}">${item.display_name}</a> <span style="color: yellow;">(${item.role})</span>
-                        <div style="color: #fff; margin-top: 2px;">${item.content}</div>
+                        <span style="color: #ffcc00;">[Lv.${item.level || 1}]</span> ${itemUI.nameHtml} <span style="color: yellow;">(${item.role || 'Thành Viên'})</span>
+                        <div style="color: #fff; margin-top: 2px;">${item.content || ''}</div>
                     </div>`;
                 }).join('')}
         </div>
