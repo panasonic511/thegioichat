@@ -17,8 +17,7 @@ export async function handleFeed(request, env, user, renderLayout) {
             CREATE TABLE IF NOT EXISTS post_likes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 post_id INTEGER,
-                user_id INTEGER,
-                reaction TEXT DEFAULT '❤️'
+                user_id INTEGER
             )
         `).run();
 
@@ -43,7 +42,7 @@ export async function handleFeed(request, env, user, renderLayout) {
         `).run();
     } catch (e) {}
 
-    // 2. Xử lý các hành động POST
+    // 2. Xử lý các hành động POST (Đăng bài, Thả tim, Bình luận, Đăng story)
     let message = '';
     if (request.method === 'POST') {
         try {
@@ -59,22 +58,13 @@ export async function handleFeed(request, env, user, renderLayout) {
                     ).bind(user.id, content || '', imageUrl || '').run();
                     message = '<div style="color: #00ff00; text-align: center; margin-bottom: 10px; font-weight: bold;">Đăng bài thành công!</div>';
                 }
-            } else if (action === 'react_post') {
+            } else if (action === 'like_post') {
                 const postId = formData.get('post_id');
-                const reaction = formData.get('reaction') || '❤️';
-                
-                // Kiểm tra xem user đã thả cảm xúc chưa
-                const existing = await env.DB.prepare("SELECT id, reaction FROM post_likes WHERE post_id = ? AND user_id = ?").bind(postId, user.id).first();
+                const existing = await env.DB.prepare("SELECT id FROM post_likes WHERE post_id = ? AND user_id = ?").bind(postId, user.id).first();
                 if (existing) {
-                    if (existing.reaction === reaction) {
-                        // Nếu bấm lại đúng cảm xúc cũ thì gỡ bỏ
-                        await env.DB.prepare("DELETE FROM post_likes WHERE post_id = ? AND user_id = ?").bind(postId, user.id).run();
-                    } else {
-                        // Đổi cảm xúc mới
-                        await env.DB.prepare("UPDATE post_likes SET reaction = ? WHERE post_id = ? AND user_id = ?").bind(reaction, postId, user.id).run();
-                    }
+                    await env.DB.prepare("DELETE FROM post_likes WHERE post_id = ? AND user_id = ?").bind(postId, user.id).run();
                 } else {
-                    await env.DB.prepare("INSERT INTO post_likes (post_id, user_id, reaction) VALUES (?, ?, ?)").bind(postId, user.id, reaction).run();
+                    await env.DB.prepare("INSERT INTO post_likes (post_id, user_id) VALUES (?, ?)").bind(postId, user.id).run();
                 }
             } else if (action === 'add_comment') {
                 const postId = formData.get('post_id');
@@ -132,7 +122,7 @@ export async function handleFeed(request, env, user, renderLayout) {
         storiesHtml = '';
     }
 
-    // 4. Lấy danh sách Bài viết, Cảm xúc & Bình luận
+    // 4. Lấy danh sách Bài viết, Thả tim & Bình luận
     let postsHtml = '';
     try {
         const res = await env.DB.prepare(`
@@ -150,14 +140,13 @@ export async function handleFeed(request, env, user, renderLayout) {
             for (let p of posts) {
                 const rUser = renderUser(p);
 
-                // Đếm số lượng cảm xúc
+                // Đếm số tim
                 const likeCountRes = await env.DB.prepare("SELECT COUNT(*) as cnt FROM post_likes WHERE post_id = ?").bind(p.id).first();
                 const likeCount = likeCountRes ? likeCountRes.cnt : 0;
 
-                // Kiểm tra cảm xúc của user hiện tại
-                const userReact = await env.DB.prepare("SELECT reaction FROM post_likes WHERE post_id = ? AND user_id = ?").bind(p.id, user.id).first();
-                const currentReaction = userReact ? userReact.reaction : '❤️';
-                const hasReacted = !!userReact;
+                // Kiểm tra xem user hiện tại đã thích chưa
+                const userLiked = await env.DB.prepare("SELECT id FROM post_likes WHERE post_id = ? AND user_id = ?").bind(p.id, user.id).first();
+                const heartColor = userLiked ? '#ff3333' : '#888';
 
                 // Lấy danh sách bình luận
                 const commRes = await env.DB.prepare(`
@@ -194,66 +183,37 @@ export async function handleFeed(request, env, user, renderLayout) {
                     <div style="color: #ddd; font-size: 13px; word-break: break-word; white-space: pre-wrap; margin-bottom: 6px;">${p.content || ''}</div>
                     ${imageTag}
 
-                    <!-- Thanh Tương tác: Cảm xúc & Icon Bình luận nằm cạnh nhau -->
+                    <!-- Thanh Tương tác Thả tim & Bình luận -->
                     <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #222; margin-top: 10px; padding-top: 8px;">
-                        
-                        <!-- Khu vực nút Thả tim & Hover hiện bảng cảm xúc mượt mà -->
-                        <div class="reaction-container" style="position: relative; display: inline-block;">
-                            <!-- Bảng chọn cảm xúc trượt ra khi hover -->
-                            <div class="reaction-popup" style="display: none; position: absolute; bottom: 125%; left: 0; background: #1f1f1f; border: 1px solid #444; border-radius: 20px; padding: 4px 8px; gap: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); z-index: 10;">
-                                <form method="POST" style="display:inline;"><input type="hidden" name="action" value="react_post"><input type="hidden" name="post_id" value="${p.id}"><input type="hidden" name="reaction" value="❤️"><button type="submit" style="background:none;border:none;font-size:16px;cursor:pointer;padding:2px;">❤️</button></form>
-                                <form method="POST" style="display:inline;"><input type="hidden" name="action" value="react_post"><input type="hidden" name="post_id" value="${p.id}"><input type="hidden" name="reaction" value="👍"><button type="submit" style="background:none;border:none;font-size:16px;cursor:pointer;padding:2px;">👍</button></form>
-                                <form method="POST" style="display:inline;"><input type="hidden" name="action" value="react_post"><input type="hidden" name="post_id" value="${p.id}"><input type="hidden" name="reaction" value="😆"><button type="submit" style="background:none;border:none;font-size:16px;cursor:pointer;padding:2px;">😆</button></form>
-                                <form method="POST" style="display:inline;"><input type="hidden" name="action" value="react_post"><input type="hidden" name="post_id" value="${p.id}"><input type="hidden" name="reaction" value="😢"><button type="submit" style="background:none;border:none;font-size:16px;cursor:pointer;padding:2px;">😢</button></form>
-                                <form method="POST" style="display:inline;"><input type="hidden" name="action" value="react_post"><input type="hidden" name="post_id" value="${p.id}"><input type="hidden" name="reaction" value="😡"><button type="submit" style="background:none;border:none;font-size:16px;cursor:pointer;padding:2px;">😡</button></form>
-                            </div>
-
-                            <!-- Nút bấm tim chính -->
-                            <form method="POST" style="margin: 0; display: inline;">
-                                <input type="hidden" name="action" value="react_post">
-                                <input type="hidden" name="post_id" value="${p.id}">
-                                <input type="hidden" name="reaction" value="❤️">
-                                <button type="submit" style="background: none; border: none; color: ${hasReacted ? '#ff3333' : '#888'}; cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 4px;">
-                                    <span>${hasReacted ? currentReaction : '❤️'}</span> <span style="font-size: 11px; color: #ccc;">${likeCount}</span>
-                                </button>
-                            </form>
-                        </div>
-
-                        <!-- Icon Bình luận tích hợp ngay bên cạnh -->
-                        <div style="display: flex; align-items: center; gap: 12px;">
-                            <button type="button" onclick="toggleCommentBox(${p.id})" style="background: none; border: none; color: #aaa; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 4px;">
-                                💬 <span style="font-size: 11px;">${comments.length} Bình luận</span>
+                        <form method="POST" style="margin: 0;">
+                            <input type="hidden" name="action" value="like_post">
+                            <input type="hidden" name="post_id" value="${p.id}">
+                            <button type="submit" style="background: none; border: none; color: ${heartColor}; cursor: pointer; font-size: 14px;">
+                                ❤️ <span style="font-size: 11px; color: #ccc;">${likeCount}</span>
                             </button>
-                        </div>
+                        </form>
+                        <span style="font-size: 11px; color: #888;">💬 ${comments.length} bình luận</span>
                     </div>
 
-                    <!-- Khung danh sách bình luận -->
+                    <!-- Khung hiển thị bình luận -->
                     <div style="margin-top: 6px;">
                         ${commentsHtml}
                     </div>
 
-                    <!-- Form gửi bình luận (Ẩn/Hiện mượt mà qua nút icon bình luận) -->
-                    <div id="comment-box-${p.id}" style="display: none; margin-top: 8px;">
-                        <form method="POST" style="display: flex; gap: 6px;">
-                            <input type="hidden" name="action" value="add_comment">
-                            <input type="hidden" name="post_id" value="${p.id}">
-                            <input type="text" name="comment" placeholder="Viết bình luận..." style="flex: 1; background: #0a0a0a; color: #fff; border: 1px solid #333; padding: 6px; font-size: 11px; border-radius: 4px;" required>
-                            <button type="submit" style="background: #0055ff; color: #fff; border: none; padding: 6px 12px; font-size: 11px; border-radius: 4px; cursor: pointer;">Gửi</button>
-                        </form>
-                    </div>
+                    <!-- Form gửi bình luận -->
+                    <form method="POST" style="margin-top: 8px; display: flex; gap: 6px;">
+                        <input type="hidden" name="action" value="add_comment">
+                        <input type="hidden" name="post_id" value="${p.id}">
+                        <input type="text" name="comment" placeholder="Viết bình luận..." style="flex: 1; background: #0a0a0a; color: #fff; border: 1px solid #333; padding: 6px; font-size: 11px; border-radius: 4px;" required>
+                        <button type="submit" style="background: #0055ff; color: #fff; border: none; padding: 6px 12px; font-size: 11px; border-radius: 4px; cursor: pointer;">Gửi</button>
+                    </form>
                 </div>`;
             }
         }
     } catch (e) {}
 
-    // 5. Giao diện toàn trang & CSS Hover mượt mà tức thì
+    // 5. Lắp ráp giao diện hoàn chỉnh
     const content = `
-    <style>
-        .reaction-container:hover .reaction-popup {
-            display: flex !important;
-        }
-    </style>
-
     <div class="box">
         <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
             <span>📰 Bảng tin cộng đồng</span>
@@ -299,14 +259,6 @@ export async function handleFeed(request, env, user, renderLayout) {
     <script>
         function openStoryModal() { document.getElementById('story-modal').style.display = 'flex'; }
         function closeStoryModal() { document.getElementById('story-modal').style.display = 'none'; }
-        function toggleCommentBox(postId) {
-            const box = document.getElementById('comment-box-' + postId);
-            if (box.style.display === 'none') {
-                box.style.display = 'block';
-            } else {
-                box.style.display = 'none';
-            }
-        }
     </script>
 
     <div class="box">
