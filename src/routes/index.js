@@ -115,22 +115,34 @@ export async function handleIndex(request, env, user, renderLayout) {
         </div>
     </div>
 
-    <!-- Menu hệ thống (Cân đối 2 cột, chữ to rõ giống Gaubong) -->
+    <!-- Menu hệ thống (Phân ô gọn gàng, chữ màu hồng rực rỡ, size to 14px) -->
     <div class="box">
         <div class="box-title">≡ Menu</div>
-        <div class="box-content" style="padding: 10px 14px;">
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 14px;">
+        <div class="box-content" style="padding: 10px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                 <!-- Cột bên trái -->
                 <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <div>💬 <a href="/users/feed" style="font-size: 14px; font-weight: bold;">Diễn đàn</a></div>
-                    <div>📊 <a href="/profile/level" style="font-size: 14px; font-weight: bold;">Bảng cấp độ</a></div>
-                    <div>📈 <a href="/shop" style="font-size: 14px; font-weight: bold;">Thống kê</a></div>
+                    <a href="/users/feed" style="background: #121212; border: 1px solid #333; padding: 9px 12px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff66cc; text-decoration: none;">
+                        <span>💬</span> Diễn đàn
+                    </a>
+                    <a href="/profile/level" style="background: #121212; border: 1px solid #333; padding: 9px 12px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff66cc; text-decoration: none;">
+                        <span>📊</span> Bảng cấp độ
+                    </a>
+                    <a href="/shop" style="background: #121212; border: 1px solid #333; padding: 9px 12px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff66cc; text-decoration: none;">
+                        <span>📈</span> Thống kê
+                    </a>
                 </div>
                 <!-- Cột bên phải -->
                 <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <div>👥 <a href="/profile" style="font-size: 14px; font-weight: bold;">Bạn bè</a></div>
-                    <div>⚙️ <a href="/profile" style="font-size: 14px; font-weight: bold;">Cài đặt</a></div>
-                    <div>🎮 <a href="/game" style="font-size: 14px; font-weight: bold;">Khu giải trí [29]</a></div>
+                    <a href="/profile" style="background: #121212; border: 1px solid #333; padding: 9px 12px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff66cc; text-decoration: none;">
+                        <span>👥</span> Bạn bè
+                    </a>
+                    <a href="/profile" style="background: #121212; border: 1px solid #333; padding: 9px 12px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff66cc; text-decoration: none;">
+                        <span>⚙️</span> Cài đặt
+                    </a>
+                    <a href="/game" style="background: #121212; border: 1px solid #333; padding: 9px 12px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff66cc; text-decoration: none;">
+                        <span>🎮</span> Khu giải trí [29]
+                    </a>
                 </div>
             </div>
         </div>
