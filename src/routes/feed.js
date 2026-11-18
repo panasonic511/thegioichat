@@ -1,4 +1,5 @@
 export async function handleFeed(request, env, user, renderLayout) {
+    // 1. Tự động tạo bảng posts nếu chưa tồn tại
     try {
         await env.DB.prepare(`
             CREATE TABLE IF NOT EXISTS posts (
@@ -10,6 +11,7 @@ export async function handleFeed(request, env, user, renderLayout) {
         `).run();
     } catch (e) {}
 
+    // 2. Xử lý khi người dùng gửi bài viết mới (POST)
     let message = '';
     if (request.method === 'POST') {
         try {
@@ -26,12 +28,14 @@ export async function handleFeed(request, env, user, renderLayout) {
         }
     }
 
+    // 3. Truy vấn danh sách bài viết từ cơ sở dữ liệu D1 an toàn
     let postsHtml = '';
     try {
         const res = await env.DB.prepare(`
-            SELECT posts.*, users.username, users.display_name, users.avatar, users.border_color, users.name_color, users.role
+            SELECT posts.id, posts.user_id, posts.content, posts.created_at, 
+                   users.username, users.display_name, users.avatar
             FROM posts
-            JOIN users ON posts.user_id = users.id
+            LEFT JOIN users ON posts.user_id = users.id
             ORDER BY posts.id DESC LIMIT 20
         `).all();
         
@@ -42,34 +46,33 @@ export async function handleFeed(request, env, user, renderLayout) {
         } else {
             posts.forEach(post => {
                 const displayName = post.display_name || post.username || 'Thành viên';
-                const nameColor = post.name_color || '#00ff00';
-                const borderColor = post.border_color || '#444';
                 const avatarUrl = post.avatar || 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'><rect width=\'100\' height=\'100\' fill=\'%23333\'/></svg>';
                 
                 postsHtml += `
                     <div class="box" style="max-width: 600px; margin: 0 auto 8px auto; padding: 8px; background: #141414; border: 1px solid #333;">
                         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
                             <div>
-                                <img src="${avatarUrl}" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 2px solid ${borderColor};">
+                                <img src="${avatarUrl}" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 2px solid #444;">
                             </div>
                             <div>
                                 <div style="font-size: 12px; margin-bottom: 2px;">
-                                    <a href="/profile?user=${post.user_id}" style="color: ${nameColor}; text-decoration: none; font-weight: bold;">${displayName}</a>
+                                    <a href="/profile?user=${post.user_id}" style="color: #00ff00; text-decoration: none; font-weight: bold;">${displayName}</a>
                                 </div>
-                                <div style="font-size: 9px; color: #aaa;">${post.created_at}</div>
+                                <div style="font-size: 9px; color: #aaa;">${post.created_at || ''}</div>
                             </div>
                         </div>
                         <div style="font-size: 11px; word-break: break-word; color: #eee; line-height: 1.4;">
-                            ${post.content}
+                            ${post.content || ''}
                         </div>
                     </div>
                 `;
             });
         }
     } catch (e) {
-        postsHtml = `<div style="color: #ff3333; text-align: center; font-size: 11px;">Không thể tải bảng tin: ${e.message}</div>`;
+        postsHtml = `<div style="color: #ff3333; text-align: center; font-size: 11px; padding: 10px;">Không thể tải danh sách bài viết: ${e.message}</div>`;
     }
 
+    // 4. Lắp ráp giao diện hoàn chỉnh
     const html = `
         <div class="box" style="max-width: 600px; margin: 0 auto 8px auto;">
             <div class="box-title">📝 Đăng bài lên bảng tin</div>
