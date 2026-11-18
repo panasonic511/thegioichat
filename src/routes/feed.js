@@ -49,7 +49,9 @@ export async function handleFeed(request, env, user, renderLayout) {
             return `
             <div style="background: #121212; border: 1px solid #2c2c2c; border-radius: 6px; padding: 12px; margin-bottom: 10px;">
                 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-                    <div style="width: 36px; height: 36px;">${rUser.avatarHtml}</div>
+                    <div style="width: 36px; height: 36px; min-width: 36px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                        ${rUser.avatarHtml.replace(/style="[^"]*"/gi, 'style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;"')}
+                    </div>
                     <div>
                         <div>${rUser.nameHtml} <span style="font-size: 10px; color: #888; margin-left: 6px;">${p.created_at || ''}</span></div>
                         <div style="font-size: 11px; color: #ffcc00;">${p.role || 'Thành viên'}</div>
