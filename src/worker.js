@@ -84,12 +84,23 @@ function renderLayout(title, content, user) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${title} - Thế Giới Chat</title>
     <style>
-        /* Chuẩn kích thước, màu sắc và độ thoáng giống hệt GAUBONG */
         body { background: #000; color: #00ff00; font-family: Arial, sans-serif; margin: 0; padding: 0; font-size: 14px; line-height: 1.6; }
         
         .header { background: #000; text-align: center; padding: 16px 0; border-bottom: 2px solid #222; }
         .header h1 { color: #fff; margin: 0; font-size: 24px; font-weight: bold; text-shadow: 0 0 12px #00ff00; letter-spacing: 1px; }
-        .slogan { color: #ffcc00; font-size: 12px; margin-top: 5px; }
+        
+        /* Hiệu ứng chạy chữ đổi màu 7 màu liên tục (Rainbow Animation) */
+        @keyframes rainbowGlow {
+            0% { color: #ff0000; text-shadow: 0 0 6px #ff0000; }
+            14% { color: #ff7700; text-shadow: 0 0 6px #ff7700; }
+            28% { color: #ffff00; text-shadow: 0 0 6px #ffff00; }
+            42% { color: #00ff00; text-shadow: 0 0 6px #00ff00; }
+            57% { color: #00ffff; text-shadow: 0 0 6px #00ffff; }
+            71% { color: #0000ff; text-shadow: 0 0 6px #0000ff; }
+            85% { color: #ff00ff; text-shadow: 0 0 6px #ff00ff; }
+            100% { color: #ff0000; text-shadow: 0 0 6px #ff0000; }
+        }
+        .slogan { font-size: 13px; font-weight: bold; margin-top: 6px; animation: rainbowGlow 4s infinite linear; }
         
         .top-menu-wrapper { background: #111; border-bottom: 2px solid #222; padding: 10px 0; }
         .top-menu-bar { max-width: 680px; margin: 0 auto; display: flex; justify-content: space-around; align-items: center; text-align: center; padding: 0 10px; box-sizing: border-box; }
