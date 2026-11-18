@@ -65,7 +65,6 @@ async function checkAuth(request, env) {
 }
 
 function renderLayout(title, content, user) {
-    // Chỉ hiển thị thanh menu đầy đủ khi người dùng đã đăng nhập
     const menuBarHtml = user ? `
         <a href="/" class="top-menu-item"><span class="top-menu-icon">🏠</span>Home</a>
         <a href="/users/feed" class="top-menu-item"><span class="top-menu-icon">📋</span>Bảng tin</a>
@@ -85,23 +84,29 @@ function renderLayout(title, content, user) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${title} - Thế Giới Chat</title>
     <style>
-        body { background: #000; color: #00ff00; font-family: Arial, sans-serif; margin: 0; padding: 0; font-size: 12px; line-height: 1.4; }
-        .header { background: linear-gradient(to bottom, #1c1c1c, #050505); text-align: center; padding: 10px; border-bottom: 2px solid #222; }
-        .header h1 { color: #fff; margin: 0; font-size: 19px; font-weight: bold; text-shadow: 0 0 8px #00ff00; }
-        .slogan { color: #ffcc00; font-size: 10px; margin-top: 3px; }
-        .top-menu-bar { background: #111; border-bottom: 2px solid #222; padding: 6px 0; display: flex; justify-content: center; gap: 15px; text-align: center; }
-        .top-menu-item { color: #00ff00; text-decoration: none; font-size: 11px; display: flex; flex-direction: column; align-items: center; }
+        /* Chuẩn hóa giao diện GAUBONG: Font to rõ, màu sắc và khoảng cách tối ưu */
+        body { background: #000; color: #00ff00; font-family: Arial, sans-serif; margin: 0; padding: 0; font-size: 13px; line-height: 1.5; }
+        .header { background: #000; text-align: center; padding: 12px 0; border-bottom: 2px solid #222; }
+        .header h1 { color: #fff; margin: 0; font-size: 22px; font-weight: bold; text-shadow: 0 0 10px #00ff00; letter-spacing: 1px; }
+        .slogan { color: #ffcc00; font-size: 11px; margin-top: 4px; }
+        
+        .top-menu-bar { background: #111; border-bottom: 2px solid #222; padding: 8px 0; display: flex; justify-content: center; gap: 18px; text-align: center; }
+        .top-menu-item { color: #00ff00; text-decoration: none; font-size: 12px; display: flex; flex-direction: column; align-items: center; font-weight: bold; }
         .top-menu-item:hover { color: #fff; text-decoration: underline; }
-        .top-menu-icon { font-size: 15px; margin-bottom: 2px; }
-        .container { padding: 8px; max-width: 600px; margin: 0 auto; }
-        .box { background: #0d0d0d; border: 1px solid #333; margin-bottom: 8px; }
-        .box-title { background: #151515; color: #00ff00; padding: 6px 8px; font-weight: bold; border-bottom: 1px solid #333; font-size: 12px; }
-        .box-content { padding: 8px; }
+        .top-menu-icon { font-size: 18px; margin-bottom: 2px; }
+
+        .container { padding: 10px; max-width: 650px; margin: 0 auto; }
+        .box { background: #080808; border: 1px solid #333; margin-bottom: 10px; box-shadow: inset 0 0 5px rgba(0,0,0,0.8); }
+        .box-title { background: linear-gradient(to right, #141414, #222); color: #00ff00; padding: 8px 10px; font-weight: bold; border-bottom: 1px solid #333; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+        .box-content { padding: 10px; }
+
         a { color: #00ff00; text-decoration: none; }
-        a:hover { text-decoration: underline; }
-        .btn { background: #1c1c1c; color: #00ff00; border: 1px solid #444; padding: 4px 10px; cursor: pointer; font-size: 11px; font-weight: bold; display: inline-block; text-align: center; }
-        .btn:hover { background: #333; border-color: #00ff00; }
-        .footer { text-align: center; padding: 10px; font-size: 11px; color: #666; border-top: 1px solid #222; background: #050505; }
+        a:hover { text-decoration: underline; color: #fff; }
+
+        .btn { background: #1c1c1c; color: #00ff00; border: 1px solid #444; padding: 6px 12px; cursor: pointer; font-size: 12px; font-weight: bold; display: inline-block; text-align: center; }
+        .btn:hover { background: #333; border-color: #00ff00; color: #fff; }
+
+        .footer { text-align: center; padding: 12px; font-size: 12px; color: #777; border-top: 1px solid #222; background: #050505; }
     </style>
 </head>
 <body>
@@ -118,7 +123,7 @@ function renderLayout(title, content, user) {
 
     <div class="footer">
         <div><a href="/">Home</a> · <a href="/terms">Điều khoản</a> · <a href="/contact">Liên hệ</a> ${user ? '· <a href="/logout">Đăng xuất</a>' : ''}</div>
-        <div style="color: #00ff00; margin-top: 4px;">Copyright © 2026 - Thế Giới Chat</div>
+        <div style="color: #00ff00; margin-top: 6px;">Copyright © 2026 - Thế Giới Chat</div>
     </div>
 </body>
 </html>`;
