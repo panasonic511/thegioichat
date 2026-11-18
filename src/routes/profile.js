@@ -175,9 +175,12 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 <span style="color: #ffcc00; font-size: 11px;">[Lv.${profileUser.level || 1}]</span>
             </div>
 
-            <!-- PHẦN ĐÃ CHỈNH SỬA: Căn giữa, phóng to font chữ và in đậm ID & Chức vụ -->
-            <div style="text-align: center; font-size: 13px; font-weight: bold; color: #ccc; margin: 4px 0 8px 0;">
-                ID ${profileUser.id} <span style="margin: 0 4px; color: #666;">·</span> <span style="color: #ffcc00; font-size: 13px; text-shadow: 0 0 4px rgba(255,204,0,0.5);">👑 ${profileUser.role || 'Thành Viên'}</span>
+            <!-- Hiển thị Chủ Wap mang nguyên bộ hiệu ứng giống hệt tên tài khoản -->
+            <div style="text-align: center; font-size: 13px; margin: 4px 0 8px 0;">
+                <span style="color: #aaa;">ID ${profileUser.id}</span> <span style="margin: 0 4px; color: #666;">·</span> 
+                <span style="${profileUser.name_color ? `color: ${profileUser.name_color};` : 'color: #ffcc00;'} ${profileUser.name_glow ? `text-shadow: 0 0 6px ${profileUser.name_glow};` : ''} ${profileUser.name_border ? `-webkit-text-stroke: 0.5px ${profileUser.name_border};` : ''} font-weight: bold;">
+                    ${profileUser.role || 'Thành Viên'}
+                </span>
             </div>
 
             ${!isOwner ? `
