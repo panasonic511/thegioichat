@@ -177,7 +177,8 @@ export async function handleFeed(request, env, user, renderLayout) {
                     `;
                 });
 
-                const imageTag = p.image_url ? `<div style="margin-top: 8px;"><img src="${p.image_url}" style="width: 100%; max-height: 320px; object-fit: cover; border-radius: 4px;"></div>` : '';
+                // Sử dụng object-fit: contain để ảnh hiển thị đầy đủ 100%, không bị mất khúc trên/dưới
+                const imageTag = p.image_url ? `<div style="margin-top: 8px; background: #000; text-align: center; border-radius: 4px; overflow: hidden;"><img src="${p.image_url}" style="width: 100%; max-height: 450px; object-fit: contain; display: block; margin: 0 auto;"></div>` : '';
 
                 postsHtml += `
                 <div style="background: #121212; border: 1px solid #2c2c2c; border-radius: 6px; padding: 12px; margin-bottom: 12px;">
@@ -232,7 +233,7 @@ export async function handleFeed(request, env, user, renderLayout) {
         }
     } catch (e) {}
 
-    // 5. Giao diện hoàn chỉnh kèm Script AJAX & Tự động nén ảnh siêu tốc
+    // 5. Giao diện hoàn chỉnh kèm Script AJAX & Tự động nén ảnh giữ nguyên vẹn
     const content = `
     <div class="box">
         <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
@@ -249,7 +250,7 @@ export async function handleFeed(request, env, user, renderLayout) {
                 <input type="hidden" name="action" value="create_post">
                 <textarea name="content" rows="2" placeholder="Bạn đang nghĩ gì thế..." style="width: 100%; background: #141414; color: #00ff00; border: 1px solid #444; padding: 8px; border-radius: 4px; box-sizing: border-box; font-size: 13px; resize: vertical;"></textarea>
                 
-                <!-- Input chọn ảnh từ máy thay thế cho việc nhập link thủ công -->
+                <!-- Input chọn ảnh từ máy -->
                 <div style="margin-top: 6px;">
                     <input type="file" accept="image/*" onchange="compressAndSetImage(this, '#post-image-val')" style="width: 100%; font-size: 11px; color: #ccc; background: #0a0a0a; border: 1px solid #444; padding: 4px; box-sizing: border-box;">
                     <input type="hidden" id="post-image-val" name="image_url">
@@ -300,7 +301,7 @@ export async function handleFeed(request, env, user, renderLayout) {
             }
         }
 
-        // Hàm tự động nén ảnh độc lập (MaxWidth 600px, Quality 0.65)
+        // Hàm tự động nén ảnh giữ trọn vẹn (MaxWidth 1000px, Quality 0.80)
         function compressAndSetImage(fileInput, targetInputSelector) {
             const file = fileInput.files[0];
             const statusId = targetInputSelector.includes('post') ? 'post-compress-status' : 'story-compress-status';
@@ -313,7 +314,7 @@ export async function handleFeed(request, env, user, renderLayout) {
             reader.onload = function(e) {
                 const img = new Image();
                 img.onload = function() {
-                    const MAX_WIDTH = 600;
+                    const MAX_WIDTH = 1000;
                     let width = img.width;
                     let height = img.height;
 
@@ -328,7 +329,7 @@ export async function handleFeed(request, env, user, renderLayout) {
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, width, height);
 
-                    const compressedBase64 = canvas.toDataURL('image/jpeg', 0.65);
+                    const compressedBase64 = canvas.toDataURL('image/jpeg', 0.80);
                     document.querySelector(targetInputSelector).value = compressedBase64;
                     statusEl.innerText = "✅ Đã nén ảnh thành công!";
                 };
