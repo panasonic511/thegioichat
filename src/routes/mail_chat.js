@@ -101,6 +101,48 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
 
     const rPartnerHeader = renderUser(partner);
 
+    // Hàm phụ trợ tạo HTML từng tin nhắn để dùng chung cho cả SSR lẫn Client Realtime JS
+    const renderMessageHtml = (m, currentUserObj, partnerObj) => {
+        const sender = m.sender_id || m.user_id;
+        const isMe = Number(sender) === Number(currentUserObj.id);
+        
+        const msgUser = isMe ? currentUserObj : partnerObj;
+        const rMsgUser = renderUser(msgUser);
+
+        const roleName = msgUser.role || 'Thành viên';
+        const isManager = roleName !== 'Thành Viên' && roleName !== 'Thành viên';
+        const roleHtml = isManager ? `
+            <span style="display: inline-block; background: #1a1a1a; border: 1px solid #444; color: #ffcc00; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px; text-shadow: 0 0 4px rgba(255,204,0,0.4); margin-left: 6px;">
+                ${roleName}
+            </span>
+        ` : '';
+
+        let messageText = m.message || '';
+        if (messageText.startsWith('http') && (messageText.includes('.gif') || messageText.includes('giphy') || messageText.includes('tenor'))) {
+            messageText = `<img src="${messageText}" style="max-width: 120px; max-height: 120px; border-radius: 6px; display: block;" />`;
+        } else {
+            messageText = `<div>${messageText}</div>`;
+        }
+
+        const imageTag = m.image_url ? `<div style="margin-top: 8px;"><img src="${m.image_url}" style="max-width: 100%; max-height: 300px; border-radius: 6px; object-fit: contain; display: block;"></div>` : '';
+
+        return `
+        <div style="display: flex; flex-direction: column; align-items: ${isMe ? 'flex-end' : 'flex-start'};">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
+                <div style="width: 36px; height: 36px; min-width: 36px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                    ${rMsgUser.avatarHtml.replace(/style="[^"]*"/gi, 'style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;"')}
+                </div>
+                <div style="font-size: 13px; display: flex; align-items: center; font-weight: bold;">
+                    ${rMsgUser.nameHtml} ${roleHtml}
+                </div>
+            </div>
+            <div style="max-width: 80%; background: ${isMe ? '#1a3300' : '#1a1a1a'}; border: 1px solid ${isMe ? '#339900' : '#333'}; padding: 10px 14px; border-radius: 8px; color: #fff; font-size: 15px; word-break: break-word; line-height: 1.4;">
+                ${messageText}
+                ${imageTag}
+            </div>
+        </div>`;
+    };
+
     const content = `
     <div class="box">
         <div class="box-title" style="display: flex; align-items: center; gap: 8px; font-size: 15px;">
@@ -110,46 +152,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
             
             <div id="chatMessageBox" style="height: 420px; overflow-y: scroll; background: #000; border: 1px solid #333; padding: 12px; display: flex; flex-direction: column; gap: 14px; margin-bottom: 12px;">
                 ${messages.length === 0 ? '<div id="no-msg" style="color: #777; text-align: center; margin-top: 170px; font-size: 14px;">Chưa có tin nhắn nào. Hãy gửi tin nhắn mở lời!</div>' : 
-                    messages.map(m => {
-                        const sender = m.sender_id || m.user_id;
-                        const isMe = Number(sender) === Number(user.id);
-                        const msgUser = isMe ? user : partner;
-                        const rMsgUser = renderUser(msgUser);
-
-                        const roleName = msgUser.role || 'Thành viên';
-                        const isManager = roleName !== 'Thành Viên' && roleName !== 'Thành viên';
-                        const roleHtml = isManager ? `
-                            <span style="display: inline-block; background: #1a1a1a; border: 1px solid #444; color: #ffcc00; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px; text-shadow: 0 0 4px rgba(255,204,0,0.4); margin-left: 6px;">
-                                ${roleName}
-                            </span>
-                        ` : '';
-
-                        // Kiểm tra nếu nội dung chứa URL ảnh GIF động hoặc thẻ ảnh đính kèm
-                        let messageText = m.message || '';
-                        if (messageText.startsWith('http') && (messageText.includes('.gif') || messageText.includes('giphy') || messageText.includes('tenor'))) {
-                            messageText = `<img src="${messageText}" style="max-width: 120px; max-height: 120px; border-radius: 6px; display: block;" />`;
-                        } else {
-                            messageText = `<div>${messageText}</div>`;
-                        }
-
-                        const imageTag = m.image_url ? `<div style="margin-top: 8px;"><img src="${m.image_url}" style="max-width: 100%; max-height: 300px; border-radius: 6px; object-fit: contain; display: block;"></div>` : '';
-
-                        return `
-                        <div style="display: flex; flex-direction: column; align-items: ${isMe ? 'flex-end' : 'flex-start'};">
-                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
-                                <div style="width: 36px; height: 36px; min-width: 36px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
-                                    ${rMsgUser.avatarHtml.replace(/style="[^"]*"/gi, 'style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;"')}
-                                </div>
-                                <div style="font-size: 13px; display: flex; align-items: center; font-weight: bold;">
-                                    ${rMsgUser.nameHtml} ${roleHtml}
-                                </div>
-                            </div>
-                            <div style="max-width: 80%; background: ${isMe ? '#1a3300' : '#1a1a1a'}; border: 1px solid ${isMe ? '#339900' : '#333'}; padding: 10px 14px; border-radius: 8px; color: #fff; font-size: 15px; word-break: break-word; line-height: 1.4;">
-                                ${messageText}
-                                ${imageTag}
-                            </div>
-                        </div>`;
-                    }).join('')}
+                    messages.map(m => renderMessageHtml(m, user, partner)).join('')}
             </div>
 
             <!-- Form Gửi tin nhắn qua Ajax không load lại trang -->
@@ -190,6 +193,8 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
     <script>
         const currentUserId = ${user.id};
         const partnerId = ${partnerId};
+        const currentUserData = ${JSON.stringify(user)};
+        const partnerData = ${JSON.stringify(partner)};
         const chatBox = document.getElementById('chatMessageBox');
 
         function scrollToBottom() {
@@ -197,7 +202,6 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         }
         scrollToBottom();
 
-        // Hàm bấm chọn và tự động gửi icon GIF động ngay lập tức
         async function sendGifIcon(gifUrl) {
             const formData = new FormData();
             formData.append('message', gifUrl);
@@ -303,7 +307,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                         data.chat_messages.forEach(function(m) {
                             const sender = m.sender_id || m.user_id;
                             const isMe = Number(sender) === currentUserId;
-                            const msgUser = isMe ? ${JSON.stringify(user)} : ${JSON.stringify(partner)};
+                            const msgUser = isMe ? currentUserData : partnerData;
                             
                             const roleName = msgUser.role || 'Thành viên';
                             const isManager = roleName !== 'Thành Viên' && roleName !== 'Thành viên';
@@ -317,21 +321,24 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                                 messageText = '<div>' + messageText + '</div>';
                             }
 
-                            html += `
-                            <div style="display: flex; flex-direction: column; align-items: \${isMe ? 'flex-end' : 'flex-start'};">
-                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
-                                    <div style="width: 36px; height: 36px; min-width: 36px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
-                                        <img src="\${msgUser.avatar || ''}" style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;">
-                                    </div>
-                                    <div style="font-size: 13px; display: flex; align-items: center; font-weight: bold;">
-                                        <span style="color: \${msgUser.name_color || '#00ff00'};">\${msgUser.display_name || msgUser.username}</span> \${roleHtml}
-                                    </div>
-                                </div>
-                                <div style="max-width: 80%; background: \${isMe ? '#1a3300' : '#1a1a1a'}; border: 1px solid \${isMe ? '#339900' : '#333'}; padding: 10px 14px; border-radius: 8px; color: #fff; font-size: 15px; word-break: break-word; line-height: 1.4;">
-                                    \${messageText}
-                                    \${imageTag}
-                                </div>
-                            </div>`;
+                            const alignment = isMe ? 'flex-end' : 'flex-start';
+                            const bubbleBg = isMe ? '#1a3300' : '#1a1a1a';
+                            const bubbleBorder = isMe ? '#339900' : '#333';
+
+                            html += '<div style="display: flex; flex-direction: column; align-items: ' + alignment + ';">' +
+                                '<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">' +
+                                    '<div style="width: 36px; height: 36px; min-width: 36px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">' +
+                                        '<img src="' + (msgUser.avatar || '') + '" style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;">' +
+                                    '</div>' +
+                                    '<div style="font-size: 13px; display: flex; align-items: center; font-weight: bold;">' +
+                                        '<span style="color: ' + (msgUser.name_color || '#00ff00') + ';">' + (msgUser.display_name || msgUser.username) + '</span> ' + roleHtml +
+                                    '</div>' +
+                                '</div>' +
+                                '<div style="max-width: 80%; background: ' + bubbleBg + '; border: 1px solid ' + bubbleBorder + '; padding: 10px 14px; border-radius: 8px; color: #fff; font-size: 15px; word-break: break-word; line-height: 1.4;">' +
+                                    messageText +
+                                    imageTag +
+                                '</div>' +
+                            '</div>';
                         });
 
                         if (chatBox.innerHTML !== html) {
