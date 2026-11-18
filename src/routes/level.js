@@ -10,7 +10,7 @@ export async function handleLevel(request, env, user, renderLayout) {
         `).all();
     } catch (e) {}
 
-    // Hàm render chuẩn hiệu ứng màu sắc và khung WAP cho tên người dùng
+    // Hàm render hiệu ứng màu sắc và khung WAP cho tên người dùng
     function safeRenderUser(u) {
         const safe = u || {};
         const defaultAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/></svg>";
@@ -38,7 +38,7 @@ export async function handleLevel(request, env, user, renderLayout) {
         };
     }
 
-    // Hàm tạo hiệu ứng màu sắc cho chức vụ (Role) theo phong cách WAP
+    // Hàm hiệu ứng chức vụ chuẩn WAP
     function getRoleBadgeStyle(role) {
         const r = String(role || 'Thành Viên').trim();
         if (r === 'Chủ Wap') {
@@ -66,25 +66,23 @@ export async function handleLevel(request, env, user, renderLayout) {
             else if (rankNum === 3) rankColor = '#00ffff';
 
             return `
-            <div style="padding: 8px 10px; border-bottom: 1px solid #222; background: ${index % 2 === 0 ? '#080808' : '#030303'}; font-size: 13px;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="font-weight: bold; color: ${rankColor}; width: 22px;">#${rankNum}</span>
-                        <img src="${uUI.avatarUrl}" width="32" height="32" style="${uUI.avatarStyle} display:block;">
-                        <div>
-                            <div>
-                                ${uUI.nameHtml} 
-                                <span style="margin-left: 4px;">${u.role ? `<span style="${roleStyle}">${u.role}</span>` : ''}</span>
-                            </div>
-                            <div style="color: #aaa; font-size: 12px; margin-top: 2px;">
-                                Cấp độ: <span style="color: #ffcc00; font-weight: bold;">${u.level || 1}</span>
-                            </div>
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid #222; background: ${index % 2 === 0 ? '#080808' : '#030303'};">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-weight: bold; width: 24px; text-align: center; color: ${rankColor};">#${rankNum}</span>
+                    <img src="${uUI.avatarUrl}" width="36" height="36" style="${uUI.avatarStyle} display:block;">
+                    <div>
+                        <div style="font-size: 14px;">
+                            ${uUI.nameHtml} 
+                            <span style="margin-left: 4px;">${u.role ? `<span style="${roleStyle}">${u.role}</span>` : ''}</span>
+                        </div>
+                        <div style="color: #aaa; font-size: 12px; margin-top: 2px;">
+                            Cấp độ: <span style="color: #ffcc00; font-weight: bold;">${u.level || 1}</span>
                         </div>
                     </div>
-                    <div style="text-align: right; font-size: 12px;">
-                        <div style="color: #00ff00;">🪙 ${(u.coins || 0).toLocaleString()}</div>
-                        ${u.gold ? `<div style="color: #ffcc00;">👑 ${u.gold.toLocaleString()}</div>` : ''}
-                    </div>
+                </div>
+                <div style="text-align: right; font-size: 12px;">
+                    <div style="color: #00ff00;">🪙 ${(u.coins || 0).toLocaleString()}</div>
+                    ${u.gold ? `<div style="color: #ffcc00;">👑 ${u.gold.toLocaleString()}</div>` : ''}
                 </div>
             </div>`;
         }).join('');
