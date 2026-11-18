@@ -31,8 +31,7 @@ export async function handleFeed(request, env, user, renderLayout) {
     let postsHtml = '';
     try {
         const res = await env.DB.prepare(`
-            SELECT posts.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow,
-                   users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role
+            SELECT posts.*, users.username, users.display_name, users.avatar, users.role
             FROM posts
             JOIN users ON posts.user_id = users.id
             ORDER BY posts.id DESC LIMIT 20
@@ -45,19 +44,16 @@ export async function handleFeed(request, env, user, renderLayout) {
         } else {
             posts.forEach(post => {
                 const authorUI = renderUser(post);
-                const picon = post.active_icon ? `<img src="${post.active_icon}" style="width: 14px; height: 14px; vertical-align: middle; display: inline-block; margin-right: 2px;">` : '';
-                const userLevel = post.level || 1;
                 
                 postsHtml += `
                     <div class="box" style="max-width: 600px; margin: 0 auto 8px auto; padding: 8px; background: #141414; border: 1px solid #333;">
                         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-                            <div style="display: inline-block; position: relative;">
-                                <img src="${post.avatar && post.avatar.includes('7gKvS6v') ? post.avatar : 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'><rect width=\'100\' height=\'100\' fill=\'%23333\'/></svg>'}" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 2px solid ${post.border_color || '#444'};">
+                            <div>
+                                <img src="${post.avatar || 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'><rect width=\'100\' height=\'100\' fill=\'%23333\'/></svg>'}" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 2px solid #444;">
                             </div>
                             <div>
                                 <div style="font-size: 12px; margin-bottom: 2px;">
-                                    ${picon}${authorUI.nameHtml}
-                                    <span style="color: #ffcc00; font-size: 10px;">[Lv.${userLevel}]</span>
+                                    ${authorUI.nameHtml}
                                 </div>
                                 <div style="font-size: 9px; color: #aaa;">${post.created_at}</div>
                             </div>
