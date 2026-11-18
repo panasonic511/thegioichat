@@ -68,10 +68,10 @@ export async function handleIndex(request, env, user, renderLayout) {
         const uid = safe.user_id || safe.id || '';
 
         return {
-            avatarStyle: avtStyle,
-            avatarUrl: avt,
-            nameStyle,
-            nameHtml: `<a href="/profile?user=${userId}" style="${nameStyle}">${activeIcon}${displayName}</a>`
+        nameStyle,
+        avatarStyle,
+        nameHtml: `<a href="/profile?user=${userId}" style="${nameStyle}">${activeIcon}${displayName}</a>`,
+        avatarHtml: `<a href="/profile?user=${userId}"><img src="${avatarUrl}" style="${avatarStyle}"></a>`
         };
     }
 
