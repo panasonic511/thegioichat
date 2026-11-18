@@ -112,9 +112,12 @@ export default {
       if (path === '/admin') return await handleAdminDashboard(request, env, user, renderLayout);
       if (path === '/admin/update-role') return await handleAdminAction(request, env, user);
 
-      return new Response("Không tìm thấy trang (404)", { status: 404 });
+return new Response("Không tìm thấy trang (404)", { status: 404 });
     } catch (err) {
-      return new Response("Lỗi hệ thống Worker: " + err.message, { status: 500, headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
+      return new Response(`Lỗi hệ thống Worker: ${err.message} <br><pre>${err.stack}</pre>`, { 
+        status: 500, 
+        headers: { 'Content-Type': 'text/html;charset=UTF-8' } 
+      });
     }
   }
 };
