@@ -322,15 +322,18 @@ export async function handleFeed(request, env, user, renderLayout) {
                 <input type="hidden" name="action" value="create_post">
                 <textarea name="content" rows="2" placeholder="Bạn đang nghĩ gì thế..." style="width: 100%; background: #141414; color: #00ff00; border: 1px solid #444; padding: 8px; border-radius: 4px; box-sizing: border-box; font-size: 13px; resize: vertical;"></textarea>
                 
-                <!-- Input chọn ảnh từ máy -->
-                <div style="margin-top: 6px;">
-                    <input type="file" accept="image/*" onchange="compressAndSetImage(this, '#post-image-val')" style="width: 100%; font-size: 11px; color: #ccc; background: #0a0a0a; border: 1px solid #444; padding: 4px; box-sizing: border-box;">
+                <!-- Nút Icon Máy ảnh thay thế cho chọn tệp mặc định -->
+                <div style="margin-top: 6px; display: flex; align-items: center; gap: 8px;">
+                    <label style="display: inline-flex; align-items: center; gap: 6px; background: #1a1a1a; border: 1px solid #444; color: #00ff00; padding: 5px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">
+                        📷 Thêm ảnh
+                        <input type="file" accept="image/*" onchange="compressAndSetImage(this, '#post-image-val')" style="display: none;">
+                    </label>
                     <input type="hidden" id="post-image-val" name="image_url">
-                    <div id="post-compress-status" style="font-size: 10px; color: #00ff00; margin-top: 2px;"></div>
+                    <div id="post-compress-status" style="font-size: 10px; color: #aaa;"></div>
                 </div>
 
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
-                    <span style="font-size: 10px; color: #888;">📷 Tự động nén tối ưu dung lượng</span>
+                    <span style="font-size: 10px; color: #888;">✨ Tự động nén tối ưu dung lượng</span>
                     <button type="submit" class="btn" style="background: #00aa00; color: #fff; padding: 6px 16px; border-radius: 4px; cursor: pointer;">Đăng bài</button>
                 </div>
             </form>
@@ -346,10 +349,16 @@ export async function handleFeed(request, env, user, renderLayout) {
             </div>
             <form method="POST">
                 <input type="hidden" name="action" value="create_story">
+                
                 <label style="color: #ccc; font-size: 10px; display: block; margin-bottom: 2px;">Chọn hình ảnh Story:</label>
-                <input type="file" accept="image/*" onchange="compressAndSetImage(this, '#story-image-val')" style="width: 100%; font-size: 11px; color: #ccc; background: #000; border: 1px solid #444; padding: 4px; box-sizing: border-box; margin-bottom: 6px;">
-                <input type="hidden" id="story-image-val" name="image_url" required>
-                <div id="story-compress-status" style="font-size: 10px; color: #00ff00; margin-bottom: 6px;"></div>
+                <div style="margin-bottom: 6px; display: flex; align-items: center; gap: 8px;">
+                    <label style="display: inline-flex; align-items: center; gap: 6px; background: #1a1a1a; border: 1px solid #444; color: #00ff00; padding: 5px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">
+                        📷 Chọn ảnh Story
+                        <input type="file" accept="image/*" onchange="compressAndSetImage(this, '#story-image-val')" style="display: none;">
+                    </label>
+                    <input type="hidden" id="story-image-val" name="image_url" required>
+                    <div id="story-compress-status" style="font-size: 10px; color: #aaa;"></div>
+                </div>
 
                 <label style="color: #ccc; font-size: 10px; display: block; margin-bottom: 2px;">Chú thích (Caption):</label>
                 <input type="text" name="caption" placeholder="Khoảnh khắc hôm nay..." style="width: 100%; background: #000; color: #fff; border: 1px solid #444; padding: 6px; box-sizing: border-box; margin-bottom: 8px; font-size: 11px;">
@@ -380,7 +389,7 @@ export async function handleFeed(request, env, user, renderLayout) {
             const statusEl = document.getElementById(statusId);
             
             if (!file) return;
-            statusEl.innerText = "⏳ Đang nén ảnh tối ưu...";
+            statusEl.innerText = "⏳ Đang nén: " + file.name;
 
             const reader = new FileReader();
             reader.onload = function(e) {
@@ -403,7 +412,8 @@ export async function handleFeed(request, env, user, renderLayout) {
 
                     const compressedBase64 = canvas.toDataURL('image/jpeg', 0.80);
                     document.querySelector(targetInputSelector).value = compressedBase64;
-                    statusEl.innerText = "✅ Đã nén ảnh thành công!";
+                    statusEl.innerText = "✅ Đã chọn & nén ảnh thành công!";
+                    statusEl.style.color = "#00ff00";
                 };
                 img.src = e.target.result;
             };
