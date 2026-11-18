@@ -166,7 +166,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
 
             <!-- Avatar kèm nút icon máy ảnh mở modal -->
             <div style="position: relative; margin-top: -35px; margin-bottom: 4px; display: inline-block;">
-                <img src="${profileUser.avatar && !profileUser.avatar.includes('7gXvS6v') ? profileUser.avatar : 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'><rect width=\'100\' height=\'100\' fill=\'%231a1a1a\'/><circle cx=\'50\' cy=\'38\' r=\'18\' fill=\'%2300ff00\'/></svg>'}" width="66" height="66" style="${profileUI.avatarStyle} display: block;">
+                <img src="${profileUser.avatar && !profileUser.avatar.includes('7gXvS6v') ? profileUser.avatar : 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'><rect width=\'100\' height=\'100\' fill=\'%231a1a1a\'/><circle cx=\'50\' cy=\'38\' r=\'18\' fill=\'%2300ff00\'/></svg>'}" width="66" height="66" style="${rProfile.avatarStyle} display: block;">
                 ${isOwner ? `<button type="button" onclick="openAvatarModal()" title="Đổi ảnh đại diện" style="position: absolute; bottom: -2px; right: -2px; background: #111; color: #00ff00; border: 1px solid #00ff00; border-radius: 50%; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; box-shadow: 0 0 4px #000;">📷</button>` : ''}
             </div>
             
