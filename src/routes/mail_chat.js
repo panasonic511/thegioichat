@@ -1,3 +1,5 @@
+import { renderUser } from '../worker.js';
+
 export async function handleMailChat(request, env, user, renderLayout, url) {
     const partnerId = url.searchParams.get('user');
     if (!partnerId) {
@@ -11,99 +13,166 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                 sender_id INTEGER,
                 receiver_id INTEGER,
                 message TEXT,
+                image_url TEXT,
                 is_read INTEGER DEFAULT 0,
                 created_at TEXT
             )
         `).run();
+        
+        try { await env.DB.prepare("ALTER TABLE mail_box ADD COLUMN image_url TEXT").run(); } catch (e) {}
     } catch (e) {}
 
     if (request.method === 'POST') {
         try {
             const formData = await request.formData();
             const message = formData.get('message');
-            if (message && message.trim() !== '') {
-                await env.DB.prepare(
-                    "INSERT INTO mail_box (sender_id, receiver_id, message, is_read, created_at) VALUES (?, ?, ?, 0, datetime('now'))"
-                ).bind(user.id, partnerId, message.trim()).run();
-            }
-        } catch (err) {
-            try {
-                const formData = await request.formData();
-                const message = formData.get('message');
-                if (message && message.trim() !== '') {
+            const imageUrl = formData.get('image_url');
+            
+            if ((message && message.trim() !== '') || (imageUrl && imageUrl.trim() !== '')) {
+                try {
                     await env.DB.prepare(
-                        "INSERT INTO mail_box (user_id, partner_id, message, is_read, created_at) VALUES (?, ?, ?, 0, datetime('now'))"
-                    ).bind(user.id, partnerId, message.trim()).run();
+                        "INSERT INTO mail_box (sender_id, receiver_id, message, image_url, is_read, created_at) VALUES (?, ?, ?, ?, 0, datetime('now'))"
+                    ).bind(user.id, partnerId, message || '', imageUrl || '').run();
+                } catch (err) {
+                    await env.DB.prepare(
+                        "INSERT INTO mail_box (user_id, partner_id, message, image_url, is_read, created_at) VALUES (?, ?, ?, ?, 0, datetime('now'))"
+                    ).bind(user.id, partnerId, message || '', imageUrl || '').run();
                 }
-            } catch (e) {}
-        }
+            }
+        } catch (e) {}
         return Response.redirect(new URL(`/mail/chat?user=${partnerId}`, request.url), 302);
     }
 
+    // Lấy thông tin đối phương (bao gồm đầy đủ các trường style tên)
     let partner = null;
     try {
-        partner = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(partnerId).first();
+        partner = await env.DB.prepare(`
+            SELECT id, username, display_name, avatar, border_color, avatar_glow, 
+                   name_color, name_glow, name_border, name_border_glow, active_icon, role 
+            FROM users WHERE id = ?
+        `).bind(partnerId).first();
     } catch (e) {}
 
     if (!partner) {
         return new Response("Không tìm thấy thành viên này.", { status: 404 });
     }
 
+    // Đánh dấu đã đọc
     try {
-        await env.DB.prepare(
-            "UPDATE mail_box SET is_read = 1 WHERE receiver_id = ? AND sender_id = ?"
-        ).bind(user.id, partnerId).run();
+        await env.DB.prepare("UPDATE mail_box SET is_read = 1 WHERE receiver_id = ? AND sender_id = ?").bind(user.id, partnerId).run();
     } catch (e) {}
     try {
-        await env.DB.prepare(
-            "UPDATE mail_box SET is_read = 1 WHERE partner_id = ? AND user_id = ?"
-        ).bind(user.id, partnerId).run();
+        await env.DB.prepare("UPDATE mail_box SET is_read = 1 WHERE partner_id = ? AND user_id = ?").bind(user.id, partnerId).run();
     } catch (e) {}
 
+    // Lấy lịch sử tin nhắn kèm thông tin người gửi để hiển thị avatar và style tên
     let messages = [];
     try {
         let history = await env.DB.prepare(`
-            SELECT * FROM mail_box 
-            WHERE (sender_id = ? AND receiver_id = ?) 
-               OR (sender_id = ? AND receiver_id = ?) 
-            ORDER BY id ASC
-        `).bind(user.id, partnerId, partnerId, user.id).all();
+            SELECT mail_box.*, 
+                   users.id as u_id, users.username, users.display_name, users.avatar, 
+                   users.border_color, users.avatar_glow, users.name_color, users.name_glow, 
+                   users.name_border, users.name_border_glow, users.active_icon, users.role
+            FROM mail_box 
+            LEFT JOIN users ON (mail_box.sender_id = users.id OR mail_box.user_id = users.id)
+            WHERE (mail_box.sender_id = ? AND mail_box.receiver_id = ?) 
+               OR (mail_box.sender_id = ? AND mail_box.receiver_id = ?) 
+               OR (mail_box.user_id = ? AND mail_box.partner_id = ?) 
+               OR (mail_box.user_id = ? AND mail_box.partner_id = ?)
+            ORDER BY mail_box.id ASC
+        `).bind(user.id, partnerId, partnerId, user.id, user.id, partnerId, partnerId, user.id).all();
         
-        if (history.results && history.results.length > 0) {
+        if (history.results) {
             messages = history.results;
-        } else {
-            let history2 = await env.DB.prepare(`
-                SELECT * FROM mail_box 
-                WHERE (user_id = ? AND partner_id = ?) 
-                   OR (user_id = ? AND partner_id = ?) 
-                ORDER BY id ASC
-            `).bind(user.id, partnerId, partnerId, user.id).all();
-            messages = history2.results || [];
         }
     } catch (e) {}
 
+    // Render hiệu ứng style tên cho đối phương ở tiêu đề
+    const rPartnerHeader = renderUser(partner);
+
     const content = `
     <div class="box">
-        <div class="box-title">🟢 Trò chuyện với ${partner.display_name || partner.username}</div>
+        <div class="box-title" style="display: flex; align-items: center; gap: 6px;">
+            <span>🟢 Trò chuyện với</span> ${rPartnerHeader.nameHtml}
+        </div>
         <div class="box-content" style="padding: 8px;">
             
-            <div id="chatMessageBox" style="height: 350px; overflow-y: scroll; background: #000; border: 1px solid #333; padding: 10px; display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px;">
-                ${messages.length === 0 ? '<div style="color: #777; text-align: center; margin-top: 140px;">Chưa có tin nhắn nào. Hãy gửi tin nhắn mở lời!</div>' : 
+            <div id="chatMessageBox" style="height: 380px; overflow-y: scroll; background: #000; border: 1px solid #333; padding: 10px; display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px;">
+                ${messages.length === 0 ? '<div style="color: #777; text-align: center; margin-top: 150px;">Chưa có tin nhắn nào. Hãy gửi tin nhắn mở lời!</div>' : 
                     messages.map(m => {
-                        const sender = m.sender_id || m.user_id;
-                        const isMe = Number(sender) === Number(user.id);
+                        const senderId = m.sender_id || m.user_id;
+                        const isMe = Number(senderId) === Number(user.id);
+                        
+                        // Chuẩn bị thông tin user gửi tin nhắn để gọi renderUser
+                        const msgUser = {
+                            id: senderId,
+                            username: m.username || (isMe ? user.username : partner.username),
+                            display_name: m.display_name || (isMe ? user.display_name : partner.display_name),
+                            avatar: m.avatar || (isMe ? user.avatar : partner.avatar),
+                            border_color: m.border_color || (isMe ? user.border_color : partner.border_color),
+                            avatar_glow: m.avatar_glow || (isMe ? user.avatar_glow : partner.avatar_glow),
+                            name_color: m.name_color || (isMe ? user.name_color : partner.name_color),
+                            name_glow: m.name_glow || (isMe ? user.name_glow : partner.name_glow),
+                            name_border: m.name_border || (isMe ? user.name_border : partner.name_border),
+                            name_border_glow: m.name_border_glow || (isMe ? user.name_border_glow : partner.name_border_glow),
+                            active_icon: m.active_icon || (isMe ? user.active_icon : partner.active_icon)
+                        };
+                        const rMsgUser = renderUser(msgUser);
+
+                        const imageTag = m.image_url ? `<div style="margin-top: 6px;"><img src="${m.image_url}" style="max-width: 100%; max-height: 250px; border-radius: 4px; object-fit: contain; display: block;"></div>` : '';
+
                         return `
-                        <div style="display: flex; justify-content: ${isMe ? 'flex-end' : 'flex-start'};">
-                            <div style="max-width: 75%; background: ${isMe ? '#1a3300' : '#1a1a1a'}; border: 1px solid ${isMe ? '#339900' : '#333'}; padding: 8px 12px; border-radius: 6px; color: #fff; font-size: 14px; word-break: break-word;">
-                                ${m.message}
+                        <div style="display: flex; align-items: flex-start; gap: 8px; justify-content: ${isMe ? 'flex-end' : 'flex-start'};">
+                            ${!isMe ? `
+                            <div style="width: 32px; height: 32px; min-width: 32px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                                ${rMsgUser.avatarHtml.replace(/style="[^"]*"/gi, 'style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;"')}
+                            </div>` : ''}
+
+                            <div style="max-width: 75%; background: ${isMe ? '#1a3300' : '#1a1a1a'}; border: 1px solid ${isMe ? '#339900' : '#333'}; padding: 8px 12px; border-radius: 8px; color: #fff; font-size: 13px; word-break: break-word;">
+                                <div style="font-size: 11px; margin-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 2px;">
+                                    ${rMsgUser.nameHtml}
+                                </div>
+                                <div>${m.message || ''}</div>
+                                ${imageTag}
                             </div>
+
+                            ${isMe ? `
+                            <div style="width: 32px; height: 32px; min-width: 32px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                                ${rMsgUser.avatarHtml.replace(/style="[^"]*"/gi, 'style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;"')}
+                            </div>` : ''}
                         </div>`;
                     }).join('')}
             </div>
 
-            <form method="POST" id="chatForm" style="display: flex; gap: 6px;">
-                <input type="text" name="message" id="messageInput" placeholder="Nhập nội dung chát..." required autocomplete="off" style="flex: 1; background: #000; color: #fff; border: 1px solid #444; padding: 8px; font-size: 14px; box-sizing: border-box;">
-                <button type="submit" class="btn" style="background: #0055ff; color: #fff; padding: 8px 14px; font-size: 14px;">Gửi</button>
+            <!-- Form Nhập tin nhắn, chọn ảnh và biểu cảm -->
+            <form method="POST" id="chatForm" style="display: flex; flex-direction: column; gap: 6px;">
+                <div style="display: flex; gap: 6px; align-items: center;">
+                    <!-- Nút icon máy ảnh chọn ảnh -->
+                    <label style="display: inline-flex; align-items: center; justify-content: center; background: #1a1a1a; border: 1px solid #444; color: #00ff00; width: 34px; height: 34px; border-radius: 4px; cursor: pointer; font-size: 16px;" title="Gửi ảnh">
+                        📷
+                        <input type="file" accept="image/*" onchange="compressAndSetChatImage(this)" style="display: none;">
+                    </label>
+                    <input type="hidden" id="chat-image-val" name="image_url">
+
+                    <!-- Ô nhập nội dung -->
+                    <input type="text" name="message" id="messageInput" placeholder="Nhập nội dung chát..." autocomplete="off" style="flex: 1; background: #000; color: #fff; border: 1px solid #444; padding: 8px; font-size: 13px; box-sizing: border-box; border-radius: 4px;">
+                    
+                    <button type="submit" class="btn" style="background: #0055ff; color: #fff; padding: 8px 14px; font-size: 13px; border-radius: 4px; cursor: pointer;">Gửi</button>
+                </div>
+
+                <!-- Bảng chọn nhanh icon biểu cảm (Emoji) -->
+                <div style="display: flex; gap: 6px; align-items: center; background: #0d0d0d; padding: 4px; border: 1px solid #222; border-radius: 4px;">
+                    <span style="font-size: 10px; color: #888; padding-left: 4px;">Biểu cảm:</span>
+                    <button type="button" onclick="insertEmoji('😀')" style="background:none; border:none; cursor:pointer; font-size:14px;">😀</button>
+                    <button type="button" onclick="insertEmoji('😂')" style="background:none; border:none; cursor:pointer; font-size:14px;">😂</button>
+                    <button type="button" onclick="insertEmoji('❤️')" style="background:none; border:none; cursor:pointer; font-size:14px;">❤️</button>
+                    <button type="button" onclick="insertEmoji('👍')" style="background:none; border:none; cursor:pointer; font-size:14px;">👍</button>
+                    <button type="button" onclick="insertEmoji('🔥')" style="background:none; border:none; cursor:pointer; font-size:14px;">🔥</button>
+                    <button type="button" onclick="insertEmoji('🎉')" style="background:none; border:none; cursor:pointer; font-size:14px;">🎉</button>
+                    <button type="button" onclick="insertEmoji('😍')" style="background:none; border:none; cursor:pointer; font-size:14px;">😍</button>
+                    <button type="button" onclick="insertEmoji('😎')" style="background:none; border:none; cursor:pointer; font-size:14px;">😎</button>
+                    <div id="chat-compress-status" style="font-size: 10px; color: #00ff00; margin-left: auto;"></div>
+                </div>
             </form>
             
             <div style="text-align: center; margin-top: 10px; font-size: 13px;">
@@ -113,44 +182,53 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
     </div>
 
     <script>
-        const currentUserId = ${user.id};
-        const partnerId = ${partnerId};
         const chatBox = document.getElementById('chatMessageBox');
-
         function scrollToBottom() {
             chatBox.scrollTop = chatBox.scrollHeight;
         }
         scrollToBottom();
 
-        setInterval(async () => {
-            try {
-                const res = await fetch('/api/realtime-check?partner_id=' + partnerId);
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data.chat_messages && data.chat_messages.length > 0) {
-                        let html = '';
-                        data.chat_messages.forEach(m => {
-                            const sender = m.sender_id || m.user_id;
-                            const isMe = Number(sender) === currentUserId;
-                            html += \`
-                            <div style="display: flex; justify-content: \${isMe ? 'flex-end' : 'flex-start'};">
-                                <div style="max-width: 75%; background: \${isMe ? '#1a3300' : '#1a1a1a'}; border: 1px solid \${isMe ? '#339900' : '#333'}; padding: 8px 12px; border-radius: 6px; color: #fff; font-size: 14px; word-break: break-word;">
-                                    \${m.message}
-                                </div>
-                            </div>\`;
-                        });
-                        
-                        if (chatBox.innerHTML !== html) {
-                            const isAtBottom = chatBox.scrollHeight - chatBox.scrollTop <= chatBox.clientHeight + 50;
-                            chatBox.innerHTML = html;
-                            if (isAtBottom) {
-                                scrollToBottom();
-                            }
-                        }
+        // Chèn emoji vào ô input
+        function insertEmoji(emoji) {
+            const input = document.getElementById('messageInput');
+            input.value += emoji;
+            input.focus();
+        }
+
+        // Tự động nén ảnh khi chọn qua nút máy ảnh
+        function compressAndSetChatImage(fileInput) {
+            const file = fileInput.files[0];
+            const statusEl = document.getElementById('chat-compress-status');
+            if (!file) return;
+            statusEl.innerText = "⏳ Đang nén ảnh...";
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    const MAX_WIDTH = 1000;
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > MAX_WIDTH) {
+                        height *= MAX_WIDTH / width;
+                        width = MAX_WIDTH;
                     }
-                }
-            } catch (e) {}
-        }, 3000);
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    const compressedBase64 = canvas.toDataURL('image/jpeg', 0.80);
+                    document.getElementById('chat-image-val').value = compressedBase64;
+                    statusEl.innerText = "✅ Đã đính kèm ảnh!";
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
     </script>
     `;
 
