@@ -214,7 +214,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
     </div>
 
     <!-- Thông tin chi tiết -->
-   <div class="box" style="max-width: 600px; margin: 0 auto 8px auto;">
+   <div class="box" style="max-width: 654px; margin: 0 auto 8px auto;">
     <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
         <span>Thông tin chi tiết</span>
         ${isOwner ? `<a href="javascript:void(0)" onclick="openSettingsModal()" style="font-size: 10px; color: #ffcc00;">[Chỉnh sửa]</a>` : ''}
