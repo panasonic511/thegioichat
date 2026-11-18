@@ -1,5 +1,3 @@
-import { renderUser } from '../worker.js';
-
 export async function handleFeed(request, env, user, renderLayout) {
     try {
         await env.DB.prepare(`
@@ -31,7 +29,7 @@ export async function handleFeed(request, env, user, renderLayout) {
     let postsHtml = '';
     try {
         const res = await env.DB.prepare(`
-            SELECT posts.*, users.username, users.display_name, users.avatar, users.role
+            SELECT posts.*, users.username, users.display_name, users.avatar, users.border_color, users.name_color, users.role
             FROM posts
             JOIN users ON posts.user_id = users.id
             ORDER BY posts.id DESC LIMIT 20
@@ -43,17 +41,20 @@ export async function handleFeed(request, env, user, renderLayout) {
             postsHtml = '<div style="text-align: center; color: #aaa; font-size: 11px; padding: 10px;">Chưa có bài viết nào trên bảng tin.</div>';
         } else {
             posts.forEach(post => {
-                const authorUI = renderUser(post);
+                const displayName = post.display_name || post.username || 'Thành viên';
+                const nameColor = post.name_color || '#00ff00';
+                const borderColor = post.border_color || '#444';
+                const avatarUrl = post.avatar || 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'><rect width=\'100\' height=\'100\' fill=\'%23333\'/></svg>';
                 
                 postsHtml += `
                     <div class="box" style="max-width: 600px; margin: 0 auto 8px auto; padding: 8px; background: #141414; border: 1px solid #333;">
                         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
                             <div>
-                                <img src="${post.avatar || 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'><rect width=\'100\' height=\'100\' fill=\'%23333\'/></svg>'}" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 2px solid #444;">
+                                <img src="${avatarUrl}" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 2px solid ${borderColor};">
                             </div>
                             <div>
                                 <div style="font-size: 12px; margin-bottom: 2px;">
-                                    ${authorUI.nameHtml}
+                                    <a href="/profile?user=${post.user_id}" style="color: ${nameColor}; text-decoration: none; font-weight: bold;">${displayName}</a>
                                 </div>
                                 <div style="font-size: 9px; color: #aaa;">${post.created_at}</div>
                             </div>
