@@ -1,9 +1,8 @@
 export async function handleLevel(request, env, user, renderLayout) {
     let users = { results: [] };
     try {
-        // Truy vấn danh sách thành viên sắp xếp theo cấp độ (Level) từ cao xuống thấp
         users = await env.DB.prepare(`
-            SELECT id, display_name, role, level, coins, gold,
+            SELECT id, user_id, display_name, username, role, level, coins, gold,
                    name_color, name_glow, name_border, name_border_glow, border_color, avatar_glow, avatar 
             FROM users 
             ORDER BY level DESC, coins DESC 
@@ -11,7 +10,7 @@ export async function handleLevel(request, env, user, renderLayout) {
         `).all();
     } catch (e) {}
 
-    // Hàm render chuẩn hiệu ứng màu sắc và khung WAP giống hệt trang cá nhân và trang chủ
+    // Hàm render chuẩn hiệu ứng màu sắc và khung WAP cho tên người dùng
     function safeRenderUser(u) {
         const safe = u || {};
         const defaultAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/></svg>";
@@ -29,7 +28,7 @@ export async function handleLevel(request, env, user, renderLayout) {
         if (shadows.length > 0) nameStyle += ` text-shadow: ${shadows.join(', ')};`;
         if (safe.name_border && safe.name_border !== '#000000') nameStyle += ` -webkit-text-stroke: 0.5px ${safe.name_border};`;
 
-        const name = safe.display_name || 'Thành viên';
+        const name = safe.display_name || safe.username || 'Thành viên';
         const uid = safe.user_id || safe.id || '';
 
         return {
@@ -39,17 +38,17 @@ export async function handleLevel(request, env, user, renderLayout) {
         };
     }
 
-    // Hàm tạo hiệu ứng màu sắc cho chức vụ (Role) theo phong cách WAP nổi bật
+    // Hàm tạo hiệu ứng màu sắc cho chức vụ (Role) theo phong cách WAP
     function getRoleBadgeStyle(role) {
         const r = String(role || 'Thành Viên').trim();
         if (r === 'Chủ Wap') {
-            return 'background: #2a0800; color: #ff3300; border: 1px solid #ff3300; text-shadow: 0 0 6px #ff0000; font-weight: bold; padding: 2px 8px; font-size: 11px; border-radius: 4px; display: inline-block;';
+            return 'background: #2a0800; color: #ff3300; border: 1px solid #ff3300; text-shadow: 0 0 6px #ff0000; font-weight: bold; padding: 1px 6px; font-size: 10px; border-radius: 3px; display: inline-block;';
         } else if (r === 'Admin') {
-            return 'background: #2a1a00; color: #ffcc00; border: 1px solid #ffcc00; text-shadow: 0 0 6px #ffcc00; font-weight: bold; padding: 2px 8px; font-size: 11px; border-radius: 4px; display: inline-block;';
+            return 'background: #2a1a00; color: #ffcc00; border: 1px solid #ffcc00; text-shadow: 0 0 6px #ffcc00; font-weight: bold; padding: 1px 6px; font-size: 10px; border-radius: 3px; display: inline-block;';
         } else if (r === 'Mod') {
-            return 'background: #001a2a; color: #00ffff; border: 1px solid #00ffff; text-shadow: 0 0 6px #00ffff; font-weight: bold; padding: 2px 8px; font-size: 11px; border-radius: 4px; display: inline-block;';
+            return 'background: #001a2a; color: #00ffff; border: 1px solid #00ffff; text-shadow: 0 0 6px #00ffff; font-weight: bold; padding: 1px 6px; font-size: 10px; border-radius: 3px; display: inline-block;';
         } else {
-            return 'background: #141414; color: #00ff00; border: 1px solid #444; font-weight: bold; padding: 2px 8px; font-size: 11px; border-radius: 4px; display: inline-block;';
+            return 'background: #141414; color: #00ff00; border: 1px solid #444; font-weight: bold; padding: 1px 6px; font-size: 10px; border-radius: 3px; display: inline-block;';
         }
     }
 
@@ -62,30 +61,30 @@ export async function handleLevel(request, env, user, renderLayout) {
             const roleStyle = getRoleBadgeStyle(u.role);
             let rankNum = index + 1;
             let rankColor = '#fff';
-            if (rankNum === 1) rankColor = '#ff3333'; // Top 1 màu đỏ rực
-            else if (rankNum === 2) rankColor = '#ffcc00'; // Top 2 màu vàng
-            else if (rankNum === 3) rankColor = '#00ffff'; // Top 3 màu xanh dương
+            if (rankNum === 1) rankColor = '#ff3333';
+            else if (rankNum === 2) rankColor = '#ffcc00';
+            else if (rankNum === 3) rankColor = '#00ffff';
 
             return `
-            <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid #222; background: ${index % 2 === 0 ? '#0a0a0a' : '#050505'};">
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <span style="font-weight: bold; width: 24px; text-align: center; color: ${rankColor};">#${rankNum}</span>
-                    <div style="width: 36px; height: 36px;">
-                        <img src="${uUI.avatarUrl}" width="36" height="36" style="${uUI.avatarStyle} display:block;">
-                    </div>
-                    <div>
-                        <div style="font-size: 14px;">
-                            ${uUI.nameHtml} 
-                            <span style="color: #ffcc00; font-size: 12px; margin-left: 4px;">[Lv.${u.level || 1}]</span>
+            <div style="padding: 8px 10px; border-bottom: 1px solid #222; background: ${index % 2 === 0 ? '#080808' : '#030303'}; font-size: 13px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-weight: bold; color: ${rankColor}; width: 22px;">#${rankNum}</span>
+                        <img src="${uUI.avatarUrl}" width="32" height="32" style="${uUI.avatarStyle} display:block;">
+                        <div>
+                            <div>
+                                ${uUI.nameHtml} 
+                                <span style="margin-left: 4px;">${u.role ? `<span style="${roleStyle}">${u.role}</span>` : ''}</span>
+                            </div>
+                            <div style="color: #aaa; font-size: 12px; margin-top: 2px;">
+                                Cấp độ: <span style="color: #ffcc00; font-weight: bold;">${u.level || 1}</span>
+                            </div>
                         </div>
-                        <div style="margin-top: 3px;">
-                            <span style="${roleStyle}">${u.role || 'Thành Viên'}</span>
-                        </div>
                     </div>
-                </div>
-                <div style="text-align: right; font-size: 12px; color: #aaa;">
-                    <div>🪙 ${(u.coins || 0).toLocaleString()} Xu</div>
-                    ${u.gold ? `<div style="color: #ffcc00;">👑 ${u.gold.toLocaleString()} Vàng</div>` : ''}
+                    <div style="text-align: right; font-size: 12px;">
+                        <div style="color: #00ff00;">🪙 ${(u.coins || 0).toLocaleString()}</div>
+                        ${u.gold ? `<div style="color: #ffcc00;">👑 ${u.gold.toLocaleString()}</div>` : ''}
+                    </div>
                 </div>
             </div>`;
         }).join('');
@@ -98,7 +97,7 @@ export async function handleLevel(request, env, user, renderLayout) {
             ${rankListHtml}
         </div>
     </div>
-    <div style="text-align: center; margin-top: 12px; font-size: 13px;">
+    <div style="text-align: center; margin-top: 10px; font-size: 13px;">
         <a href="/">⬅ Quay lại trang chủ</a>
     </div>
     `;
