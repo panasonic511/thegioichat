@@ -1,128 +1,157 @@
 export async function handleShop(request, env, user, renderLayout) {
-    // Tự động kiểm tra và thêm các cột cần thiết vào bảng users nếu chưa có
-    try { await env.DB.prepare("ALTER TABLE users ADD COLUMN active_icon TEXT DEFAULT ''").run(); } catch (e) {}
-    try { await env.DB.prepare("ALTER TABLE users ADD COLUMN border_color TEXT DEFAULT '#ffcc00'").run(); } catch (e) {}
-    try { await env.DB.prepare("ALTER TABLE users ADD COLUMN avatar_glow TEXT DEFAULT '#000000'").run(); } catch (e) {}
-    try { await env.DB.prepare("ALTER TABLE users ADD COLUMN name_color TEXT DEFAULT '#00ff00'").run(); } catch (e) {}
-    try { await env.DB.prepare("ALTER TABLE users ADD COLUMN name_glow TEXT DEFAULT '#000000'").run(); } catch (e) {}
-    
-    try {
-        await env.DB.prepare(`
-            CREATE TABLE IF NOT EXISTS user_items (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                item_type TEXT,
-                item_value TEXT,
-                created_at TEXT
-            )
-        `).run();
-    } catch (e) {}
+    const defaultAvatarMale = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'><rect width='120' height='120' fill='%230f172a'/><circle cx='60' cy='45' r='22' fill='%2338bdf8'/><path d='M20 105 C20 80, 100 80, 100 105' fill='%2338bdf8'/></svg>";
+    const defaultAvatarFemale = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'><rect width='120' height='120' fill='%231f1025'/><circle cx='60' cy='45' r='22' fill='%23f472b6'/><path d='M20 105 C20 80, 100 80, 100 105' fill='%23f472b6'/></svg>";
+    const sysAvt = user.gender === 'female' ? defaultAvatarFemale : defaultAvatarMale;
+    const avt = (user.avatar && !String(user.avatar).includes('7gXvS6v')) ? user.avatar : sysAvt;
 
-    let message = '';
-    const url = new URL(request.url);
-    const tab = url.searchParams.get('tab') || 'icon';
-
-    if (request.method === 'POST') {
-        try {
-            const formData = await request.formData();
-            const action = formData.get('action');
-
-            if (action === 'buy_item') {
-                const itemType = formData.get('item_type'); // icon, frame, color
-                const itemVal = formData.get('item_val');
-                const price = parseInt(formData.get('price') || '5000');
-
-                if ((user.coins || 0) < price) {
-                    message = '<div style="color: #ff3333; text-align: center; margin-bottom: 10px; font-weight: bold;">Bạn không đủ xu để mua vật phẩm này!</div>';
-                } else {
-                    await env.DB.prepare("UPDATE users SET coins = coins - ? WHERE id = ?").bind(price, user.id).run();
-                    await env.DB.prepare(
-                        "INSERT INTO user_items (user_id, item_type, item_value, created_at) VALUES (?, ?, ?, datetime('now'))"
-                    ).bind(user.id, itemType, itemVal).run();
-                    
-                    message = '<div style="color: #00ff00; text-align: center; margin-bottom: 10px; font-weight: bold;">Mua vật phẩm thành công! Hãy vào Tủ đồ để kích hoạt.</div>';
-                    user.coins -= price;
-                }
-            }
-        } catch (e) {
-            message = `<div style="color: #ff3333; text-align: center; margin-bottom: 10px;">Lỗi: ${e.message}</div>`;
-        }
-    }
-
-    // Danh mục vật phẩm trong cửa hàng
-    const shopIcons = [
-        { name: 'Vương miện Hoàng gia', val: '👑', price: 10000, type: 'icon' },
-        { name: 'Ngôi sao Lấp lánh', val: '⭐', price: 5000, type: 'icon' },
-        { name: 'Ngọn lửa Rực cháy', val: '🔥', price: 7000, type: 'icon' },
-        { name: 'Kim cương Đắt giá', val: '💎', price: 15000, type: 'icon' },
-        { name: 'Trái tim Tình yêu', val: '💖', price: 4000, type: 'icon' },
-        { name: 'Cỏ 4 lá May mắn', val: '🍀', price: 6000, type: 'icon' }
-    ];
-
-    const shopFrames = [
-        { name: 'Khung Vàng Hoàng Kim', val: '#ffcc00', price: 20000, type: 'frame' },
-        { name: 'Khung Xanh Cyber', val: '#00ffff', price: 18000, type: 'frame' },
-        { name: 'Khung Đỏ Hỏa Long', val: '#ff0000', price: 25000, type: 'frame' },
-        { name: 'Khung Tím Huyền Bí', val: '#9900ff', price: 22000, type: 'frame' }
-    ];
-
-    const shopColors = [
-        { name: 'Màu Đỏ Rực Cháy', val: '#ff0000', price: 10000, type: 'color' },
-        { name: 'Màu Vàng Kim', val: '#ffcc00', price: 10000, type: 'color' },
-        { name: 'Màu Xanh Dương', val: '#00ffff', price: 10000, type: 'color' },
-        { name: 'Màu Hồng Phấn', val: '#ff66b2', price: 10000, type: 'color' }
-    ];
-
-    let currentItems = shopIcons;
-    if (tab === 'frames') currentItems = shopFrames;
-    if (tab === 'colors') currentItems = shopColors;
-
-    let itemsHtml = currentItems.map(item => `
-        <div style="background: #080808; border: 1px solid #333; padding: 10px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
-            <div style="display: flex; align-items: center; gap: 12px;">
-                ${tab === 'icon' ? `<span style="font-size: 26px;">${item.val}</span>` : `<div style="width: 30px; height: 30px; border-radius: 50%; background: ${item.val}; border: 2px solid #fff;"></div>`}
-                <div>
-                    <div style="font-weight: bold; color: #fff;">${item.name}</div>
-                    <div style="color: #ffcc00; font-size: 12px; margin-top: 2px;">🪙 ${item.price.toLocaleString()} Xu</div>
-                </div>
-            </div>
-            <form method="POST">
-                <input type="hidden" name="action" value="buy_item">
-                <input type="hidden" name="item_type" value="${item.type}">
-                <input type="hidden" name="item_val" value="${item.val}">
-                <input type="hidden" name="price" value="${item.price}">
-                <button type="submit" class="btn" style="background: #0055ff; color: #fff; padding: 6px 12px; border-radius: 4px;">Mua ngay</button>
-            </form>
-        </div>
-    `).join('');
+    const activeIcon = user.active_icon ? `${user.active_icon} ` : '';
+    const displayName = user.display_name || user.username || 'Thành viên';
+    const nameColor = user.name_color || '#ffffff';
 
     const content = `
+    <style>
+        .shop-user-bar { background: #141414; border: 1px solid #2a2a2a; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-radius: 4px; }
+        .shop-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        @media (max-width: 480px) { .shop-grid-2 { grid-template-columns: 1fr; } }
+        .shop-card { background: #121212; border: 1px solid #2c2c2c; border-radius: 6px; padding: 12px; display: flex; align-items: center; justify-content: space-between; text-decoration: none !important; transition: 0.2s; }
+        .shop-card:hover { border-color: #00ff00; background: #1a1a1a; }
+        .shop-card-left { display: flex; align-items: center; gap: 12px; }
+        .shop-icon-circle { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+        .shop-card-title { color: #ffffff; font-weight: bold; font-size: 13px; margin-bottom: 2px; }
+        .shop-card-desc { color: #888888; font-size: 11px; }
+        .shop-arrow { color: #666; font-weight: bold; font-size: 14px; }
+        .topup-xu { background: linear-gradient(135deg, #0d1b2a 0%, #162a40 100%); border: 1px solid #1f3b5c; }
+        .topup-vang { background: linear-gradient(135deg, #2b180a 0%, #42240e 100%); border: 1px solid #5e3414; }
+    </style>
+
+    <!-- Thanh thông tin tài khoản -->
+    <div class="shop-user-bar">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <img src="${avt}" width="40" height="40" style="border-radius: 6px; object-fit: cover; border: 1px solid ${user.border_color || '#ffcc00'};">
+            <div>
+                <div style="font-weight: bold; font-size: 14px; color: ${nameColor};">${activeIcon}${displayName}</div>
+                <div style="font-size: 12px; margin-top: 2px;">
+                    <span style="color: #ffcc00;">👑 ${(user.gold || 0).toLocaleString()}</span>
+                    <span style="color: #aaa; margin-left: 8px;">🪙 ${(user.coins || 0).toLocaleString()}</span>
+                    <a href="/shop/topup" style="color: #00ff00; font-weight: bold; margin-left: 4px;">+</a>
+                </div>
+            </div>
+        </div>
+        <div style="color: #00ff00; font-weight: bold; font-size: 13px;">${user.role || 'Thành viên'}</div>
+    </div>
+
+    <!-- Box 1: Cửa hàng (Nạp Xu / Nạp Vàng) -->
     <div class="box">
-        <div class="box-title">🛒 Cửa hàng vật phẩm Wap</div>
+        <div class="box-title" style="justify-content: space-between;">
+            <span>🛒 Cửa hàng</span>
+            <a href="/shop/inventory" style="font-size: 12px; color: #aaa; font-weight: normal;">📦 Tủ đồ của tôi</a>
+        </div>
         <div class="box-content">
-            <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; background: #111; padding: 8px 12px; border: 1px solid #333;">
-                <span>Ví của bạn: <strong style="color: #00ff00;">🪙 ${(user.coins || 0).toLocaleString()} Xu</strong></span>
-                <a href="/shop/inventory" class="btn" style="background: #222; color: #ffcc00; padding: 4px 10px; font-size: 12px; text-decoration: none;">📦 Tủ đồ của tôi</a>
+            <div class="shop-grid-2">
+                <a href="/shop/topup-xu" class="shop-card topup-xu">
+                    <div class="shop-card-left">
+                        <div class="shop-icon-circle" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;">🪙</div>
+                        <div>
+                            <div class="shop-card-title">Nạp Xu</div>
+                            <div class="shop-card-desc">Dùng cho game và tiện ích</div>
+                        </div>
+                    </div>
+                </a>
+                <a href="/shop/topup-gold" class="shop-card topup-vang">
+                    <div class="shop-card-left">
+                        <div class="shop-icon-circle" style="background: rgba(251, 191, 36, 0.15); color: #fbbf24;">👑</div>
+                        <div>
+                            <div class="shop-card-title">Nạp Vàng</div>
+                            <div class="shop-card-desc">Mua vật phẩm đặc biệt</div>
+                        </div>
+                    </div>
+                </a>
             </div>
-
-            <!-- Thanh Tabs chuyển đổi danh mục -->
-            <div style="display: flex; gap: 4px; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 8px;">
-                <a href="/shop?tab=icon" class="btn" style="flex: 1; text-align: center; background: ${tab === 'icon' ? '#0055ff' : '#1c1c1c'}; color: #fff; text-decoration: none; padding: 6px; font-size: 12px;">✨ Biểu tượng Icon</a>
-                <a href="/shop?tab=frames" class="btn" style="flex: 1; text-align: center; background: ${tab === 'frames' ? '#0055ff' : '#1c1c1c'}; color: #fff; text-decoration: none; padding: 6px; font-size: 12px;">🖼️ Khung Avatar</a>
-                <a href="/shop?tab=colors" class="btn" style="flex: 1; text-align: center; background: ${tab === 'colors' ? '#0055ff' : '#1c1c1c'}; color: #fff; text-decoration: none; padding: 6px; font-size: 12px;">🎨 Màu Tên Nick</a>
-            </div>
-
-            ${message}
-            <div style="font-weight: bold; margin-bottom: 8px; color: #00ff00;">Danh sách vật phẩm:</div>
-            ${itemsHtml}
         </div>
     </div>
-    <div style="text-align: center; margin-top: 10px; font-size: 13px;">
-        <a href="/">🏠 Về trang chủ</a>
+
+    <!-- Box 2: Nâng cấp tài khoản -->
+    <div class="box">
+        <div class="box-title">⭐ Nâng cấp tài khoản</div>
+        <div class="box-content">
+            <a href="/shop/vip" class="shop-card">
+                <div class="shop-card-left">
+                    <div class="shop-icon-circle" style="background: rgba(250, 204, 21, 0.15); color: #facc15;">⭐</div>
+                    <div>
+                        <div class="shop-card-title">Nâng cấp tài khoản</div>
+                        <div class="shop-card-desc">Khám phá tài khoản Plus và Pro</div>
+                    </div>
+                </div>
+                <span class="shop-arrow">&gt;</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- Box 3: Vật phẩm và trang trí -->
+    <div class="box">
+        <div class="box-title">★ Vật phẩm và trang trí</div>
+        <div class="box-content">
+            <div class="shop-grid-2">
+                <a href="/shop/avatar-frames" class="shop-card">
+                    <div class="shop-card-left">
+                        <div class="shop-icon-circle" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;">🖼️</div>
+                        <div>
+                            <div class="shop-card-title">Khung avatar</div>
+                            <div class="shop-card-desc">Làm nổi bật ảnh đại diện</div>
+                        </div>
+                    </div>
+                    <span class="shop-arrow">&gt;</span>
+                </a>
+
+                <a href="/shop/name-effects" class="shop-card">
+                    <div class="shop-card-left">
+                        <div class="shop-icon-circle" style="background: rgba(168, 85, 247, 0.15); color: #a855f7;">✨</div>
+                        <div>
+                            <div class="shop-card-title">Hiệu ứng tên</div>
+                            <div class="shop-card-desc">Gradient, cầu vồng và ánh vàng</div>
+                        </div>
+                    </div>
+                    <span class="shop-arrow">&gt;</span>
+                </a>
+
+                <a href="/shop/buyicon" class="shop-card">
+                    <div class="shop-card-left">
+                        <div class="shop-icon-circle" style="background: rgba(59, 130, 246, 0.15); color: #3b82f6;">⭐</div>
+                        <div>
+                            <div class="shop-card-title">Icon trước nick</div>
+                            <div class="shop-card-desc">Biểu tượng nhỏ cạnh tên</div>
+                        </div>
+                    </div>
+                    <span class="shop-arrow">&gt;</span>
+                </a>
+
+                <a href="/shop/name-bg" class="shop-card">
+                    <div class="shop-card-left">
+                        <div class="shop-icon-circle" style="background: rgba(34, 197, 94, 0.15); color: #22c55e;">🏞️</div>
+                        <div>
+                            <div class="shop-card-title">Ảnh nền dưới nick</div>
+                            <div class="shop-card-desc">Trang trí phần tên tài khoản</div>
+                        </div>
+                    </div>
+                    <span class="shop-arrow">&gt;</span>
+                </a>
+
+                <a href="/shop/buycolor" class="shop-card">
+                    <div class="shop-card-left">
+                        <div class="shop-icon-circle" style="background: rgba(244, 63, 94, 0.15); color: #f43f5e;">🎨</div>
+                        <div>
+                            <div class="shop-card-title">Trang trí màu sắc</div>
+                            <div class="shop-card-desc">Màu tên, viền và hiệu ứng sáng</div>
+                        </div>
+                    </div>
+                    <span class="shop-arrow">&gt;</span>
+                </a>
+            </div>
+        </div>
     </div>
     `;
 
-    return new Response(renderLayout('Cửa hàng vật phẩm', content, user), {
+    return new Response(renderLayout('Cửa hàng', content, user), {
         headers: { 'Content-Type': 'text/html;charset=UTF-8' }
     });
 }
