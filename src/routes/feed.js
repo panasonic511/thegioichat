@@ -46,7 +46,13 @@ export async function handleFeed(request, env, user, renderLayout) {
         `).run();
     } catch (e) {}
 
-    // 2. Xử lý các yêu cầu POST siêu tốc (Hỗ trợ cả AJAX fetch request)
+    // Lấy số trang hiện tại từ URL (Ví dụ: ?page=2)
+    const urlObj = new URL(request.url);
+    const page = parseInt(urlObj.searchParams.get('page')) || 1;
+    const limit = 10; // Giới hạn 10 bài viết mỗi trang
+    const offset = (page - 1) * limit;
+
+    // 2. Xử lý các yêu cầu POST siêu tốc (Hỗ trợ đăng bài, thả tim, bình luận và xóa bài viết)
     if (request.method === 'POST') {
         try {
             const formData = await request.formData();
@@ -83,6 +89,18 @@ export async function handleFeed(request, env, user, renderLayout) {
                     await env.DB.prepare(
                         "INSERT INTO stories (user_id, image_url, caption, created_at) VALUES (?, ?, ?, datetime('now'))"
                     ).bind(user.id, imageUrl.trim(), caption || '').run();
+                }
+            } else if (action === 'delete_post') {
+                const postId = formData.get('post_id');
+                // Kiểm tra xem người dùng có phải là Chủ Wap/Admin hoặc là chủ nhân bài viết không
+                const targetPost = await env.DB.prepare("SELECT user_id FROM posts WHERE id = ?").bind(postId).first();
+                const isManager = (user.role && user.role !== 'Thành Viên');
+                
+                if (targetPost && (isManager || targetPost.user_id === user.id)) {
+                    // Xóa triệt để bài viết kèm theo toàn bộ lượt thích và bình luận để tối ưu database
+                    await env.DB.prepare("DELETE FROM posts WHERE id = ?").bind(postId).run();
+                    await env.DB.prepare("DELETE FROM post_likes WHERE post_id = ?").bind(postId).run();
+                    await env.DB.prepare("DELETE FROM post_comments WHERE post_id = ?").bind(postId).run();
                 }
             }
 
@@ -135,7 +153,15 @@ export async function handleFeed(request, env, user, renderLayout) {
         storiesHtml = '';
     }
 
-    // 4. Lấy danh sách Bài viết, Thả tim & Bình luận
+    // 4. Lấy tổng số bài viết để tính toán phân trang
+    let totalPosts = 0;
+    try {
+        const countRes = await env.DB.prepare("SELECT COUNT(*) as total FROM posts").first();
+        totalPosts = countRes ? countRes.total : 0;
+    } catch (e) {}
+    const totalPages = Math.ceil(totalPosts / limit) || 1;
+
+    // 5. Lấy danh sách Bài viết theo giới hạn phân trang (LIMIT & OFFSET)
     let postsHtml = '';
     try {
         const res = await env.DB.prepare(`
@@ -143,13 +169,15 @@ export async function handleFeed(request, env, user, renderLayout) {
                    users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role
             FROM posts 
             JOIN users ON posts.user_id = users.id 
-            ORDER BY posts.id DESC LIMIT 20
-        `).all();
+            ORDER BY posts.id DESC LIMIT ? OFFSET ?
+        `).bind(limit, offset).all();
         const posts = res.results || [];
 
         if (posts.length === 0) {
             postsHtml = '<div style="text-align: center; color: #777; padding: 20px;">Chưa có bài viết nào trên bảng tin.</div>';
         } else {
+            const isUserAdmin = (user.role && user.role !== 'Thành Viên');
+
             for (let p of posts) {
                 const rUser = renderUser(p);
 
@@ -159,7 +187,6 @@ export async function handleFeed(request, env, user, renderLayout) {
                 const userLiked = await env.DB.prepare("SELECT id FROM post_likes WHERE post_id = ? AND user_id = ?").bind(p.id, user.id).first();
                 const heartColor = userLiked ? '#ff3333' : '#888';
 
-                // Lấy thông tin đầy đủ các trường phong cách tên của người bình luận
                 const commRes = await env.DB.prepare(`
                     SELECT post_comments.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow, 
                            users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role 
@@ -171,7 +198,7 @@ export async function handleFeed(request, env, user, renderLayout) {
 
                 let commentsHtml = '';
                 comments.forEach(c => {
-                    const rCommentUser = renderUser(c); // Render đầy đủ phong cách tên cho người bình luận
+                    const rCommentUser = renderUser(c);
                     commentsHtml += `
                         <div style="font-size: 11px; margin-top: 4px; border-top: 1px solid #222; padding-top: 4px;">
                             ${rCommentUser.nameHtml}: <span style="color: #ddd;">${c.comment}</span>
@@ -181,7 +208,7 @@ export async function handleFeed(request, env, user, renderLayout) {
 
                 const imageTag = p.image_url ? `<div style="margin-top: 8px; background: #000; text-align: center; border-radius: 4px; overflow: hidden;"><img src="${p.image_url}" style="width: 100%; max-height: 450px; object-fit: contain; display: block; margin: 0 auto;"></div>` : '';
 
-                // Xây dựng logic hiển thị chức vụ: Quản lý/Chủ Wap có khung, Thành viên hiển thị chữ bình thường
+                // Logic chức vụ: Quản lý/Chủ Wap có khung, Thành viên hiển thị chữ bình thường
                 const roleDisplayHtml = (p.role && p.role !== 'Thành Viên') ? `
                     <span style="display: inline-block; background: #1a1a1a; border: 1px solid #444; color: #ffcc00; font-size: 10px; font-weight: bold; padding: 1px 6px; border-radius: 4px; text-shadow: 0 0 4px rgba(255,204,0,0.4);">
                         ${p.role}
@@ -190,18 +217,31 @@ export async function handleFeed(request, env, user, renderLayout) {
                     <span style="color: #888; font-size: 11px;">${p.role || 'Thành viên'}</span>
                 `;
 
+                // Nút Xóa bài viết dành cho Admin hoặc chủ nhân bài viết
+                const canDelete = isUserAdmin || p.user_id === user.id;
+                const deleteBtnHtml = canDelete ? `
+                    <form onsubmit="deletePostAjax(event, ${p.id})" style="margin: 0;">
+                        <input type="hidden" name="action" value="delete_post">
+                        <input type="hidden" name="post_id" value="${p.id}">
+                        <button type="submit" style="background: none; border: none; color: #ff5555; cursor: pointer; font-size: 11px;" title="Xóa bài viết">🗑️ Xóa</button>
+                    </form>
+                ` : '';
+
                 postsHtml += `
-                <div style="background: #121212; border: 1px solid #2c2c2c; border-radius: 6px; padding: 12px; margin-bottom: 12px;">
-                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-                        <div style="width: 36px; height: 36px; min-width: 36px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
-                            ${rUser.avatarHtml.replace(/style="[^"]*"/gi, 'style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;"')}
-                        </div>
-                        <div>
-                            <div>${rUser.nameHtml} <span style="font-size: 10px; color: #888; margin-left: 6px;">${p.created_at || ''}</span></div>
-                            <div style="font-size: 11px; margin-top: 2px; display: flex; align-items: center; gap: 4px;">
-                                ${roleDisplayHtml} <span style="color: #666;">•</span> <span style="color: #aaa;">🌍 Công khai</span>
+                <div id="post-card-${p.id}" style="background: #121212; border: 1px solid #2c2c2c; border-radius: 6px; padding: 12px; margin-bottom: 12px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <div style="width: 36px; height: 36px; min-width: 36px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                                ${rUser.avatarHtml.replace(/style="[^"]*"/gi, 'style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;"')}
+                            </div>
+                            <div>
+                                <div>${rUser.nameHtml} <span style="font-size: 10px; color: #888; margin-left: 6px;">${p.created_at || ''}</span></div>
+                                <div style="font-size: 11px; margin-top: 2px; display: flex; align-items: center; gap: 4px;">
+                                    ${roleDisplayHtml} <span style="color: #666;">•</span> <span style="color: #aaa;">🌍 Công khai</span>
+                                </div>
                             </div>
                         </div>
+                        ${deleteBtnHtml}
                     </div>
                     <div style="color: #ddd; font-size: 13px; word-break: break-word; white-space: pre-wrap; margin-bottom: 6px;">${p.content || ''}</div>
                     ${imageTag}
@@ -245,7 +285,27 @@ export async function handleFeed(request, env, user, renderLayout) {
         }
     } catch (e) {}
 
-    // 5. Giao diện hoàn chỉnh kèm Script AJAX & Tự động nén ảnh giữ nguyên vẹn
+    // 6. Giao diện Phân trang (Pagination)
+    let paginationHtml = '';
+    if (totalPages > 1) {
+        paginationHtml = `<div style="display: flex; justify-content: center; align-items: center; gap: 6px; margin: 15px 0; font-size: 12px;">`;
+        if (page > 1) {
+            paginationHtml += `<a href="?page=${page - 1}" style="background: #1a1a1a; color: #00ff00; border: 1px solid #444; padding: 4px 10px; border-radius: 4px; text-decoration: none;">« Trước</a>`;
+        }
+        for (let i = 1; i <= totalPages; i++) {
+            if (i === page) {
+                paginationHtml += `<span style="background: #00ff00; color: #000; font-weight: bold; padding: 4px 10px; border-radius: 4px;">${i}</span>`;
+            } else {
+                paginationHtml += `<a href="?page=${i}" style="background: #1a1a1a; color: #ccc; border: 1px solid #444; padding: 4px 10px; border-radius: 4px; text-decoration: none;">${i}</a>`;
+            }
+        }
+        if (page < totalPages) {
+            paginationHtml += `<a href="?page=${page + 1}" style="background: #1a1a1a; color: #00ff00; border: 1px solid #444; padding: 4px 10px; border-radius: 4px; text-decoration: none;">Sau »</a>`;
+        }
+        paginationHtml += `</div>`;
+    }
+
+    // 7. Giao diện hoàn chỉnh kèm Script AJAX, Nén ảnh, Phân trang & Xóa bài viết
     const content = `
     <div class="box">
         <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
@@ -396,7 +456,34 @@ export async function handleFeed(request, env, user, renderLayout) {
                     body: formData
                 });
                 if (res.ok) {
-                    window.location.reload(); // Reload nhẹ để đồng bộ hiển thị đúng tên và phong cách cá nhân của user vừa bình luận
+                    window.location.reload();
+                }
+            } catch (e) {
+                window.location.reload();
+            }
+        }
+
+        // Xử lý Xóa bài viết ngay lập tức không cần tải lại toàn trang
+        async function deletePostAjax(event, postId) {
+            event.preventDefault();
+            if (!confirm("Bạn có chắc chắn muốn xóa vĩnh viễn bài viết này không?")) return;
+
+            const formData = new FormData(event.target);
+            try {
+                const res = await fetch(window.location.href, {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    body: formData
+                });
+                if (res.ok) {
+                    const card = document.getElementById('post-card-' + postId);
+                    if (card) {
+                        card.style.transition = 'opacity 0.3s ease';
+                        card.style.opacity = '0';
+                        setTimeout(() => card.remove(), 300);
+                    } else {
+                        window.location.reload();
+                    }
                 }
             } catch (e) {
                 window.location.reload();
@@ -426,6 +513,7 @@ export async function handleFeed(request, env, user, renderLayout) {
         <div class="box-title">📰 Bảng tin cộng đồng</div>
         <div class="box-content">
             ${postsHtml}
+            ${paginationHtml}
         </div>
     </div>
     `;
