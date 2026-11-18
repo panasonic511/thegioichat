@@ -3,7 +3,7 @@ import { renderUser } from '../worker.js';
 export async function handleGameLudo(request, env, user, renderLayout, url) {
     const path = url.pathname;
 
-    // Khởi tạo cơ sở dữ liệu D1 cho phòng game và chat
+    // Khởi tạo cơ sở dữ liệu D1 cho phòng game, người chơi, bảng cờ và chat
     try {
         await env.DB.prepare(`
             CREATE TABLE IF NOT EXISTS ludo_rooms (
@@ -14,6 +14,19 @@ export async function handleGameLudo(request, env, user, renderLayout, url) {
                 bet_amount INTEGER DEFAULT 0,
                 status TEXT DEFAULT 'waiting',
                 created_at TEXT
+            )
+        `).run();
+
+        await env.DB.prepare(`
+            CREATE TABLE IF NOT EXISTS ludo_players (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                room_id INTEGER,
+                seat_index INTEGER,
+                user_id INTEGER,
+                username TEXT,
+                display_name TEXT,
+                avatar TEXT,
+                score INTEGER DEFAULT 0
             )
         `).run();
 
@@ -33,7 +46,7 @@ export async function handleGameLudo(request, env, user, renderLayout, url) {
     if (path === '/game/ludo/create' && request.method === 'POST') {
         try {
             const formData = await request.formData();
-            const roomName = formData.get('room_name') || `Phòng của ${user.display_name || user.username}`;
+            const roomName = formData.get('room_name') || `Phòng Ludo của ${user.display_name || user.username}`;
             const betAmount = parseInt(formData.get('bet_amount') || '0', 10);
 
             const res = await env.DB.prepare(
@@ -41,13 +54,19 @@ export async function handleGameLudo(request, env, user, renderLayout, url) {
             ).bind(roomName, user.id, user.display_name || user.username, betAmount).run();
 
             const roomId = res.meta.last_row_id;
+
+            // Tự động đưa chủ phòng vào ghế 0 (Đỏ)
+            await env.DB.prepare(
+                "INSERT INTO ludo_players (room_id, seat_index, user_id, username, display_name, avatar) VALUES (?, 0, ?, ?, ?, ?)"
+            ).bind(roomId, user.id, user.username, user.display_name || user.username, user.avatar || '').run();
+
             return Response.redirect(new URL(`/game/ludo/room?id=${roomId}`, request.url), 302);
         } catch (e) {
             return Response.redirect(new URL('/game/ludo', request.url), 302);
         }
     }
 
-    // 2. Giao diện phòng chơi (GET /game/ludo/room?id=...)
+    // 2. Giao diện phòng chơi chính thức (GET /game/ludo/room?id=...)
     if (path === '/game/ludo/room') {
         const roomId = url.searchParams.get('id');
         if (!roomId) return Response.redirect(new URL('/game/ludo', request.url), 302);
@@ -61,16 +80,39 @@ export async function handleGameLudo(request, env, user, renderLayout, url) {
             return new Response("Phòng chơi không tồn tại hoặc đã bị giải tán.", { status: 404 });
         }
 
-        // Xử lý gửi tin nhắn chat trong phòng
+        // Xử lý các yêu cầu tương tác Ajax (Ngồi ghế, Rời phòng, Bắt đầu, Chat)
         if (request.method === 'POST') {
             try {
                 const formData = await request.formData();
+                const action = formData.get('action');
+
+                if (action === 'sit') {
+                    const seatIndex = parseInt(formData.get('seat_index'), 10);
+                    const existing = await env.DB.prepare("SELECT * FROM ludo_players WHERE room_id = ? AND seat_index = ?").bind(roomId, seatIndex).first();
+                    const mySeat = await env.DB.prepare("SELECT * FROM ludo_players WHERE room_id = ? AND user_id = ?").bind(roomId, user.id).first();
+
+                    if (!existing && !mySeat) {
+                        await env.DB.prepare(
+                            "INSERT INTO ludo_players (room_id, seat_index, user_id, username, display_name, avatar) VALUES (?, ?, ?, ?, ?, ?)"
+                        ).bind(roomId, seatIndex, user.id, user.username, user.display_name || user.username, user.avatar || '').run();
+                    }
+                }
+
+                if (action === 'leave') {
+                    await env.DB.prepare("DELETE FROM ludo_players WHERE room_id = ? AND user_id = ?").bind(roomId, user.id).run();
+                }
+
+                if (action === 'start') {
+                    await env.DB.prepare("UPDATE ludo_rooms SET status = 'playing' WHERE id = ?").bind(roomId).run();
+                }
+
                 const chatMsg = formData.get('chat_message');
                 if (chatMsg && chatMsg.trim() !== '') {
                     await env.DB.prepare(
                         "INSERT INTO ludo_messages (room_id, user_id, username, message, created_at) VALUES (?, ?, ?, ?, datetime('now'))"
                     ).bind(roomId, user.id, user.display_name || user.username, chatMsg.trim()).run();
                 }
+
                 if (request.headers.get('X-Requested-With') === 'XMLHttpRequest') {
                     return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } });
                 }
@@ -78,53 +120,156 @@ export async function handleGameLudo(request, env, user, renderLayout, url) {
             return Response.redirect(new URL(`/game/ludo/room?id=${roomId}`, request.url), 302);
         }
 
+        let players = [];
         let roomMessages = [];
         try {
-            const msgs = await env.DB.prepare("SELECT * FROM ludo_messages WHERE room_id = ? ORDER BY id ASC LIMIT 50").bind(roomId).all();
-            roomMessages = msgs.results || [];
+            const pRes = await env.DB.prepare("SELECT * FROM ludo_players WHERE room_id = ?").bind(roomId).all();
+            players = pRes.results || [];
+
+            const mRes = await env.DB.prepare("SELECT * FROM ludo_messages WHERE room_id = ? ORDER BY id ASC LIMIT 50").bind(roomId).all();
+            roomMessages = mRes.results || [];
         } catch (e) {}
+
+        const isHost = Number(room.host_id) === Number(user.id);
+        const seats = [0, 1, 2, 3].map(index => players.find(item => item.seat_index === index));
 
         const content = `
         <div class="box">
             <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
-                <span>🎲 Phòng Ludo: ${room.room_name}</span>
+                <span>🎲 LudoVerse: ${room.room_name}</span>
                 <span style="font-size: 11px; color: #ffcc00;">Cược: ${room.bet_amount.toLocaleString()} xu</span>
             </div>
-            <div class="box-content" style="padding: 6px; text-align: center;">
+            <div class="box-content" style="padding: 8px; text-align: center;">
                 <div style="font-size: 12px; color: #aaa; margin-bottom: 6px;">
-                    👑 Chủ phòng: <b style="color: #00ff00;">${room.host_name}</b> | Đồ họa mượt mà & Âm thanh sống động
+                    👑 Chủ phòng: <b style="color: #00ff00;">${room.host_name}</b> | Trạng thái: <span style="color: #00ff00;" id="roomStatusText">${room.status === 'playing' ? 'Đang tranh tài' : 'Đang chờ người chơi'}</span>
                 </div>
 
-                <!-- CÁC THẺ ÂM THANH HIỆU ỨNG CHUẨN -->
+                <!-- CÁC HIỆU ỨNG ÂM THANH SỐNG ĐỘNG (GITHUB RAW ASSETS) -->
                 <audio id="diceSound" src="https://raw.githubusercontent.com/jamalihassan0307/LudoVerse/main/assets/sounds/roll_the_dice.mp3" preload="auto"></audio>
                 <audio id="moveSound" src="https://raw.githubusercontent.com/jamalihassan0307/LudoVerse/main/assets/sounds/move.wav" preload="auto"></audio>
+                <audio id="laughSound" src="https://raw.githubusercontent.com/jamalihassan0307/LudoVerse/main/assets/sounds/laugh.mp3" preload="auto"></audio>
 
-                <!-- KHUNG CHƠI TRỰC TIẾP TƯƠNG THÍCH MỌI TRÌNH DUYỆT WAP -->
-                <div style="width: 100%; max-width: 480px; margin: 0 auto; background: #0b2e13; border: 2px solid #444; border-radius: 6px; padding: 10px;">
-                    <div style="background: #fff; border-radius: 4px; padding: 10px; text-align: center;">
-                        <svg viewBox="0 0 500 500" style="width: 240px; height: 240px; background: #fff; border-radius: 4px; display: inline-block;">
+                <!-- KHUNG GIAO DIỆN PHÒNG & GHẾ NGỒI 4 HƯỚNG -->
+                <div style="background: #051c05; border: 2px solid #333; padding: 8px; border-radius: 8px; display: inline-block; max-width: 100%;">
+                    
+                    <!-- Ghế Đỏ (Trên) -->
+                    <div style="margin-bottom: 4px;">
+                        ${seats[0] ? `
+                            <div style="display: inline-flex; align-items: center; gap: 6px; background: #1a1a1a; border: 1px solid #cc0000; padding: 3px 8px; border-radius: 4px;">
+                                <img src="${seats[0].avatar || ''}" style="width: 20px; height: 20px; border-radius: 50%; object-fit: cover;">
+                                <span style="font-size: 11px; color: #ff5555; font-weight: bold;">🔴 ${seats[0].display_name}</span>
+                                ${Number(seats[0].user_id) === Number(user.id) ? `<button onclick="actionSeat('leave')" style="background: #aa0000; color:#fff; border:none; padding:1px 4px; font-size:9px; border-radius:3px; cursor:pointer;">Rời</button>` : ''}
+                            </div>
+                        ` : `
+                            <button onclick="actionSeat('sit', 0)" class="btn" style="background: #222; color: #ffcc00; font-size: 10px; padding: 3px 10px; border: 1px dashed #666;">+ Ghế Đỏ (1)</button>
+                        `}
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 4px;">
+                        <!-- Ghế Xanh Dương (Trái) -->
+                        <div style="width: 80px; text-align: center;">
+                            ${seats[1] ? `
+                                <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 2px; background: #1a1a1a; border: 1px solid #0033cc; padding: 4px; border-radius: 4px;">
+                                    <img src="${seats[1].avatar || ''}" style="width: 20px; height: 20px; border-radius: 50%; object-fit: cover;">
+                                    <span style="font-size: 10px; color: #3399ff; font-weight: bold; word-break: break-all;">🔵 ${seats[1].display_name}</span>
+                                    ${Number(seats[1].user_id) === Number(user.id) ? `<button onclick="actionSeat('leave')" style="background: #aa0000; color:#fff; border:none; padding:1px 3px; font-size:8px; border-radius:3px; cursor:pointer;">Rời</button>` : ''}
+                                </div>
+                            ` : `
+                                <button onclick="actionSeat('sit', 1)" class="btn" style="background: #222; color: #ffcc00; font-size: 9px; padding: 4px 2px; border: 1px dashed #666;">+ Ghế Xanh Dương</button>
+                            `}
+                        </div>
+
+                        <!-- BÀN CỜ LUDO SVG CHUẨN ĐẸP SẮC NÉT -->
+                        <svg viewBox="0 0 500 500" style="width: 260px; height: 260px; background: #fff; border-radius: 4px; box-shadow: 0 0 10px rgba(0,0,0,0.5);">
+                            <!-- Nhà Đỏ -->
                             <rect x="0" y="0" width="200" height="200" fill="#cc0000" />
-                            <rect x="300" y="0" width="200" height="200" fill="#00aa00" />
-                            <rect x="0" y="300" width="200" height="200" fill="#0033cc" />
-                            <rect x="300" y="300" width="200" height="200" fill="#ffcc00" />
-                            
                             <circle cx="70" cy="70" r="16" fill="#fff" /><text x="70" y="75" font-size="14" text-anchor="middle">🐴</text>
                             <circle cx="130" cy="70" r="16" fill="#fff" /><text x="130" y="75" font-size="14" text-anchor="middle">🐴</text>
                             <circle cx="70" cy="130" r="16" fill="#fff" /><text x="70" y="135" font-size="14" text-anchor="middle">🐴</text>
                             <circle cx="130" cy="130" r="16" fill="#fff" /><text x="130" y="135" font-size="14" text-anchor="middle">🐴</text>
-                            
-                            <rect x="0" y="200" width="200" height="100" fill="#eee" />
-                            <rect x="300" y="200" width="200" height="100" fill="#eee" />
-                            <rect x="200" y="0" width="100" height="200" fill="#eee" />
-                            <rect x="200" y="300" width="100" height="200" fill="#eee" />
+
+                            <!-- Nhà Xanh Lá -->
+                            <rect x="300" y="0" width="200" height="200" fill="#00aa00" />
+                            <circle cx="370" cy="70" r="16" fill="#fff" /><text x="370" y="75" font-size="14" text-anchor="middle">🐴</text>
+                            <circle cx="430" cy="70" r="16" fill="#fff" /><text x="430" y="75" font-size="14" text-anchor="middle">🐴</text>
+                            <circle cx="370" cy="130" r="16" fill="#fff" /><text x="370" y="135" font-size="14" text-anchor="middle">🐴</text>
+                            <circle cx="430" cy="130" r="16" fill="#fff" /><text x="430" y="135" font-size="14" text-anchor="middle">🐴</text>
+
+                            <!-- Nhà Xanh Dương -->
+                            <rect x="0" y="300" width="200" height="200" fill="#0033cc" />
+                            <circle cx="70" cy="370" r="16" fill="#fff" /><text x="70" y="375" font-size="14" text-anchor="middle">🐴</text>
+                            <circle cx="130" cy="370" r="16" fill="#fff" /><text x="130" y="375" font-size="14" text-anchor="middle">🐴</text>
+                            <circle cx="70" cy="430" r="16" fill="#fff" /><text x="70" y="435" font-size="14" text-anchor="middle">🐴</text>
+                            <circle cx="130" cy="430" r="16" fill="#fff" /><text x="130" y="435" font-size="14" text-anchor="middle">🐴</text>
+
+                            <!-- Nhà Vàng -->
+                            <rect x="300" y="300" width="200" height="200" fill="#ffcc00" />
+                            <circle cx="370" cy="370" r="16" fill="#fff" /><text x="370" y="375" font-size="14" text-anchor="middle">🐴</text>
+                            <circle cx="430" cy="370" r="16" fill="#fff" /><text x="430" y="375" font-size="14" text-anchor="middle">🐴</text>
+                            <circle cx="370" cy="430" r="16" fill="#fff" /><text x="370" y="435" font-size="14" text-anchor="middle">🐴</text>
+                            <circle cx="430" cy="430" r="16" fill="#fff" /><text x="430" y="435" font-size="14" text-anchor="middle">🐴</text>
+
+                            <!-- Đường đi chữ thập & Ô sao an toàn -->
+                            <rect x="0" y="200" width="200" height="100" fill="#f8f9fa" stroke="#ddd" />
+                            <rect x="300" y="200" width="200" height="100" fill="#f8f9fa" stroke="#ddd" />
+                            <rect x="200" y="0" width="100" height="200" fill="#f8f9fa" stroke="#ddd" />
+                            <rect x="200" y="300" width="100" height="200" fill="#f8f9fa" stroke="#ddd" />
+
+                            <circle cx="215" cy="215" r="8" fill="#ffcc00" /><text x="215" y="219" font-size="10" text-anchor="middle">⭐</text>
+                            <circle cx="285" cy="285" r="8" fill="#ffcc00" /><text x="285" y="289" font-size="10" text-anchor="middle">⭐</text>
+
+                            <polygon points="250,250 200,200 200,300" fill="#cc0000" />
+                            <polygon points="250,250 200,200 300,200" fill="#00aa00" />
+                            <polygon points="250,250 300,200 300,300" fill="#ffcc00" />
+                            <polygon points="250,250 200,300 300,300" fill="#0033cc" />
                         </svg>
+
+                        <!-- Ghế Vàng (Phải) -->
+                        <div style="width: 80px; text-align: center;">
+                            ${seats[2] ? `
+                                <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 2px; background: #1a1a1a; border: 1px solid #ffcc00; padding: 4px; border-radius: 4px;">
+                                    <img src="${seats[2].avatar || ''}" style="width: 20px; height: 20px; border-radius: 50%; object-fit: cover;">
+                                    <span style="font-size: 10px; color: #ffcc00; font-weight: bold; word-break: break-all;">🟡 ${seats[2].display_name}</span>
+                                    ${Number(seats[2].user_id) === Number(user.id) ? `<button onclick="actionSeat('leave')" style="background: #aa0000; color:#fff; border:none; padding:1px 3px; font-size:8px; border-radius:3px; cursor:pointer;">Rời</button>` : ''}
+                                </div>
+                            ` : `
+                                <button onclick="actionSeat('sit', 2)" class="btn" style="background: #222; color: #ffcc00; font-size: 9px; padding: 4px 2px; border: 1px dashed #666;">+ Ghế Vàng</button>
+                            `}
+                        </div>
                     </div>
 
-                    <!-- BẢNG ĐIỀU KHIỂN XÚC XẮC & ÂM THANH -->
-                    <div style="margin-top: 10px; background: #111; padding: 8px; border-radius: 4px;">
-                        <div id="diceResult" style="font-size: 22px; color: #ffcc00; margin-bottom: 6px;">🎲 [ ⚀ ] (Sẵn sàng)</div>
-                        <button onclick="rollDiceWithSound()" class="btn" style="background: #0055ff; padding: 6px 14px; font-size: 12px; font-weight: bold; cursor: pointer;">Tung Xúc Xắc</button>
+                    <!-- Ghế Xanh Lá (Dưới) -->
+                    <div style="margin-top: 4px;">
+                        ${seats[3] ? `
+                            <div style="display: inline-flex; align-items: center; gap: 6px; background: #1a1a1a; border: 1px solid #00aa00; padding: 3px 8px; border-radius: 4px;">
+                                <img src="${seats[3].avatar || ''}" style="width: 20px; height: 20px; border-radius: 50%; object-fit: cover;">
+                                <span style="font-size: 11px; color: #00ff00; font-weight: bold;">🟢 ${seats[3].display_name}</span>
+                                ${Number(seats[3].user_id) === Number(user.id) ? `<button onclick="actionSeat('leave')" style="background: #aa0000; color:#fff; border:none; padding:1px 4px; font-size:9px; border-radius:3px; cursor:pointer;">Rời</button>` : ''}
+                            </div>
+                        ` : `
+                            <button onclick="actionSeat('sit', 3)" class="btn" style="background: #222; color: #ffcc00; font-size: 10px; padding: 3px 10px; border: 1px dashed #666;">+ Ghế Xanh Lá (4)</button>
+                        `}
                     </div>
+                </div>
+
+                <!-- BẢNG ĐIỀU KHIỂN XÚC XẮC & LUẬT LUDO -->
+                <div style="margin-top: 10px; background: #111; padding: 10px; border-radius: 6px; border: 1px solid #333;">
+                    <div id="turnInfo" style="font-size: 12px; color: #00ff00; font-weight: bold; margin-bottom: 4px;">🎯 Lượt đi: Sẵn sàng tranh tài</div>
+                    
+                    <div id="diceResult" style="font-size: 26px; font-weight: bold; color: #ffcc00; margin-bottom: 4px; transition: transform 0.2s;">🎲 [ ⚀ ]</div>
+                    
+                    <div style="font-size: 11px; color: #ff5555; margin-bottom: 8px;">
+                        💡 <b>Luật Ludo: Ra số 6 (⚅) được xuất quân & đi thêm lượt. 3 lần 6 liên tiếp sẽ bị QUẮC mất lượt!</b>
+                    </div>
+
+                    <div style="display: flex; justify-content: center; gap: 8px;">
+                        <button id="rollBtn" onclick="rollDiceWithSound()" class="btn" style="background: #0055ff; padding: 6px 14px; font-size: 13px; font-weight: bold; cursor: pointer;">🎲 Tung Xúc Xắc</button>
+                        
+                        ${isHost && room.status !== 'playing' ? `
+                            <button onclick="startGame()" class="btn" style="background: #00aa00; padding: 6px 14px; font-size: 13px; font-weight: bold; cursor: pointer;">🚀 Bắt đầu trận đấu</button>
+                        ` : ''}
+                    </div>
+                    <div id="gameNotice" style="font-size: 11px; color: #ffcc00; margin-top: 4px;"></div>
                 </div>
 
                 <!-- KHUNG CHAT TRỰC TUYẾN TRONG PHÒNG -->
@@ -150,17 +295,85 @@ export async function handleGameLudo(request, env, user, renderLayout, url) {
             const chatBox = document.getElementById('roomChatBox');
             chatBox.scrollTop = chatBox.scrollHeight;
 
+            let consecutiveSix = 0;
+
+            async function actionSeat(action, seatIndex = null) {
+                const formData = new FormData();
+                formData.append('action', action);
+                if (seatIndex !== null) formData.append('seat_index', seatIndex);
+
+                try {
+                    const res = await fetch(window.location.href, {
+                        method: 'POST',
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                        body: formData
+                    });
+                    if (res.ok) location.reload();
+                } catch (e) {
+                    location.reload();
+                }
+            }
+
+            async function startGame() {
+                const formData = new FormData();
+                formData.append('action', 'start');
+                try {
+                    const res = await fetch(window.location.href, {
+                        method: 'POST',
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                        body: formData
+                    });
+                    location.reload();
+                } catch (e) {
+                    location.reload();
+                }
+            }
+
             function rollDiceWithSound() {
-                // Phát âm thanh lắc xúc xắc thực tế
-                const sound = document.getElementById('diceSound');
-                if (sound) {
-                    sound.currentTime = 0;
-                    sound.play().catch(err => console.log("Audio play error:", err));
+                // Phát âm thanh lắc xúc xắc từ GitHub Assets
+                const diceAudio = document.getElementById('diceSound');
+                if (diceAudio) {
+                    diceAudio.currentTime = 0;
+                    diceAudio.play().catch(e => console.log("Audio play blocked", e));
                 }
 
                 const dices = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
-                const rand = Math.floor(Math.random() * 6);
-                document.getElementById('diceResult').innerText = '🎲 [ ' + dices[rand] + ' ] (Ra số ' + (rand + 1) + ')';
+                const diceEl = document.getElementById('diceResult');
+                
+                let count = 0;
+                diceEl.style.transform = 'scale(1.2) rotate(15deg)';
+
+                const interval = setInterval(() => {
+                    const randTemp = Math.floor(Math.random() * 6);
+                    diceEl.innerText = '🎲 [ ' + dices[randTemp] + ' ]';
+                    count++;
+                    if (count > 8) {
+                        clearInterval(interval);
+                        const finalRand = Math.floor(Math.random() * 6);
+                        const resultNum = finalRand + 1;
+                        diceEl.innerText = '🎲 [ ' + dices[finalRand] + ' ] (Ra số ' + resultNum + ')';
+                        diceEl.style.transform = 'scale(1) rotate(0deg)';
+
+                        if (resultNum === 6) {
+                            consecutiveSix++;
+                            if (consecutiveSix >= 3) {
+                                document.getElementById('gameNotice').innerText = '💥 QUẮC! Ra số 6 lần thứ 3 liên tiếp. Mất lượt!';
+                                const laughAudio = document.getElementById('laughSound');
+                                if (laughAudio) laughAudio.play().catch(e => {});
+                                consecutiveSix = 0;
+                            } else {
+                                document.getElementById('gameNotice').innerText = '🎉 Tuyệt vời! Ra số 6 (Lần ' + consecutiveSix + ') - Xuất quân & Đi thêm lượt!';
+                                const moveAudio = document.getElementById('moveSound');
+                                if (moveAudio) moveAudio.play().catch(e => {});
+                            }
+                        } else {
+                            consecutiveSix = 0;
+                            document.getElementById('gameNotice').innerText = '🐎 Ngựa di chuyển ' + resultNum + ' bước an toàn.';
+                            const moveAudio = document.getElementById('moveSound');
+                            if (moveAudio) moveAudio.play().catch(e => {});
+                        }
+                    }
+                }, 50);
             }
 
             async function sendRoomChat(event) {
@@ -201,7 +414,7 @@ export async function handleGameLudo(request, env, user, renderLayout, url) {
     const content = `
     <div class="box">
         <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
-            <span>🎲 Sảnh Game Ludo</span>
+            <span>🎲 Sảnh LudoVerse - Đỉnh Cao Cờ Cá Ngựa</span>
             <a href="#createRoomModal" onclick="document.getElementById('createRoomForm').style.display='block'" class="btn" style="background: #00aa00; font-size: 11px; padding: 4px 8px;">➕ Tạo phòng</a>
         </div>
         <div class="box-content" style="padding: 10px;">
