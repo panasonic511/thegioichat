@@ -51,7 +51,7 @@ export function renderUser(u) {
     const displayName = safeUser.display_name || safeUser.username || 'Thành viên';
     const userId = safeUser.user_id || safeUser.id || 0;
     
-    // Tự động gắn Icon trước tên người dùng trên toàn hệ thống
+    // Tự động gắn Icon trước tên người dùng trên toàn bộ hệ thống
     const activeIcon = safeUser.active_icon ? `${safeUser.active_icon} ` : '';
 
     return {
@@ -67,6 +67,12 @@ async function checkAuth(request, env) {
         const cookie = request.headers.get('Cookie') || '';
         const match = cookie.match(/user_id=(\d+)/);
         if (!match) return null;
+        
+        // Đảm bảo luôn lấy đủ các cột active_icon, name_color, border_color mới nhất từ DB
+        try { await env.DB.prepare("ALTER TABLE users ADD COLUMN active_icon TEXT DEFAULT ''").run(); } catch (e) {}
+        try { await env.DB.prepare("ALTER TABLE users ADD COLUMN name_color TEXT DEFAULT '#00ff00'").run(); } catch (e) {}
+        try { await env.DB.prepare("ALTER TABLE users ADD COLUMN border_color TEXT DEFAULT '#ffcc00'").run(); } catch (e) {}
+
         return await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(match[1]).first() || null;
     } catch (e) {
         return null;
