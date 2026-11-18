@@ -1,5 +1,4 @@
 import { renderUser } from '../worker.js';
-import { renderUser } from '../utils/userStyle.js';
 
 export async function handleProfile(request, env, user, renderLayout, url) {
     let message = "";
