@@ -65,21 +65,16 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         await env.DB.prepare("UPDATE mail_box SET is_read = 1 WHERE partner_id = ? AND user_id = ?").bind(user.id, partnerId).run();
     } catch (e) {}
 
-    // Lấy lịch sử tin nhắn kèm thông tin người gửi để hiển thị avatar và style tên
+    // Lấy lịch sử tin nhắn an toàn (Hỗ trợ cả 2 chuẩn cột sender_id/receiver_id và user_id/partner_id)
     let messages = [];
     try {
         let history = await env.DB.prepare(`
-            SELECT mail_box.*, 
-                   users.id as u_id, users.username, users.display_name, users.avatar, 
-                   users.border_color, users.avatar_glow, users.name_color, users.name_glow, 
-                   users.name_border, users.name_border_glow, users.active_icon, users.role
-            FROM mail_box 
-            LEFT JOIN users ON (mail_box.sender_id = users.id OR mail_box.user_id = users.id)
-            WHERE (mail_box.sender_id = ? AND mail_box.receiver_id = ?) 
-               OR (mail_box.sender_id = ? AND mail_box.receiver_id = ?) 
-               OR (mail_box.user_id = ? AND mail_box.partner_id = ?) 
-               OR (mail_box.user_id = ? AND mail_box.partner_id = ?)
-            ORDER BY mail_box.id ASC
+            SELECT * FROM mail_box 
+            WHERE (sender_id = ? AND receiver_id = ?) 
+               OR (sender_id = ? AND receiver_id = ?) 
+               OR (user_id = ? AND partner_id = ?) 
+               OR (user_id = ? AND partner_id = ?)
+            ORDER BY id ASC
         `).bind(user.id, partnerId, partnerId, user.id, user.id, partnerId, partnerId, user.id).all();
         
         if (history.results) {
@@ -103,20 +98,8 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                         const senderId = m.sender_id || m.user_id;
                         const isMe = Number(senderId) === Number(user.id);
                         
-                        // Chuẩn bị thông tin user gửi tin nhắn để gọi renderUser
-                        const msgUser = {
-                            id: senderId,
-                            username: m.username || (isMe ? user.username : partner.username),
-                            display_name: m.display_name || (isMe ? user.display_name : partner.display_name),
-                            avatar: m.avatar || (isMe ? user.avatar : partner.avatar),
-                            border_color: m.border_color || (isMe ? user.border_color : partner.border_color),
-                            avatar_glow: m.avatar_glow || (isMe ? user.avatar_glow : partner.avatar_glow),
-                            name_color: m.name_color || (isMe ? user.name_color : partner.name_color),
-                            name_glow: m.name_glow || (isMe ? user.name_glow : partner.name_glow),
-                            name_border: m.name_border || (isMe ? user.name_border : partner.name_border),
-                            name_border_glow: m.name_border_glow || (isMe ? user.name_border_glow : partner.name_border_glow),
-                            active_icon: m.active_icon || (isMe ? user.active_icon : partner.active_icon)
-                        };
+                        // Gán đúng thông tin user hoặc partner để render avatar và style tên
+                        const msgUser = isMe ? user : partner;
                         const rMsgUser = renderUser(msgUser);
 
                         const imageTag = m.image_url ? `<div style="margin-top: 6px;"><img src="${m.image_url}" style="max-width: 100%; max-height: 250px; border-radius: 4px; object-fit: contain; display: block;"></div>` : '';
