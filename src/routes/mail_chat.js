@@ -70,16 +70,11 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         return new Response("Không tìm thấy thành viên này.", { status: 404 });
     }
 
-    // Đánh dấu toàn bộ tin nhắn từ đối phương này thành đã đọc ngay khi mở / đang chat
+    // Đánh dấu toàn bộ tin nhắn từ đối phương này thành đã đọc ngay khi mở trang chat
     try {
         await env.DB.prepare(
-            "UPDATE mail_box SET is_read = 1 WHERE receiver_id = ? AND sender_id = ?"
-        ).bind(user.id, partnerId).run();
-    } catch (e) {}
-    try {
-        await env.DB.prepare(
-            "UPDATE mail_box SET is_read = 1 WHERE partner_id = ? AND user_id = ?"
-        ).bind(user.id, partnerId).run();
+            "UPDATE mail_box SET is_read = 1 WHERE (receiver_id = ? AND sender_id = ?) OR (partner_id = ? AND user_id = ?)"
+        ).bind(user.id, partnerId, user.id, partnerId).run();
     } catch (e) {}
 
     let messages = [];
@@ -266,6 +261,11 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                 const res = await fetch('/api/realtime-check?partner_id=' + partnerId);
                 if (res.ok) {
                     const data = await res.json();
+                    
+                    // Gửi lệnh ngầm đánh dấu đã đọc các tin nhắn đến từ partner này ngay lập tức 
+                    // để không làm hiện số đỏ thông báo hộp thư trên menu khi đang chat
+                    fetch('/api/mark-read?partner_id=' + partnerId).catch(e => {});
+
                     if (data.chat_messages && data.chat_messages.length > 0) {
                         let html = '';
                         data.chat_messages.forEach(m => {
@@ -304,10 +304,6 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                             }
                         }
                     }
-
-                    // Tự động thông báo phía server đánh dấu tin nhắn từ partner này là đã đọc ngầm
-                    // Giúp icon thông báo hộp thư phía trên không bị hiện số đỏ khi đang đứng trong phòng chat của họ
-                    fetch('/api/mark-read?partner_id=' + partnerId).catch(e => {});
                 }
             } catch (e) {}
         }
