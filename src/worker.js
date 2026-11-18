@@ -206,7 +206,7 @@ export default {
       if (path === '/shop') return await handleShop(request, env, user, renderLayout);
       if (path === '/shop/buyicon') return await handleShopIcon(request, env, user, renderLayout);
       if (path === '/shop/avatar-frames') return await handleShopFrames(request, env, user, renderLayout);
-      if (path === '/shop/buycolor') return await handleShopCard ? await handleShopColor(request, env, user, renderLayout) : await handleShopColor(request, env, user, renderLayout);
+      if (path === '/shop/buycolor') return await handleShopColor(request, env, user, renderLayout);
       if (path === '/shop/inventory') return await handleInventory(request, env, user, renderLayout);
       if (path === '/mail/box') return await handleMailBox(request, env, user, renderLayout);
       if (path === '/mail/chat') return await handleMailChat(request, env, user, renderLayout, url);
