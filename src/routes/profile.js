@@ -196,25 +196,41 @@ export async function handleProfile(request, env, user, renderLayout, url) {
     </div>
 
     <!-- Hộp Quà tặng -->
-    <div class="box" style="max-width: 600px; margin: 0 auto 8px auto;">
+  <div class="box" style="max-width: 654px; margin: 0 auto 8px auto;">
     <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
         <span>Quà tặng</span>
         <span style="font-size: 10px; color: #ffcc00;">Tổng: ${totalGifts}</span>
     </div>
     <div class="box-content" style="display: flex; justify-content: space-around; text-align: center; font-size: 10px; color: #aaa;">
-        <!-- Nội dung quà tặng -->
-    </div>
-</div>
-        <div class="box-content" style="display: flex; justify-content: space-around; text-align: center; font-size: 10px; color: #aaa;">
-            <div><div style="font-size: 16px;">💌</div><div style="color: #ff55ff;">X${giftCounts.love}</div><div>Lời tỏ tình</div>${!isOwner ? `<form method="POST" style="margin-top:3px;"><input type="hidden" name="action" value="send_gift"><input type="hidden" name="gift_type" value="love"><button type="submit" class="btn" style="font-size:9px; padding:1px 5px;">Tặng (100X)</button></form>` : ''}</div>
-            <div><div style="font-size: 16px;">💋</div><div style="color: #ff55ff;">X${giftCounts.kiss}</div><div>Nụ hôn</div>${!isOwner ? `<form method="POST" style="margin-top:3px;"><input type="hidden" name="action" value="send_gift"><input type="hidden" name="gift_type" value="kiss"><button type="submit" class="btn" style="font-size:9px; padding:1px 5px;">Tặng (100X)</button></form>` : ''}</div>
-            <div><div style="font-size: 16px;">💍</div><div style="color: #ff55ff;">X${giftCounts.ring}</div><div>Lộ tình yêu</div>${!isOwner ? `<form method="POST" style="margin-top:3px;"><input type="hidden" name="action" value="send_gift"><input type="hidden" name="gift_type" value="ring"><button type="submit" class="btn" style="font-size:9px; padding:1px 5px;">Tặng (100X)</button></form>` : ''}</div>
-            <div><div style="font-size: 16px;">🌸</div><div style="color: #ff55ff;">X${giftCounts.flower}</div><div>Thích bạn</div>${!isOwner ? `<form method="POST" style="margin-top:3px;"><input type="hidden" name="action" value="send_gift"><input type="hidden" name="gift_type" value="flower"><button type="submit" class="btn" style="font-size:9px; padding:1px 5px;">Tặng (100X)</button></form>` : ''}</div>
+        <div>
+            <div style="font-size: 16px;">🎁</div>
+            <div style="font-size: 11px; color: #ff55ff;">${giftCounts.love}</div>
+            <div>Lời tỏ tình</div>
+            ${isOwner ? `<form method="POST" style="margin: 0;"><input type="hidden" name="action" value="return_gift"><input type="hidden" name="gift_type" value="love"><button type="submit" style="background: none; border: none; color: #ff55ff; font-size: 9px; cursor: pointer; text-decoration: underline;">Trả về</button></form>` : ''}
+        </div>
+        <div>
+            <div style="font-size: 16px;">💍</div>
+            <div style="font-size: 11px; color: #ff55ff;">${giftCounts.ring}</div>
+            <div>Nụ hôn</div>
+            ${isOwner ? `<form method="POST" style="margin: 0;"><input type="hidden" name="action" value="return_gift"><input type="hidden" name="gift_type" value="ring"><button type="submit" style="background: none; border: none; color: #ff55ff; font-size: 9px; cursor: pointer; text-decoration: underline;">Trả về</button></form>` : ''}
+        </div>
+        <div>
+            <div style="font-size: 16px;">🌹</div>
+            <div style="font-size: 11px; color: #ff55ff;">${giftCounts.flower}</div>
+            <div>Lố tình yêu</div>
+            ${isOwner ? `<form method="POST" style="margin: 0;"><input type="hidden" name="action" value="return_gift"><input type="hidden" name="gift_type" value="flower"><button type="submit" style="background: none; border: none; color: #ff55ff; font-size: 9px; cursor: pointer; text-decoration: underline;">Trả về</button></form>` : ''}
+        </div>
+        <div>
+            <div style="font-size: 16px;">🌸</div>
+            <div style="font-size: 11px; color: #ff55ff;">${giftCounts.rose || 0}</div>
+            <div>Thích bạn</div>
+            ${isOwner ? `<form method="POST" style="margin: 0;"><input type="hidden" name="action" value="return_gift"><input type="hidden" name="gift_type" value="rose"><button type="submit" style="background: none; border: none; color: #ff55ff; font-size: 9px; cursor: pointer; text-decoration: underline;">Trả về</button></form>` : ''}
         </div>
     </div>
+</div>
 
     <!-- Thông tin chi tiết -->
-   <div class="box" style="max-width: 654px; margin: 0 auto 8px auto;">
+<div class="box" style="max-width: px; margin: 0 auto 8px auto;">
     <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
         <span>Thông tin chi tiết</span>
         ${isOwner ? `<a href="javascript:void(0)" onclick="openSettingsModal()" style="font-size: 10px; color: #ffcc00;">[Chỉnh sửa]</a>` : ''}
