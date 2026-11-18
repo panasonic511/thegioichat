@@ -4,7 +4,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         return Response.redirect(new URL('/mail/box', request.url), 302);
     }
 
-    // Tự động kiểm tra và tạo bảng mail_box nếu chưa tồn tại để chống lỗi không gửi được tin nhắn
+    // Tự động tạo bảng nếu chưa có
     try {
         await env.DB.prepare(`
             CREATE TABLE IF NOT EXISTS mail_box (
@@ -29,7 +29,6 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                 ).bind(user.id, partnerId, message.trim()).run();
             }
         } catch (err) {
-            // Trường hợp bảng cũ dùng cột user_id / partner_id thay vì sender_id / receiver_id
             try {
                 const formData = await request.formData();
                 const message = formData.get('message');
@@ -53,11 +52,16 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         return new Response("Không tìm thấy thành viên này.", { status: 404 });
     }
 
-    // Đánh dấu đã đọc tin nhắn
+    // NGAY KHI VÀO TRANG CHAT: Đánh dấu tất cả tin nhắn từ người này thành ĐÃ ĐỌC (is_read = 1) để tắt thông báo/bong bóng
     try {
         await env.DB.prepare(
-            "UPDATE mail_box SET is_read = 1 WHERE (receiver_id = ? AND sender_id = ?) OR (partner_id = ? AND user_id = ?)"
-        ).bind(user.id, partnerId, user.id, partnerId).run();
+            "UPDATE mail_box SET is_read = 1 WHERE receiver_id = ? AND sender_id = ?"
+        ).bind(user.id, partnerId).run();
+    } catch (e) {}
+    try {
+        await env.DB.prepare(
+            "UPDATE mail_box SET is_read = 1 WHERE partner_id = ? AND user_id = ?"
+        ).bind(user.id, partnerId).run();
     } catch (e) {}
 
     // Lấy lịch sử tin nhắn
