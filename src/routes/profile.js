@@ -260,7 +260,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             <span>Thông tin chi tiết</span>
             ${isOwner ? `<a href="javascript:void(0)" onclick="openSettingsModal()" style="font-size: 10px; color: #ffcc00;">[Chỉnh sửa]</a>` : ''}
         </div>
-        <div class="box-content" style="font-size: 15px; line-height: 1.8; padding: 15px;">
+        <div class="box-content" style="font-size: 15px; line-height: 1.8; padding: 8px;">
             <div>❤️ Hẹn hò: <b>${profileUser.relationships || 'Đang độc thân'}</b></div>
             <div>👤 Giới tính: <b>${profileUser.gender || 'Chưa cập nhật'}</b></div>
             <div>⭐ Level: <b style="color: #ffcc00;">${profileUser.level || 1}</b> - <a href="/profile/level" style="color: #00ff00;">Kiểm tra</a></div>
