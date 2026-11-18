@@ -6,7 +6,15 @@ export async function handleShop(request, env, user, renderLayout) {
 
     const activeIcon = user.active_icon ? `${user.active_icon} ` : '';
     const displayName = user.display_name || user.username || 'Thành viên';
-    const nameColor = user.name_color || '#ffffff';
+    
+    // Tạo phong cách hiển thị tên nick chuẩn hiệu ứng WAP (màu, glow, viền chữ)
+    const nameColor = user.name_color || '#00ff00';
+    let nameStyle = `color: ${nameColor}; font-weight: bold;`;
+    let shadows = [];
+    if (user.name_glow && user.name_glow !== '#000000') shadows.push(`0 0 6px ${user.name_glow}`);
+    if (user.name_border_glow && user.name_border_glow !== '#000000') shadows.push(`0 0 4px ${user.name_border_glow}`);
+    if (shadows.length > 0) nameStyle += ` text-shadow: ${shadows.join(', ')};`;
+    if (user.name_border && user.name_border !== '#000000') nameStyle += ` -webkit-text-stroke: 0.5px ${user.name_border};`;
 
     const content = `
     <style>
@@ -29,7 +37,7 @@ export async function handleShop(request, env, user, renderLayout) {
         <div style="display: flex; align-items: center; gap: 10px;">
             <img src="${avt}" width="40" height="40" style="border-radius: 6px; object-fit: cover; border: 1px solid ${user.border_color || '#ffcc00'};">
             <div>
-                <div style="font-weight: bold; font-size: 14px; color: ${nameColor};">${activeIcon}${displayName}</div>
+                <div style="font-size: 14px;"><a href="/profile?user=${user.id}" style="${nameStyle}">${activeIcon}${displayName}</a></div>
                 <div style="font-size: 12px; margin-top: 2px;">
                     <span style="color: #ffcc00;">👑 ${(user.gold || 0).toLocaleString()}</span>
                     <span style="color: #aaa; margin-left: 8px;">🪙 ${(user.coins || 0).toLocaleString()}</span>
