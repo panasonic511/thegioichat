@@ -1,182 +1,129 @@
-import { renderUser } from '../utils/userStyle.js';
-
 export async function handleMailChat(request, env, user, renderLayout, url) {
-    const partnerId = parseInt(url.searchParams.get('user'));
-    if (!partnerId || partnerId === user.id) {
-        return new Response("Người dùng không hợp lệ!", { status: 400 });
+    const partnerId = url.searchParams.get('user');
+    if (!partnerId) {
+        return Response.redirect(new URL('/mail/box', request.url), 302);
     }
 
-    // Tự động tạo bảng tin nhắn (messages) nếu chưa có
+    // Xử lý gửi tin nhắn mới (POST)
+    if (request.method === 'POST') {
+        try {
+            const formData = await request.formData();
+            const message = formData.get('message');
+            if (message && message.trim() !== '') {
+                await env.DB.prepare(
+                    "INSERT INTO mail_box (sender_id, receiver_id, message, is_read, created_at) VALUES (?, ?, ?, 0, datetime('now'))"
+                ).bind(user.id, partnerId, message.trim()).run();
+            }
+        } catch (e) {}
+        return Response.redirect(new URL(`/mail/chat?user=${partnerId}`, request.url), 302);
+    }
+
+    // Lấy thông tin đối phương
+    let partner = null;
     try {
-        await env.DB.prepare(`
-            CREATE TABLE IF NOT EXISTS messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                sender_id INTEGER NOT NULL,
-                receiver_id INTEGER NOT NULL,
-                content TEXT NOT NULL,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-        `).run();
+        partner = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(partnerId).first();
     } catch (e) {}
 
-    let partner = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(partnerId).first();
-    if (!partner) return new Response("Không tìm thấy thành viên này!", { status: 404 });
-
-    // Xử lý gửi tin nhắn POST
-    if (request.method === 'POST') {
-        const formData = await request.formData();
-        const contentText = (formData.get('content') || '').trim();
-        if (contentText) {
-            await env.DB.prepare("INSERT INTO messages (sender_id, receiver_id, content) VALUES (?, ?, ?)")
-                .bind(user.id, partnerId, contentText)
-                .run();
-            
-            // Nếu là gọi API AJAX trả về JSON
-            if (request.headers.get('X-Requested-With') === 'XMLHttpRequest' || url.searchParams.get('format') === 'json') {
-                return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } });
-            }
-        }
+    if (!partner) {
+        return new Response("Không tìm thấy thành viên này.", { status: 404 });
     }
 
-    // Nếu gọi API fetch ngầm lấy danh sách tin nhắn mới dạng JSON
-    if (url.searchParams.get('format') === 'json') {
-        let msgs = { results: [] };
-        try {
-            msgs = await env.DB.prepare(`
-                SELECT * FROM messages 
-                WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
-                ORDER BY id ASC
-            `).bind(user.id, partnerId, partnerId, user.id).all();
-        } catch (e) {}
-        return new Response(JSON.stringify(msgs.results || []), {
-            headers: { 'Content-Type': 'application/json;charset=UTF-8' }
-        });
-    }
-
-    // Lấy tin nhắn ban đầu
-    let messages = { results: [] };
+    // Đánh dấu đã đọc tin nhắn từ partner này
     try {
-        messages = await env.DB.prepare(`
-            SELECT * FROM messages 
-            WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
+        await env.DB.prepare(
+            "UPDATE mail_box SET is_read = 1 WHERE receiver_id = ? AND sender_id = ?"
+        ).bind(user.id, partnerId).run();
+    } catch (e) {}
+
+    // Lấy lịch sử tin nhắn
+    let messages = [];
+    try {
+        const history = await env.DB.prepare(`
+            SELECT * FROM mail_box 
+            WHERE (sender_id = ? AND receiver_id = ?) 
+               OR (sender_id = ? AND receiver_id = ?) 
             ORDER BY id ASC
         `).bind(user.id, partnerId, partnerId, user.id).all();
+        messages = history.results || [];
     } catch (e) {}
-
-    const partnerUI = renderUser(partner);
 
     const content = `
     <div class="box">
-        <div class="box-title" style="display: flex; align-items: center; gap: 6px;">
-            <a href="/profile?user=${partner.id}"><img src="${partner.avatar && !partner.avatar.includes('7gXvS6v') ? partner.avatar : 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'><rect width=\'100\' height=\'100\' fill=\'%231a1a1a\'/><circle cx=\'50\' cy=\'38\' r=\'18\' fill=\'%2300ff00\'/></svg>'}" width="24" height="24" style="${partnerUI.avatarStyle}"></a>
-            <span>💬 Trò chuyện với <a href="/profile?user=${partner.id}" style="${partnerUI.nameStyle}">${partner.display_name}</a></span>
-        </div>
-        
-        <!-- Khung chứa tin nhắn tự động trượt xuống và cập nhật ngầm -->
-        <div class="box-content" id="chat-messages-box" style="height: 300px; overflow-y: scroll; background: #000; border: 1px solid #222; padding: 6px; display: flex; flex-direction: column; gap: 6px;">
-            ${messages.results.length === 0 ? '<div style="text-align: center; color: #888; margin: auto;">Chưa có tin nhắn nào. Hãy gửi lời chào!</div>' : 
-                messages.results.map(m => renderMessageBubble(m, user.id, partner)).join('')}
-        </div>
+        <div class="box-title">🟢 Trò chuyện với ${partner.display_name || partner.username}</div>
+        <div class="box-content" style="padding: 8px;">
+            
+            <!-- Khung chứa tin nhắn -->
+            <div id="chatMessageBox" style="height: 350px; overflow-y: scroll; background: #000; border: 1px solid #333; padding: 10px; display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px;">
+                ${messages.length === 0 ? '<div style="color: #777; text-align: center; margin-top: 140px;">Chưa có tin nhắn nào. Hãy bắt đầu cuộc trò chuyện!</div>' : 
+                    messages.map(m => {
+                        const isMe = Number(m.sender_id) === Number(user.id);
+                        return `
+                        <div style="display: flex; justify-content: ${isMe ? 'flex-end' : 'flex-start'};">
+                            <div style="max-width: 75%; background: ${isMe ? '#1a3300' : '#1a1a1a'}; border: 1px solid ${isMe ? '#339900' : '#333'}; padding: 8px 12px; border-radius: 6px; color: #fff; font-size: 14px; word-break: break-word;">
+                                ${m.message}
+                            </div>
+                        </div>`;
+                    }).join('')}
+            </div>
 
-        <!-- Form gửi tin nhắn mượt mà không reload -->
-        <div style="padding: 6px; background: #111; border-top: 1px solid #333;">
-            <form id="chat-form" onsubmit="sendChatMessage(event, ${partnerId})" style="display: flex; gap: 6px; margin: 0;">
-                <input type="text" id="chat-input-text" name="content" placeholder="Nhập nội dung chát..." required autocomplete="off" style="flex: 1; background: #000; color: #00ff00; border: 1px solid #444; padding: 6px; font-size: 11px;">
-                <button type="submit" class="btn" style="background: #0055ff; color: #fff; padding: 0 12px;">Gửi</button>
+            <!-- Form gửi tin nhắn -->
+            <form method="POST" id="chatForm" style="display: flex; gap: 6px;">
+                <input type="text" name="message" id="messageInput" placeholder="Nhập nội dung chát..." required autocomplete="off" style="flex: 1; background: #000; color: #fff; border: 1px solid #444; padding: 8px; font-size: 14px; box-sizing: border-box;">
+                <button type="submit" class="btn" style="background: #0055ff; color: #fff; padding: 8px 14px; font-size: 14px;">Gửi</button>
             </form>
+            
+            <div style="text-align: center; margin-top: 10px; font-size: 13px;">
+                <a href="/mail/box">⬅ Hộp thư tin nhắn</a>
+            </div>
         </div>
     </div>
 
-    <div style="text-align: center; margin-top: 10px;"><a href="/mail/box">⬅️ Hộp thư tin nhắn</a></div>
-
-    <!-- Script Realtime Polling cho Chat -->
+    <!-- Script tự động cập nhật tin nhắn ngầm (Realtime Polling) -->
     <script>
         const currentUserId = ${user.id};
         const partnerId = ${partnerId};
+        const chatBox = document.getElementById('chatMessageBox');
 
+        // Tự động cuộn xuống tin nhắn mới nhất khi mới vào trang
         function scrollToBottom() {
-            const box = document.getElementById('chat-messages-box');
-            box.scrollTop = box.scrollHeight;
+            chatBox.scrollTop = chatBox.scrollHeight;
         }
-        window.onload = scrollToBottom;
+        scrollToBottom();
 
-        async function sendChatMessage(e, pId) {
-            e.preventDefault();
-            const input = document.getElementById('chat-input-text');
-            const text = input.value.trim();
-            if (!text) return;
-
-            const formData = new FormData();
-            formData.append('content', text);
-
+        // Kiểm tra tin nhắn mới mỗi 3 giây mà không cần F5 trang
+        setInterval(async () => {
             try {
-                const res = await fetch('/mail/chat?user=' + pId, {
-                    method: 'POST',
-                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
-                    body: formData
-                });
-                if (res.ok) {
-                    input.value = '';
-                    fetchNewMessages();
-                }
-            } catch (err) {
-                console.error('Lỗi gửi tin nhắn:', err);
-            }
-        }
-
-        async function fetchNewMessages() {
-            try {
-                const res = await fetch('/mail/chat?user=' + partnerId + '&format=json');
+                const res = await fetch('/api/realtime-check?partner_id=' + partnerId);
                 if (res.ok) {
                     const data = await res.json();
-                    const box = document.getElementById('chat-messages-box');
-                    if (data.length === 0) return;
-
-                    let html = '';
-                    data.forEach(m => {
-                        const isMe = m.sender_id === currentUserId;
-                        const align = isMe ? 'text-align: right;' : 'text-align: left;';
-                        const bg = isMe ? '#001a33' : '#1a1a1a';
-                        const borderCol = isMe ? '#0055ff' : '#444';
+                    if (data.chat_messages && data.chat_messages.length > 0) {
+                        let html = '';
+                        data.chat_messages.forEach(m => {
+                            const isMe = Number(m.sender_id) === currentUserId;
+                            html += \`
+                            <div style="display: flex; justify-content: \${isMe ? 'flex-end' : 'flex-start'};">
+                                <div style="max-width: 75%; background: \${isMe ? '#1a3300' : '#1a1a1a'}; border: 1px solid \${isMe ? '#339900' : '#333'}; padding: 8px 12px; border-radius: 6px; color: #fff; font-size: 14px; word-break: break-word;">
+                                    \${m.message}
+                                </div>
+                            </div>\`;
+                        });
                         
-                        html += \`
-                        <div style="\${align} margin-bottom: 4px;">
-                            <div style="display: inline-block; background: \${bg}; border: 1px solid \${borderCol}; padding: 6px 10px; border-radius: 4px; max-width: 80%; text-align: left; word-break: break-all; font-size: 11px; color: #fff;">
-                                \${m.content}
-                            </div>
-                        </div>\`;
-                    });
-                    
-                    const isAtBottom = box.scrollHeight - box.scrollTop <= box.clientHeight + 60;
-                    box.innerHTML = html;
-                    if (isAtBottom) scrollToBottom();
+                        // Chỉ cập nhật nếu có thay đổi nội dung để tránh giật khung cuộn
+                        if (chatBox.innerHTML !== html) {
+                            const isAtBottom = chatBox.scrollHeight - chatBox.scrollTop <= chatBox.clientHeight + 50;
+                            chatBox.innerHTML = html;
+                            if (isAtBottom) {
+                                scrollToBottom();
+                            }
+                        }
+                    }
                 }
-            } catch (err) {
-                console.error('Lỗi tải tin nhắn ngầm:', err);
-            }
-        }
-
-        // Tự động kiểm tra tin nhắn mới mỗi 3 giây
-        setInterval(fetchNewMessages, 3000);
+            } catch (e) {}
+        }, 3000);
     </script>
     `;
 
-    return new Response(renderLayout('Tin nhắn', content, user), {
+    return new Response(renderLayout(`Trò chuyện với ${partner.display_name || partner.username}`, content, user), {
         headers: { 'Content-Type': 'text/html;charset=UTF-8' }
     });
-}
-
-function renderMessageBubble(m, currentUserId, partner) {
-    const isMe = m.sender_id === currentUserId;
-    const align = isMe ? 'text-align: right;' : 'text-align: left;';
-    const bg = isMe ? '#001a33' : '#1a1a1a';
-    const borderCol = isMe ? '#0055ff' : '#444';
-
-    return `
-    <div style="${align} margin-bottom: 4px;">
-        <div style="display: inline-block; background: ${bg}; border: 1px solid ${borderCol}; padding: 6px 10px; border-radius: 4px; max-width: 80%; text-align: left; word-break: break-all; font-size: 11px; color: #fff;">
-            ${m.content}
-        </div>
-    </div>
-    `;
 }
