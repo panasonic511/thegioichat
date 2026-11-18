@@ -24,7 +24,6 @@ export function renderUser(u) {
         }
     });
 
-    // Định nghĩa 2 avatar mặc định riêng biệt cho Nam và Nữ
     const defaultAvatarMale = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'><rect width='120' height='120' fill='%230f172a'/><circle cx='60' cy='45' r='22' fill='%2338bdf8'/><path d='M20 105 C20 80, 100 80, 100 105' fill='%2338bdf8'/></svg>";
     const defaultAvatarFemale = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'><rect width='120' height='120' fill='%231f1025'/><circle cx='60' cy='45' r='22' fill='%23f472b6'/><path d='M20 105 C20 80, 100 80, 100 105' fill='%23f472b6'/></svg>";
 
@@ -50,11 +49,14 @@ export function renderUser(u) {
 
     const displayName = safeUser.display_name || safeUser.username || 'Thành viên';
     const userId = safeUser.user_id || safeUser.id || 0;
+    
+    // Tự động gắn Icon trước tên người dùng
+    const activeIcon = safeUser.active_icon ? `${safeUser.active_icon} ` : '';
 
     return {
         nameStyle,
         avatarStyle,
-        nameHtml: `<a href="/profile?user=${userId}" style="${nameStyle}">${displayName}</a>`,
+        nameHtml: `<a href="/profile?user=${userId}" style="${nameStyle}">${activeIcon}${displayName}</a>`,
         avatarHtml: `<a href="/profile?user=${userId}"><img src="${avatarUrl}" style="${avatarStyle}"></a>`
     };
 }
@@ -91,10 +93,8 @@ function renderLayout(title, content, user) {
     <title>${title} - Thế Giới Chat</title>
     <style>
         body { background: #000; color: #00ff00; font-family: Arial, sans-serif; margin: 0; padding: 0; font-size: 14px; line-height: 1.6; }
-        
         .header { background: #000; text-align: center; padding: 16px 0; border-bottom: 2px solid #222; }
         .header h1 { color: #fff; margin: 0; font-size: 24px; font-weight: bold; text-shadow: 0 0 12px #00ff00; letter-spacing: 1px; }
-        
         @keyframes rainbowGlow {
             0% { color: #ff0000; text-shadow: 0 0 6px #ff0000; }
             14% { color: #ff7700; text-shadow: 0 0 6px #ff7700; }
@@ -106,63 +106,20 @@ function renderLayout(title, content, user) {
             100% { color: #ff0000; text-shadow: 0 0 6px #ff0000; }
         }
         .slogan { font-size: 13px; font-weight: bold; margin-top: 6px; animation: rainbowGlow 4s infinite linear; }
-        
         .top-menu-wrapper { background: #111; border-bottom: 2px solid #222; padding: 10px 0; }
         .top-menu-bar { max-width: 680px; margin: 0 auto; display: flex; justify-content: space-around; align-items: center; text-align: center; padding: 0 10px; box-sizing: border-box; }
         .top-menu-item { color: #00ff00; text-decoration: none; font-size: 13px; display: flex; flex-direction: column; align-items: center; font-weight: bold; flex: 1; position: relative; }
         .top-menu-item:hover { color: #fff; text-decoration: underline; }
         .top-menu-icon { font-size: 20px; margin-bottom: 3px; }
-
         .container { padding: 12px; max-width: 680px; margin: 0 auto; box-sizing: border-box; }
         .box { background: #080808; border: 1px solid #333; margin-bottom: 12px; box-sizing: border-box; }
         .box-title { background: linear-gradient(to right, #141414, #222); color: #00ff00; padding: 10px 12px; font-weight: bold; border-bottom: 1px solid #333; font-size: 14px; display: flex; align-items: center; gap: 8px; }
         .box-content { padding: 12px; }
-
         a { color: #00ff00; text-decoration: none; }
         a:hover { text-decoration: underline; color: #fff; }
-
         .btn { background: #1c1c1c; color: #00ff00; border: 1px solid #444; padding: 8px 14px; cursor: pointer; font-size: 13px; font-weight: bold; display: inline-block; text-align: center; box-sizing: border-box; }
         .btn:hover { background: #333; border-color: #00ff00; color: #fff; }
-
         .footer { text-align: center; padding: 16px; font-size: 13px; color: #777; border-top: 1px solid #222; background: #050505; margin-bottom: 40px; }
-
-        @keyframes pulseBubble {
-            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.8); }
-            70% { transform: scale(1.12); box-shadow: 0 0 0 14px rgba(255, 0, 0, 0); }
-            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
-        }
-        .floating-bubble {
-            position: fixed;
-            bottom: 30px;
-            right: 30px;
-            background: #111;
-            border: 3px solid #ff3333;
-            color: #fff;
-            width: 58px;
-            height: 58px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 26px;
-            text-decoration: none;
-            box-shadow: 0 6px 20px rgba(0,0,0,0.9);
-            z-index: 99999;
-            animation: pulseBubble 1.8s infinite;
-            display: none;
-        }
-        .floating-bubble .badge-count {
-            position: absolute;
-            top: -6px;
-            right: -6px;
-            background: #ff0000;
-            color: #fff;
-            font-size: 12px;
-            font-weight: bold;
-            padding: 3px 8px;
-            border-radius: 50px;
-            border: 2px solid #fff;
-        }
     </style>
 </head>
 <body>
@@ -170,68 +127,8 @@ function renderLayout(title, content, user) {
         <h1>THẾ GIỚI CHAT</h1>
         <div class="slogan">Wap chát - Kết bạn - Giải trí</div>
     </div>
-    
-    <div class="top-menu-wrapper">
-        <div class="top-menu-bar">
-            ${menuBarHtml}
-        </div>
-    </div>
-
+    <div class="top-menu-wrapper"><div class="top-menu-bar">${menuBarHtml}</div></div>
     <div class="container">${content}</div>
-
-    ${user ? `
-    <a href="/mail/box" id="floatingMsgBubble" class="floating-bubble" title="Bạn có tin nhắn mới!">
-        ✉️
-        <span id="bubbleCount" class="badge-count">0</span>
-    </a>
-    <script>
-        async function updateRealtimeData() {
-            try {
-                const res = await fetch('/api/realtime-check');
-                if (res.ok) {
-                    const data = await res.json();
-                    const unreadMsg = data.unread_messages || 0;
-                    const unreadNoti = data.unread_notifications || 0;
-                    const totalUnread = unreadMsg + unreadNoti;
-
-                    const msgBadge = document.getElementById('msgBadge');
-                    if (msgBadge) {
-                        if (unreadMsg > 0) {
-                            msgBadge.innerText = unreadMsg;
-                            msgBadge.style.display = 'inline-block';
-                        } else {
-                            msgBadge.style.display = 'none';
-                        }
-                    }
-
-                    const notiBadge = document.getElementById('notiBadge');
-                    if (notiBadge) {
-                        if (unreadNoti > 0) {
-                            notiBadge.innerText = unreadNoti;
-                            notiBadge.style.display = 'inline-block';
-                        } else {
-                            notiBadge.style.display = 'none';
-                        }
-                    }
-
-                    const bubble = document.getElementById('floatingMsgBubble');
-                    const countSpan = document.getElementById('bubbleCount');
-                    if (bubble && countSpan) {
-                        if (totalUnread > 0) {
-                            countSpan.innerText = totalUnread;
-                            bubble.style.display = 'flex';
-                        } else {
-                            bubble.style.display = 'none';
-                        }
-                    }
-                }
-            } catch (e) {}
-        }
-        updateRealtimeData();
-        setInterval(updateRealtimeData, 4000);
-    </script>
-    ` : ''}
-
     <div class="footer">
         <div><a href="/">Home</a> · <a href="/terms">Điều khoản</a> · <a href="/contact">Liên hệ</a> ${user ? '· <a href="/logout">Đăng xuất</a>' : ''}</div>
         <div style="color: #00ff00; margin-top: 8px;">Copyright © 2026 - Thế Giới Chat</div>
@@ -260,7 +157,7 @@ export default {
       if (path === '/') return await handleIndex(request, env, user, renderLayout);
       if (path === '/profile') return await handleProfile(request, env, user, renderLayout, url);
       if (path === '/profile/level') return await handleLevel(request, env, user, renderLayout);
-      if (path === '/shop') return await handleShop(request, env, user, renderLayout);
+      if (path === '/shop' || path === '/shop/buyicon') return await handleShop(request, env, user, renderLayout);
       if (path === '/shop/avatar-frames') return await handleShopFrames(request, env, user, renderLayout);
       if (path === '/shop/buycolor') return await handleShopColor(request, env, user, renderLayout);
       if (path === '/shop/inventory') return await handleInventory(request, env, user, renderLayout);
