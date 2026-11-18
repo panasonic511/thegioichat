@@ -46,6 +46,7 @@ export async function handleFeed(request, env, user, renderLayout) {
             posts.forEach(post => {
                 const authorUI = renderUser(post);
                 const picon = post.active_icon ? `<img src="${post.active_icon}" style="width: 14px; height: 14px; vertical-align: middle; display: inline-block; margin-right: 2px;">` : '';
+                const userLevel = post.level || 1;
                 
                 postsHtml += `
                     <div class="box" style="max-width: 600px; margin: 0 auto 8px auto; padding: 8px; background: #141414; border: 1px solid #333;">
@@ -56,7 +57,7 @@ export async function handleFeed(request, env, user, renderLayout) {
                             <div>
                                 <div style="font-size: 12px; margin-bottom: 2px;">
                                     ${picon}${authorUI.nameHtml}
-                                    <span style="color: #ffcc00; font-size: 10px;">[Lv.${post.level || 1}]</span>
+                                    <span style="color: #ffcc00; font-size: 10px;">[Lv.${userLevel}]</span>
                                 </div>
                                 <div style="font-size: 9px; color: #aaa;">${post.created_at}</div>
                             </div>
