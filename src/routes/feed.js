@@ -193,30 +193,40 @@ export async function handleFeed(request, env, user, renderLayout) {
                     <div style="color: #ddd; font-size: 13px; word-break: break-word; white-space: pre-wrap; margin-bottom: 6px;">${p.content || ''}</div>
                     ${imageTag}
 
-                    <!-- Thanh Tương tác Thả tim & Bình luận (AJAX Mượt mà không reload) -->
+                    <!-- Thanh Tương tác Thả tim & Nút Mở khung Bình luận gọn gàng -->
                     <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #222; margin-top: 10px; padding-top: 8px;">
-                        <form onsubmit="submitAjax(event, this)" style="margin: 0;">
-                            <input type="hidden" name="action" value="like_post">
-                            <input type="hidden" name="post_id" value="${p.id}">
-                            <button type="submit" style="background: none; border: none; color: ${heartColor}; cursor: pointer; font-size: 14px;">
-                                ❤️ <span style="font-size: 11px; color: #ccc;" id="like-count-${p.id}">${likeCount}</span>
+                        <div style="display: flex; align-items: center; gap: 14px;">
+                            <!-- Nút Thả tim AJAX -->
+                            <form onsubmit="submitAjax(event, this)" style="margin: 0;">
+                                <input type="hidden" name="action" value="like_post">
+                                <input type="hidden" name="post_id" value="${p.id}">
+                                <button type="submit" style="background: none; border: none; color: ${heartColor}; cursor: pointer; font-size: 14px; padding: 0;">
+                                    ❤️ <span style="font-size: 11px; color: #ccc;" id="like-count-${p.id}">${likeCount}</span>
+                                </button>
+                            </form>
+                            
+                            <!-- Nút Icon Bình luận để bật/tắt khung soạn thảo -->
+                            <button type="button" onclick="toggleCommentBox(${p.id})" style="background: none; border: none; color: #aaa; cursor: pointer; font-size: 13px; padding: 0; display: flex; align-items: center; gap: 4px;">
+                                💬 <span style="font-size: 11px;" id="comm-count-${p.id}">${comments.length}</span> bình luận
                             </button>
-                        </form>
-                        <span style="font-size: 11px; color: #888;">💬 ${comments.length} bình luận</span>
+                        </div>
+                        <span style="font-size: 10px; color: #666;">Tương tác</span>
                     </div>
 
-                    <!-- Khung hiển thị bình luận -->
+                    <!-- Khung hiển thị danh sách bình luận -->
                     <div style="margin-top: 6px;" id="comment-list-${p.id}">
                         ${commentsHtml}
                     </div>
 
-                    <!-- Form gửi bình luận AJAX -->
-                    <form onsubmit="submitCommentAjax(event, ${p.id})" style="margin-top: 8px; display: flex; gap: 6px;">
-                        <input type="hidden" name="action" value="add_comment">
-                        <input type="hidden" name="post_id" value="${p.id}">
-                        <input type="text" name="comment" id="comment-input-${p.id}" placeholder="Viết bình luận..." style="flex: 1; background: #0a0a0a; color: #fff; border: 1px solid #333; padding: 6px; font-size: 11px; border-radius: 4px;" required>
-                        <button type="submit" style="background: #0055ff; color: #fff; border: none; padding: 6px 12px; font-size: 11px; border-radius: 4px; cursor: pointer;">Gửi</button>
-                    </form>
+                    <!-- Form gửi bình luận (Ẩn mặc định, chỉ hiện khi bấm icon 💬) -->
+                    <div id="comment-box-${p.id}" style="display: none; margin-top: 8px;">
+                        <form onsubmit="submitCommentAjax(event, ${p.id})" style="display: flex; gap: 6px;">
+                            <input type="hidden" name="action" value="add_comment">
+                            <input type="hidden" name="post_id" value="${p.id}">
+                            <input type="text" name="comment" id="comment-input-${p.id}" placeholder="Viết bình luận của bạn..." style="flex: 1; background: #0a0a0a; color: #fff; border: 1px solid #333; padding: 6px; font-size: 11px; border-radius: 4px;" required>
+                            <button type="submit" style="background: #0055ff; color: #fff; border: none; padding: 6px 12px; font-size: 11px; border-radius: 4px; cursor: pointer;">Gửi</button>
+                        </form>
+                    </div>
                 </div>`;
             }
         }
@@ -278,6 +288,17 @@ export async function handleFeed(request, env, user, renderLayout) {
     <script>
         function openStoryModal() { document.getElementById('story-modal').style.display = 'flex'; }
         function closeStoryModal() { document.getElementById('story-modal').style.display = 'none'; }
+
+        // Hàm ẩn/hiện khung viết bình luận khi bấm vào icon 💬
+        function toggleCommentBox(postId) {
+            const box = document.getElementById('comment-box-' + postId);
+            if (box.style.display === 'none' || box.style.display === '') {
+                box.style.display = 'block';
+                document.getElementById('comment-input-' + postId).focus();
+            } else {
+                box.style.display = 'none';
+            }
+        }
 
         // Hàm tự động nén ảnh độc lập (MaxWidth 600px, Quality 0.65)
         function compressAndSetImage(fileInput, targetInputSelector) {
@@ -365,6 +386,13 @@ export async function handleFeed(request, env, user, renderLayout) {
                     const list = document.getElementById('comment-list-' + postId);
                     list.innerHTML += \`<div style="font-size: 11px; margin-top: 4px; border-top: 1px solid #222; padding-top: 4px;"><span style="color: #00ff00; font-weight: bold;">Bạn:</span> <span style="color: #ddd;">\${text}</span></div>\`;
                     input.value = '';
+                    
+                    // Cập nhật lại số lượng bình luận hiển thị trên nút 💬
+                    const commCountSpan = document.querySelector('#comm-count-' + postId);
+                    if (commCountSpan) {
+                        let currentCount = parseInt(commCountSpan.innerText) || 0;
+                        commCountSpan.innerText = currentCount + 1;
+                    }
                 }
             } catch (e) {
                 window.location.reload();
