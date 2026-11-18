@@ -48,7 +48,7 @@ export function renderUser(u) {
     return {
         nameStyle,
         avatarStyle,
-        const nameHtml = `<a href="/profile?user=${user.id}" style="${nameStyle}">${icon}${name}</a>`;
+        const nameHtml = `<a href="/profile?user=${user.id}" style="${nameStyle}">${icon}${name}</a>`,
         avatarHtml: `<a href="/profile?user=${userId}"><img src="${avatarUrl}" style="${avatarStyle}"></a>`
     };
 }
