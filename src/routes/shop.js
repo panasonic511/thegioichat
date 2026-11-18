@@ -16,6 +16,22 @@ export async function handleShop(request, env, user, renderLayout) {
     if (shadows.length > 0) nameStyle += ` text-shadow: ${shadows.join(', ')};`;
     if (user.name_border && user.name_border !== '#000000') nameStyle += ` -webkit-text-stroke: 0.5px ${user.name_border};`;
 
+    // Hàm hiệu ứng chức vụ chuẩn WAP cho Chủ Wap / Admin / Mod
+    function getRoleBadgeStyle(role) {
+        const r = String(role || 'Thành Viên').trim();
+        if (r === 'Chủ Wap') {
+            return 'background: #2a0800; color: #ff3300; border: 1px solid #ff3300; text-shadow: 0 0 6px #ff0000; font-weight: bold; padding: 2px 8px; font-size: 11px; border-radius: 4px; display: inline-block;';
+        } else if (r === 'Admin') {
+            return 'background: #2a1a00; color: #ffcc00; border: 1px solid #ffcc00; text-shadow: 0 0 6px #ffcc00; font-weight: bold; padding: 2px 8px; font-size: 11px; border-radius: 4px; display: inline-block;';
+        } else if (r === 'Mod') {
+            return 'background: #001a2a; color: #00ffff; border: 1px solid #00ffff; text-shadow: 0 0 6px #00ffff; font-weight: bold; padding: 2px 8px; font-size: 11px; border-radius: 4px; display: inline-block;';
+        } else {
+            return 'background: #141414; color: #00ff00; border: 1px solid #444; font-weight: bold; padding: 2px 8px; font-size: 11px; border-radius: 4px; display: inline-block;';
+        }
+    }
+
+    const roleBadge = user.role ? `<span style="${getRoleBadgeStyle(user.role)}">${user.role}</span>` : '';
+
     const content = `
     <style>
         .shop-user-bar { background: #141414; border: 1px solid #2a2a2a; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-radius: 4px; }
@@ -45,7 +61,7 @@ export async function handleShop(request, env, user, renderLayout) {
                 </div>
             </div>
         </div>
-        <div style="color: #00ff00; font-weight: bold; font-size: 13px;">${user.role || 'Thành viên'}</div>
+        <div>${roleBadge}</div>
     </div>
 
     <!-- Box 1: Cửa hàng (Nạp Xu / Nạp Vàng) -->
