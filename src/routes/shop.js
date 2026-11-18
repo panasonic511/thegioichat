@@ -4,10 +4,11 @@ export async function handleShop(request, env, user, renderLayout) {
     const sysAvt = user.gender === 'female' ? defaultAvatarFemale : defaultAvatarMale;
     const avt = (user.avatar && !String(user.avatar).includes('7gXvS6v')) ? user.avatar : sysAvt;
 
+    // Lấy icon đang được kích hoạt từ cột active_icon của user
     const activeIcon = user.active_icon ? `${user.active_icon} ` : '';
     const displayName = user.display_name || user.username || 'Thành viên';
     
-    // Tạo phong cách hiển thị tên nick chuẩn hiệu ứng WAP (màu, glow, viền chữ)
+    // Tạo phong cách hiệu ứng tên nick
     const nameColor = user.name_color || '#00ff00';
     let nameStyle = `color: ${nameColor}; font-weight: bold;`;
     let shadows = [];
@@ -16,7 +17,7 @@ export async function handleShop(request, env, user, renderLayout) {
     if (shadows.length > 0) nameStyle += ` text-shadow: ${shadows.join(', ')};`;
     if (user.name_border && user.name_border !== '#000000') nameStyle += ` -webkit-text-stroke: 0.5px ${user.name_border};`;
 
-    // Hàm hiệu ứng chức vụ chuẩn WAP cho Chủ Wap / Admin / Mod
+    // Hàm hiệu ứng chức vụ
     function getRoleBadgeStyle(role) {
         const r = String(role || 'Thành Viên').trim();
         if (r === 'Chủ Wap') {
@@ -48,7 +49,6 @@ export async function handleShop(request, env, user, renderLayout) {
         .topup-vang { background: linear-gradient(135deg, #2b180a 0%, #42240e 100%); border: 1px solid #5e3414; }
     </style>
 
-    <!-- Thanh thông tin tài khoản -->
     <div class="shop-user-bar">
         <div style="display: flex; align-items: center; gap: 10px;">
             <img src="${avt}" width="40" height="40" style="border-radius: 6px; object-fit: cover; border: 1px solid ${user.border_color || '#ffcc00'};">
@@ -64,7 +64,6 @@ export async function handleShop(request, env, user, renderLayout) {
         <div>${roleBadge}</div>
     </div>
 
-    <!-- Box 1: Cửa hàng (Nạp Xu / Nạp Vàng) -->
     <div class="box">
         <div class="box-title" style="justify-content: space-between;">
             <span>🛒 Cửa hàng</span>
@@ -94,7 +93,6 @@ export async function handleShop(request, env, user, renderLayout) {
         </div>
     </div>
 
-    <!-- Box 2: Nâng cấp tài khoản -->
     <div class="box">
         <div class="box-title">⭐ Nâng cấp tài khoản</div>
         <div class="box-content">
@@ -111,7 +109,6 @@ export async function handleShop(request, env, user, renderLayout) {
         </div>
     </div>
 
-    <!-- Box 3: Vật phẩm và trang trí -->
     <div class="box">
         <div class="box-title">★ Vật phẩm và trang trí</div>
         <div class="box-content">
