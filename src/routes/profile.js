@@ -256,6 +256,7 @@ ${(() => {
         </div>
     `;
 })()}
+</div>
 
     <!-- Thông tin chi tiết -->
 <div class="box" style="max-width: 654px; margin: 0 auto 8px auto;">
