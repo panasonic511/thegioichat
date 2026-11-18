@@ -1,3 +1,5 @@
+import { renderUser } from '../worker.js';
+
 export async function handleMailChat(request, env, user, renderLayout, url) {
 
 const partnerId = url.searchParams.get('user');
@@ -85,8 +87,12 @@ return Response.redirect(new URL(`/mail/chat?user=${partnerId}`, request.url), 3
 let partner = null;
 
 try {
-
-partner = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(partnerId).first();
+    // Truy vấn đầy đủ các trường style tên và icon của đối phương
+    partner = await env.DB.prepare(`
+        SELECT id, username, display_name, avatar, border_color, avatar_glow, 
+               name_color, name_glow, name_border, name_border_glow, active_icon, role 
+        FROM users WHERE id = ?
+    `).bind(partnerId).first();
 
 } catch (e) {}
 
@@ -165,11 +171,18 @@ messages = history2.results || [];
 
 
 
+// Render style tên đầy đủ cho đối phương ở tiêu đề (loại bỏ cấp bậc/chức vụ)
+const rPartnerHeader = renderUser(partner);
+
+
+
 const content = `
 
 <div class="box">
 
-<div class="box-title">🟢 Trò chuyện với ${partner.display_name || partner.username}</div>
+<div class="box-title" style="display: flex; align-items: center; gap: 6px;">
+    <span>🟢 Trò chuyện với</span> ${rPartnerHeader.nameHtml}
+</div>
 
 <div class="box-content" style="padding: 8px;">
 
