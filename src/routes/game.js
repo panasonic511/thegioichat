@@ -8,6 +8,7 @@ export async function handleGame(request, env, user, renderLayout) {
                 Thử vận may với các trò chơi trúng thưởng, đập hũ, tài xỉu và giao lưu cùng bạn bè trực tuyến!
             </p>
             <div style="display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;">
+            <a href="/game/ludo" class="btn" style="background: #0055ff;">🎲 Chơi Ludo</a>
                 <a href="#" class="btn" style="background: #0055ff;">🎲 Chơi Tài Xỉu</a>
                 <a href="#" class="btn" style="background: #aa0000;">🎯 Vòng Quay May Mắn</a>
                 <a href="#" class="btn" style="background: #00aa00;">💰 Đập Hũ Xu</a>
