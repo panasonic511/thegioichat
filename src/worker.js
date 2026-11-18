@@ -1,3 +1,4 @@
+import { handleGameLudo } from './routes/game_ludo.js';
 import { handleLogin, handleRegister } from './routes/auth.js';
 import { handleLogout } from './routes/logout.js';
 import { handleIndex } from './routes/index.js';
@@ -206,7 +207,10 @@ export default {
           return Response.redirect(new URL('/login', request.url), 302);
       }
 
-      if (path === '/') return await handleIndex(request, env, user, renderLayout);
+      if (url.pathname.startsWith('/game/ludo')) {
+    return await handleGameLudo(request, env, user, renderLayout, url);
+}
+    if (path === '/') return await handleIndex(request, env, user, renderLayout);
       if (path === '/profile') return await handleProfile(request, env, user, renderLayout, url);
       if (path === '/profile/level') return await handleLevel(request, env, user, renderLayout);
       if (path === '/shop') return await handleShop(request, env, user, renderLayout);
