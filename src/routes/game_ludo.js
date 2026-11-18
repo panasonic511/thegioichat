@@ -340,7 +340,6 @@ async function handleRoomAction(request, env, user, roomId) {
     return json({ success: false, error: "Hành động không hợp lệ." }, 400);
 }
 function boardMarkup(state, myId) {
-function boardMarkup(state, myId) {
     if (!state) return `<div class="notice">Trận đấu chưa bắt đầu.</div>`;
     const active = state.players[state.current];
     const rows = state.players.map((p, pi) => `
