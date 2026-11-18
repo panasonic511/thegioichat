@@ -47,7 +47,7 @@ export async function handleGameLudo(request, env, user, renderLayout, url) {
         }
     }
 
-    // 2. Giao diện phòng chơi chứa khung nhúng HTML5 Game engine (GET /game/ludo/room?id=...)
+    // 2. Giao diện phòng chơi kèm khung nhúng Game HTML5 chuẩn và âm thanh sống động (GET /game/ludo/room?id=...)
     if (path === '/game/ludo/room') {
         const roomId = url.searchParams.get('id');
         if (!roomId) return Response.redirect(new URL('/game/ludo', request.url), 302);
@@ -95,8 +95,13 @@ export async function handleGameLudo(request, env, user, renderLayout, url) {
                     👑 Chủ phòng: <b style="color: #00ff00;">${room.host_name}</b> | Đồ họa mượt mà & Âm thanh sống động
                 </div>
 
+                <!-- CÁC THẺ ÂM THANH HIỆU ỨNG (TIẾNG XÚC XẮC, DI CHUYỂN, CHIẾN THẮNG) -->
+                <audio id="diceSound" src="https://raw.githubusercontent.com/jamalihassan0307/LudoVerse/main/assets/sounds/roll_the_dice.mp3" preload="auto"></audio>
+                <audio id="moveSound" src="https://raw.githubusercontent.com/jamalihassan0307/LudoVerse/main/assets/sounds/move.wav" preload="auto"></audio>
+                <audio id="laughSound" src="https://raw.githubusercontent.com/jamalihassan0307/LudoVerse/main/assets/sounds/laugh.mp3" preload="auto"></audio>
+
                 <!-- KHUNG NHÚNG ENGINE HTML5 GAME UY TÍN (TƯƠNG THÍCH MỌI THIẾT BỊ) -->
-                <div style="width: 100%; max-width: 480px; margin: 0 auto; background: #000; border: 2px solid #444; border-radius: 6px; overflow: hidden; aspect-ratio: 1 / 1;">
+                <div style="width: 100%; max-width: 480px; margin: 0 auto; background: #000; border: 2px solid #444; border-radius: 6px; overflow: hidden; aspect-ratio: 1 / 1; position: relative;">
                     <iframe src="https://html5.gamedistribution.com/rvvASMiM/a88df542c3824f11b2cb01e479c09c91/" 
                         style="width: 100%; height: 100%; border: none; display: block;" 
                         allow="autoplay; fullscreen; encrypted-media" 
@@ -127,6 +132,14 @@ export async function handleGameLudo(request, env, user, renderLayout, url) {
             const chatBox = document.getElementById('roomChatBox');
             chatBox.scrollTop = chatBox.scrollHeight;
 
+            // Tự động kích hoạt phát âm thanh tương tác khi người dùng chạm vào game
+            document.addEventListener('click', () => {
+                const audio = document.getElementById('diceSound');
+                if (audio && audio.paused) {
+                    audio.load();
+                }
+            }, { once: true });
+
             async function sendRoomChat(event) {
                 event.preventDefault();
                 const input = document.getElementById('chatInput');
@@ -155,7 +168,7 @@ export async function handleGameLudo(request, env, user, renderLayout, url) {
         });
     }
 
-    // 3. Sảnh danh sách phòng Ludo (GET /game/ludo)[cite: 12]
+    // 3. Sảnh danh sách phòng Ludo (GET /game/ludo)
     let rooms = [];
     try {
         const r = await env.DB.prepare("SELECT * FROM ludo_rooms ORDER BY id DESC LIMIT 20").all();
@@ -165,7 +178,7 @@ export async function handleGameLudo(request, env, user, renderLayout, url) {
     const content = `
     <div class="box">
         <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
-            <span>🎲 Sảnh Game Ludo (HTML5 Engine)</span>
+            <span>🎲 Sảnh Game Ludo (HTML5 Engine & Âm thanh)</span>
             <a href="#createRoomModal" onclick="document.getElementById('createRoomForm').style.display='block'" class="btn" style="background: #00aa00; font-size: 11px; padding: 4px 8px;">➕ Tạo phòng</a>
         </div>
         <div class="box-content" style="padding: 10px;">
