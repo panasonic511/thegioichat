@@ -119,7 +119,46 @@ function renderLayout(title, content, user) {
         .btn { background: #1c1c1c; color: #00ff00; border: 1px solid #444; padding: 8px 14px; cursor: pointer; font-size: 13px; font-weight: bold; display: inline-block; text-align: center; box-sizing: border-box; }
         .btn:hover { background: #333; border-color: #00ff00; color: #fff; }
 
-        .footer { text-align: center; padding: 16px; font-size: 13px; color: #777; border-top: 1px solid #222; background: #050505; }
+        .footer { text-align: center; padding: 16px; font-size: 13px; color: #777; border-top: 1px solid #222; background: #050505; margin-bottom: 40px; }
+
+        /* --- BONG BÓNG THÔNG BÁO NỔI GÓC MÀN HÌNH --- */
+        @keyframes pulseBubble {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7); }
+            70% { transform: scale(1.08); box-shadow: 0 0 0 10px rgba(255, 0, 0, 0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
+        }
+        .floating-bubble {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #111;
+            border: 2px solid #ff3333;
+            color: #fff;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            text-decoration: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.8);
+            z-index: 9999;
+            animation: pulseBubble 2s infinite;
+            display: none;
+        }
+        .floating-bubble .badge-count {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: #ff0000;
+            color: #fff;
+            font-size: 11px;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 50px;
+            border: 1px solid #fff;
+        }
     </style>
 </head>
 <body>
@@ -135,6 +174,36 @@ function renderLayout(title, content, user) {
     </div>
 
     <div class="container">${content}</div>
+
+    <!-- Bong bóng thông báo nổi -->
+    ${user ? `
+    <a href="/mail/box" id="floatingMsgBubble" class="floating-bubble" title="Bạn có tin nhắn mới!">
+        ✉️
+        <span id="bubbleCount" class="badge-count">0</span>
+    </a>
+    <script>
+        async function checkNewMessages() {
+            try {
+                const res = await fetch('/api/realtime-check');
+                if (res.ok) {
+                    const data = await res.json();
+                    const totalUnread = (data.unread_messages || 0) + (data.unread_notifications || 0);
+                    const bubble = document.getElementById('floatingMsgBubble');
+                    const countSpan = document.getElementById('bubbleCount');
+                    
+                    if (totalUnread > 0) {
+                        countSpan.innerText = totalUnread;
+                        bubble.style.display = 'flex';
+                    } else {
+                        bubble.style.display = 'none';
+                    }
+                }
+            } catch (e) {}
+        }
+        checkNewMessages();
+        setInterval(checkNewMessages, 6000);
+    </script>
+    ` : ''}
 
     <div class="footer">
         <div><a href="/">Home</a> · <a href="/terms">Điều khoản</a> · <a href="/contact">Liên hệ</a> ${user ? '· <a href="/logout">Đăng xuất</a>' : ''}</div>
