@@ -196,86 +196,82 @@ export async function handleProfile(request, env, user, renderLayout, url) {
     </div>
 
     <!-- Hộp Quà tặng -->
-  <div class="box" style="max-width: 654px; margin: 0 auto 8px auto;">
-    <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
-        <span>Quà tặng</span>
-${(() => {
-    const activeGifts = [];
-    if (giftCounts.love > 0) {
-        activeGifts.push(`
-            <div>
-                <div style="font-size: 16px;">🎁</div>
-                <div style="font-size: 11px; color: #ff55ff;">${giftCounts.love}</div>
-                <div>Lời tỏ tình</div>
-                ${isOwner ? `<form method="POST" style="margin: 0;"><input type="hidden" name="action" value="return_gift"><input type="hidden" name="gift_type" value="love"><button type="submit" style="background: none; border: none; color: #ff55ff; font-size: 9px; cursor: pointer; text-decoration: underline;">Trả về</button></form>` : ''}
-            </div>
-        `);
-    }
-    if (giftCounts.ring > 0) {
-        activeGifts.push(`
-            <div>
-                <div style="font-size: 16px;">💍</div>
-                <div style="font-size: 11px; color: #ff55ff;">${giftCounts.ring}</div>
-                <div>Nụ hôn</div>
-                ${isOwner ? `<form method="POST" style="margin: 0;"><input type="hidden" name="action" value="return_gift"><input type="hidden" name="gift_type" value="ring"><button type="submit" style="background: none; border: none; color: #ff55ff; font-size: 9px; cursor: pointer; text-decoration: underline;">Trả về</button></form>` : ''}
-            </div>
-        `);
-    }
-    if (giftCounts.flower > 0) {
-        activeGifts.push(`
-            <div>
-                <div style="font-size: 16px;">🌹</div>
-                <div style="font-size: 11px; color: #ff55ff;">${giftCounts.flower}</div>
-                <div>Lố tình yêu</div>
-                ${isOwner ? `<form method="POST" style="margin: 0;"><input type="hidden" name="action" value="return_gift"><input type="hidden" name="gift_type" value="flower"><button type="submit" style="background: none; border: none; color: #ff55ff; font-size: 9px; cursor: pointer; text-decoration: underline;">Trả về</button></form>` : ''}
-            </div>
-        `);
-    }
-    if (giftCounts.rose > 0) {
-        activeGifts.push(`
-            <div>
-                <div style="font-size: 16px;">🌸</div>
-                <div style="font-size: 11px; color: #ff55ff;">${giftCounts.rose}</div>
-                <div>Thích bạn</div>
-                ${isOwner ? `<form method="POST" style="margin: 0;"><input type="hidden" name="action" value="return_gift"><input type="hidden" name="gift_type" value="rose"><button type="submit" style="background: none; border: none; color: #ff55ff; font-size: 9px; cursor: pointer; text-decoration: underline;">Trả về</button></form>` : ''}
-            </div>
-        `);
-    }
+    ${(() => {
+        const activeGifts = [];
+        if (giftCounts.love > 0) {
+            activeGifts.push(`
+                <div>
+                    <div style="font-size: 16px;">🎁</div>
+                    <div style="font-size: 11px; color: #ff55ff;">${giftCounts.love}</div>
+                    <div>Lời tỏ tình</div>
+                    ${isOwner ? `<form method="POST" style="margin: 0;"><input type="hidden" name="action" value="return_gift"><input type="hidden" name="gift_type" value="love"><button type="submit" style="background: none; border: none; color: #ff55ff; font-size: 9px; cursor: pointer; text-decoration: underline;">Trả về</button></form>` : ''}
+                </div>
+            `);
+        }
+        if (giftCounts.ring > 0) {
+            activeGifts.push(`
+                <div>
+                    <div style="font-size: 16px;">💍</div>
+                    <div style="font-size: 11px; color: #ff55ff;">${giftCounts.ring}</div>
+                    <div>Nụ hôn</div>
+                    ${isOwner ? `<form method="POST" style="margin: 0;"><input type="hidden" name="action" value="return_gift"><input type="hidden" name="gift_type" value="ring"><button type="submit" style="background: none; border: none; color: #ff55ff; font-size: 9px; cursor: pointer; text-decoration: underline;">Trả về</button></form>` : ''}
+                </div>
+            `);
+        }
+        if (giftCounts.flower > 0) {
+            activeGifts.push(`
+                <div>
+                    <div style="font-size: 16px;">🌹</div>
+                    <div style="font-size: 11px; color: #ff55ff;">${giftCounts.flower}</div>
+                    <div>Lố tình yêu</div>
+                    ${isOwner ? `<form method="POST" style="margin: 0;"><input type="hidden" name="action" value="return_gift"><input type="hidden" name="gift_type" value="flower"><button type="submit" style="background: none; border: none; color: #ff55ff; font-size: 9px; cursor: pointer; text-decoration: underline;">Trả về</button></form>` : ''}
+                </div>
+            `);
+        }
+        if (giftCounts.rose > 0) {
+            activeGifts.push(`
+                <div>
+                    <div style="font-size: 16px;">🌸</div>
+                    <div style="font-size: 11px; color: #ff55ff;">${giftCounts.rose}</div>
+                    <div>Thích bạn</div>
+                    ${isOwner ? `<form method="POST" style="margin: 0;"><input type="hidden" name="action" value="return_gift"><input type="hidden" name="gift_type" value="rose"><button type="submit" style="background: none; border: none; color: #ff55ff; font-size: 9px; cursor: pointer; text-decoration: underline;">Trả về</button></form>` : ''}
+                </div>
+            `);
+        }
 
-    if (activeGifts.length === 0) return '';
+        if (activeGifts.length === 0) return '';
 
-    return `
-        <div class="box" style="max-width: 600px; margin: 0 auto 8px auto;">
-            <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
-                <span>Quà tặng</span>
-                <span style="font-size: 10px; color: #ffcc00;">Tổng: ${totalGifts}</span>
+        return `
+            <div class="box" style="max-width: 600px; margin: 0 auto 8px auto;">
+                <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>Quà tặng</span>
+                    <span style="font-size: 10px; color: #ffcc00;">Tổng: ${totalGifts}</span>
+                </div>
+                <div class="box-content" style="display: flex; justify-content: space-around; text-align: center; font-size: 10px; color: #aaa;">
+                    ${activeGifts.join('')}
+                </div>
             </div>
-            <div class="box-content" style="display: flex; justify-content: space-around; text-align: center; font-size: 10px; color: #aaa;">
-                ${activeGifts.join('')}
-            </div>
-        </div>
-    `;
-})()}
-</div>
+        `;
+    })()}
 
     <!-- Thông tin chi tiết -->
-<div class="box" style="max-width: 654px; margin: 0 auto 8px auto;">
-    <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
-        <span>Thông tin chi tiết</span>
-        ${isOwner ? `<a href="javascript:void(0)" onclick="openSettingsModal()" style="font-size: 10px; color: #ffcc00;">[Chỉnh sửa]</a>` : ''}
+    <div class="box" style="max-width: 654px; margin: 0 auto 8px auto;">
+        <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
+            <span>Thông tin chi tiết</span>
+            ${isOwner ? `<a href="javascript:void(0)" onclick="openSettingsModal()" style="font-size: 10px; color: #ffcc00;">[Chỉnh sửa]</a>` : ''}
+        </div>
+        <div class="box-content" style="font-size: 11px; line-height: 1.8; padding: 8px;">
+            <div>❤️ Hẹn hò: <b>${profileUser.relationships || 'Đang độc thân'}</b></div>
+            <div>👤 Giới tính: <b>${profileUser.gender || 'Chưa cập nhật'}</b></div>
+            <div>⭐ Level: <b style="color: #ffcc00;">${profileUser.level || 1}</b> - <a href="/profile/level" style="color: #00ff00;">Kiểm tra</a></div>
+            <div>🪙 Xu: <b style="color: #00ff00;">${(profileUser.coins || 0).toLocaleString()} Xu</b></div>
+            <div>💰 Vàng: <b style="color: #ffcc00;">${(profileUser.gold || 0).toLocaleString()} Vàng</b></div>
+            <div>📝 Bài viết: <b>${postCount}</b></div>
+            <div>🏙️ Tỉnh thành: <b>${profileUser.province || 'Chưa cập nhật'}</b></div>
+            <div>🎂 Sinh nhật: <b>${profileUser.birthday || 'Chưa cập nhật'}</b></div>
+            <div>📅 Ngày đăng ký: <b>${profileUser.created_at || 'Thành viên hệ thống'}</b></div>
+        </div>
     </div>
-    <div class="box-content" style="font-size: 11px; line-height: 1.8; padding: 8px;">
-        <div>❤️ Hẹn hò: <b>${profileUser.relationships || 'Đang độc thân'}</b></div>
-        <div>👤 Giới tính: <b>${profileUser.gender || 'Chưa cập nhật'}</b></div>
-        <div>⭐ Level: <b style="color: #ffcc00;">${profileUser.level || 1}</b> - <a href="/profile/level" style="color: #00ff00;">Kiểm tra</a></div>
-        <div>🪙 Xu: <b style="color: #00ff00;">${(profileUser.coins || 0).toLocaleString()} Xu</b></div>
-        <div>💰 Vàng: <b style="color: #ffcc00;">${(profileUser.gold || 0).toLocaleString()} Vàng</b></div>
-        <div>📝 Bài viết: <b>${postCount}</b></div>
-        <div>🏙️ Tỉnh thành: <b>${profileUser.province || 'Chưa cập nhật'}</b></div>
-        <div>🎂 Sinh nhật: <b>${profileUser.birthday || 'Chưa cập nhật'}</b></div>
-        <div>📅 Ngày đăng ký: <b>${profileUser.created_at || 'Thành viên hệ thống'}</b></div>
-    </div>
-</div>
 
     <!-- Popup Modal Cài đặt thông tin -->
     ${isOwner ? `
