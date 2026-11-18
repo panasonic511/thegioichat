@@ -1,88 +1,94 @@
 export async function handleShop(request, env, user, renderLayout) {
-    const content = `
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; padding: 0 2px;">
-        <span style="font-weight: bold; color: #00ff00;">🛒 Cửa hàng Thế Giới Chat</span>
-        <a href="/shop/inventory" style="font-size: 11px; color: #ffcc00;">🛍️ Túi đồ của tôi</a>
-    </div>
+    // Tự động tạo bảng kho đồ và cột active_icon nếu chưa có
+    try { await env.DB.prepare("ALTER TABLE users ADD COLUMN active_icon TEXT DEFAULT ''").run(); } catch (e) {}
+    try {
+        await env.DB.prepare(`
+            CREATE TABLE IF NOT EXISTS user_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                item_type TEXT,
+                item_value TEXT,
+                created_at TEXT
+            )
+        `).run();
+    } catch (e) {}
 
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px;">
-        <a href="#" style="background: #0d0d0d; border: 1px solid #333; padding: 10px; display: block; text-decoration: none; color: inherit;">
-            <div style="font-weight: bold; color: #fff; font-size: 12px; margin-bottom: 2px;">⚪ Nạp Xu</div>
-            <div style="font-size: 10px; color: #888;">Dùng cho game và tiện ích</div>
-        </a>
-        <a href="#" style="background: #0d0d0d; border: 1px solid #333; padding: 10px; display: block; text-decoration: none; color: inherit;">
-            <div style="font-weight: bold; color: #ffcc00; font-size: 12px; margin-bottom: 2px;">👑 Nạp Vàng</div>
-            <div style="font-size: 10px; color: #888;">Mua vật phẩm đặc biệt</div>
-        </a>
-    </div>
+    let message = '';
+    if (request.method === 'POST') {
+        try {
+            const formData = await request.formData();
+            const action = formData.get('action');
 
-    <div class="box" style="margin-bottom: 8px;">
-        <div class="box-title">⭐ Nâng cấp tài khoản</div>
-        <div class="box-content" style="padding: 6px;">
-            <a href="#" style="background: #141414; border: 1px solid #333; padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; color: #fff; text-decoration: none;">
+            if (action === 'buy_icon') {
+                const iconVal = formData.get('icon_val');
+                const price = parseInt(formData.get('price') || '5000');
+
+                if ((user.coins || 0) < price) {
+                    message = '<div style="color: #ff3333; text-align: center; margin-bottom: 10px; font-weight: bold;">Bạn không đủ xu để mua vật phẩm này!</div>';
+                } else {
+                    // Trừ xu và thêm vào kho đồ
+                    await env.DB.prepare("UPDATE users SET coins = coins - ? WHERE id = ?").bind(price, user.id).run();
+                    await env.DB.prepare(
+                        "INSERT INTO user_items (user_id, item_type, item_value, created_at) VALUES (?, 'icon', ?, datetime('now'))"
+                    ).bind(user.id, iconVal).run();
+                    message = '<div style="color: #00ff00; text-align: center; margin-bottom: 10px; font-weight: bold;">Mua biểu tượng thành công! Hãy vào Tủ đồ để kích hoạt.</div>';
+                    user.coins -= price;
+                }
+            }
+        } catch (e) {
+            message = `<div style="color: #ff3333; text-align: center; margin-bottom: 10px;">Lỗi: ${e.message}</div>`;
+        }
+    }
+
+    // Danh sách Icon độc quyền trong cửa hàng
+    const shopIcons = [
+        { name: 'Vương miện Hoàng gia', val: '👑', price: 10000 },
+        { name: 'Ngôi sao Lấp lánh', val: '⭐', price: 5000 },
+        { name: 'Ngọn lửa Rực cháy', val: '🔥', price: 7000 },
+        { name: 'Kim cương Đắt giá', val: '💎', price: 15000 },
+        { name: 'Trái tim Tình yêu', val: '💖', price: 4000 },
+        { name: 'Cỏ 4 lá May mắn', val: '🍀', price: 6000 }
+    ];
+
+    let itemsHtml = shopIcons.map(item => `
+        <div style="background: #080808; border: 1px solid #333; padding: 10px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <span style="font-size: 26px;">${item.val}</span>
                 <div>
-                    <div style="font-weight: bold; font-size: 12px;">⭐ Nâng cấp tài khoản</div>
-                    <div style="font-size: 10px; color: #888; margin-top: 2px;">Khám phá tài khoản Plus và Pro</div>
+                    <div style="font-weight: bold; color: #fff;">${item.name}</div>
+                    <div style="color: #ffcc00; font-size: 12px; margin-top: 2px;">🪙 ${item.price.toLocaleString()} Xu</div>
                 </div>
-                <span style="color: #666; font-size: 14px;">›</span>
-            </a>
-        </div>
-    </div>
-
-    <div class="box">
-        <div class="box-title">✨ Vật phẩm và trang trí</div>
-        <div class="box-content" style="padding: 6px;">
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
-                
-                <a href="/shop/avatar-frames" style="background: #141414; border: 1px solid #333; padding: 8px; display: flex; justify-content: space-between; align-items: center; text-decoration: none; color: inherit;">
-                    <div>
-                        <div style="font-weight: bold; font-size: 11px; color: #fff;">🖼️ Khung avatar</div>
-                        <div style="font-size: 9px; color: #888; margin-top: 1px;">Làm nổi bật ảnh đại diện</div>
-                    </div>
-                    <span style="color: #555; font-size: 12px;">›</span>
-                </a>
-
-                <a href="#" style="background: #141414; border: 1px solid #333; padding: 8px; display: flex; justify-content: space-between; align-items: center; text-decoration: none; color: inherit;">
-                    <div>
-                        <div style="font-weight: bold; font-size: 11px; color: #fff;">🎨 Hiệu ứng tên</div>
-                        <div style="font-size: 9px; color: #888; margin-top: 1px;">Gradient, cầu vồng và ánh vàng</div>
-                    </div>
-                    <span style="color: #555; font-size: 12px;">›</span>
-                </a>
-
-                <a href="#" style="background: #141414; border: 1px solid #333; padding: 8px; display: flex; justify-content: space-between; align-items: center; text-decoration: none; color: inherit;">
-                    <div>
-                        <div style="font-weight: bold; font-size: 11px; color: #fff;">⭐ Icon trước nick</div>
-                        <div style="font-size: 9px; color: #888; margin-top: 1px;">Biểu tượng nhỏ cạnh tên</div>
-                    </div>
-                    <span style="color: #555; font-size: 12px;">›</span>
-                </a>
-
-                <a href="#" style="background: #141414; border: 1px solid #333; padding: 8px; display: flex; justify-content: space-between; align-items: center; text-decoration: none; color: inherit;">
-                    <div>
-                        <div style="font-weight: bold; font-size: 11px; color: #fff;">🖼️ Ảnh nền dưới nick</div>
-                        <div style="font-size: 9px; color: #888; margin-top: 1px;">Trang trí phần tên tài khoản</div>
-                    </div>
-                    <span style="color: #555; font-size: 12px;">›</span>
-                </a>
-
-                <!-- Trỏ trực tiếp tới trang Mua màu /shop/buycolor -->
-                <a href="/shop/buycolor" style="background: #141414; border: 1px solid #333; padding: 8px; display: flex; justify-content: space-between; align-items: center; text-decoration: none; color: inherit; grid-column: span 2;">
-                    <div>
-                        <div style="font-weight: bold; font-size: 11px; color: #fff;">🎨 Trang trí màu sắc</div>
-                        <div style="font-size: 9px; color: #888; margin-top: 1px;">Màu tên, viền và hiệu ứng sáng</div>
-                    </div>
-                    <span style="color: #555; font-size: 12px;">›</span>
-                </a>
-
             </div>
+            <form method="POST">
+                <input type="hidden" name="action" value="buy_icon">
+                <input type="hidden" name="icon_val" value="${item.val}">
+                <input type="hidden" name="price" value="${item.price}">
+                <button type="submit" class="btn" style="background: #0055ff; color: #fff; padding: 6px 12px; border-radius: 4px;">Mua ngay</button>
+            </form>
+        </div>
+    `).join('');
+
+    const content = `
+    <div class="box">
+        <div class="box-title">🛒 Cửa hàng mua Icon gắn trước nick</div>
+        <div class="box-content">
+            <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; background: #111; padding: 8px 12px; border: 1px solid #333;">
+                <span>Ví của bạn: <strong style="color: #00ff00;">🪙 ${(user.coins || 0).toLocaleString()} Xu</strong></span>
+                <div>
+                    <a href="/shop/inventory" class="btn" style="background: #222; color: #ffcc00; padding: 4px 10px; font-size: 12px; text-decoration: none;">📦 Tủ đồ</a>
+                </div>
+            </div>
+            ${message}
+            <div style="font-weight: bold; margin-bottom: 8px; color: #00ff00;">✨ Chọn biểu tượng muốn sở hữu:</div>
+            ${itemsHtml}
         </div>
     </div>
-
-    <div style="text-align: center; margin-top: 10px;"><a href="/">⬅️ Về trang chủ</a></div>
+    <div style="text-align: center; margin-top: 10px; font-size: 13px;">
+        <a href="/shop">🛒 Quay lại trang cửa hàng</a> · <a href="/">🏠 Về trang chủ</a>
+    </div>
     `;
 
-    return new Response(renderLayout('Cửa hàng', content, user), {
+    return new Response(renderLayout('Mua Icon trước nick', content, user), {
         headers: { 'Content-Type': 'text/html;charset=UTF-8' }
     });
 }
