@@ -47,7 +47,7 @@ export async function handleGameLudo(request, env, user, renderLayout, url) {
         }
     }
 
-    // 2. Giao diện phòng chơi kèm khung nhúng Game HTML5 chuẩn và âm thanh sống động (GET /game/ludo/room?id=...)
+    // 2. Giao diện phòng chơi (GET /game/ludo/room?id=...)
     if (path === '/game/ludo/room') {
         const roomId = url.searchParams.get('id');
         if (!roomId) return Response.redirect(new URL('/game/ludo', request.url), 302);
@@ -95,18 +95,36 @@ export async function handleGameLudo(request, env, user, renderLayout, url) {
                     👑 Chủ phòng: <b style="color: #00ff00;">${room.host_name}</b> | Đồ họa mượt mà & Âm thanh sống động
                 </div>
 
-                <!-- CÁC THẺ ÂM THANH HIỆU ỨNG (TIẾNG XÚC XẮC, DI CHUYỂN, CHIẾN THẮNG) -->
+                <!-- CÁC THẺ ÂM THANH HIỆU ỨNG CHUẨN -->
                 <audio id="diceSound" src="https://raw.githubusercontent.com/jamalihassan0307/LudoVerse/main/assets/sounds/roll_the_dice.mp3" preload="auto"></audio>
                 <audio id="moveSound" src="https://raw.githubusercontent.com/jamalihassan0307/LudoVerse/main/assets/sounds/move.wav" preload="auto"></audio>
-                <audio id="laughSound" src="https://raw.githubusercontent.com/jamalihassan0307/LudoVerse/main/assets/sounds/laugh.mp3" preload="auto"></audio>
 
-                <!-- KHUNG NHÚNG ENGINE HTML5 GAME UY TÍN (TƯƠNG THÍCH MỌI THIẾT BỊ) -->
-                <div style="width: 100%; max-width: 480px; margin: 0 auto; background: #000; border: 2px solid #444; border-radius: 6px; overflow: hidden; aspect-ratio: 1 / 1; position: relative;">
-                    <iframe src="https://html5.gamedistribution.com/rvvASMiM/a88df542c3824f11b2cb01e479c09c91/" 
-                        style="width: 100%; height: 100%; border: none; display: block;" 
-                        allow="autoplay; fullscreen; encrypted-media" 
-                        scrolling="no">
-                    </iframe>
+                <!-- KHUNG CHƠI TRỰC TIẾP TƯƠNG THÍCH MỌI TRÌNH DUYỆT WAP -->
+                <div style="width: 100%; max-width: 480px; margin: 0 auto; background: #0b2e13; border: 2px solid #444; border-radius: 6px; padding: 10px;">
+                    <div style="background: #fff; border-radius: 4px; padding: 10px; text-align: center;">
+                        <svg viewBox="0 0 500 500" style="width: 240px; height: 240px; background: #fff; border-radius: 4px; display: inline-block;">
+                            <rect x="0" y="0" width="200" height="200" fill="#cc0000" />
+                            <rect x="300" y="0" width="200" height="200" fill="#00aa00" />
+                            <rect x="0" y="300" width="200" height="200" fill="#0033cc" />
+                            <rect x="300" y="300" width="200" height="200" fill="#ffcc00" />
+                            
+                            <circle cx="70" cy="70" r="16" fill="#fff" /><text x="70" y="75" font-size="14" text-anchor="middle">🐴</text>
+                            <circle cx="130" cy="70" r="16" fill="#fff" /><text x="130" y="75" font-size="14" text-anchor="middle">🐴</text>
+                            <circle cx="70" cy="130" r="16" fill="#fff" /><text x="70" y="135" font-size="14" text-anchor="middle">🐴</text>
+                            <circle cx="130" cy="130" r="16" fill="#fff" /><text x="130" y="135" font-size="14" text-anchor="middle">🐴</text>
+                            
+                            <rect x="0" y="200" width="200" height="100" fill="#eee" />
+                            <rect x="300" y="200" width="200" height="100" fill="#eee" />
+                            <rect x="200" y="0" width="100" height="200" fill="#eee" />
+                            <rect x="200" y="300" width="100" height="200" fill="#eee" />
+                        </svg>
+                    </div>
+
+                    <!-- BẢNG ĐIỀU KHIỂN XÚC XẮC & ÂM THANH -->
+                    <div style="margin-top: 10px; background: #111; padding: 8px; border-radius: 4px;">
+                        <div id="diceResult" style="font-size: 22px; color: #ffcc00; margin-bottom: 6px;">🎲 [ ⚀ ] (Sẵn sàng)</div>
+                        <button onclick="rollDiceWithSound()" class="btn" style="background: #0055ff; padding: 6px 14px; font-size: 12px; font-weight: bold; cursor: pointer;">Tung Xúc Xắc</button>
+                    </div>
                 </div>
 
                 <!-- KHUNG CHAT TRỰC TUYẾN TRONG PHÒNG -->
@@ -132,13 +150,18 @@ export async function handleGameLudo(request, env, user, renderLayout, url) {
             const chatBox = document.getElementById('roomChatBox');
             chatBox.scrollTop = chatBox.scrollHeight;
 
-            // Tự động kích hoạt phát âm thanh tương tác khi người dùng chạm vào game
-            document.addEventListener('click', () => {
-                const audio = document.getElementById('diceSound');
-                if (audio && audio.paused) {
-                    audio.load();
+            function rollDiceWithSound() {
+                // Phát âm thanh lắc xúc xắc thực tế
+                const sound = document.getElementById('diceSound');
+                if (sound) {
+                    sound.currentTime = 0;
+                    sound.play().catch(err => console.log("Audio play error:", err));
                 }
-            }, { once: true });
+
+                const dices = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
+                const rand = Math.floor(Math.random() * 6);
+                document.getElementById('diceResult').innerText = '🎲 [ ' + dices[rand] + ' ] (Ra số ' + (rand + 1) + ')';
+            }
 
             async function sendRoomChat(event) {
                 event.preventDefault();
@@ -178,7 +201,7 @@ export async function handleGameLudo(request, env, user, renderLayout, url) {
     const content = `
     <div class="box">
         <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
-            <span>🎲 Sảnh Game Ludo (HTML5 Engine & Âm thanh)</span>
+            <span>🎲 Sảnh Game Ludo</span>
             <a href="#createRoomModal" onclick="document.getElementById('createRoomForm').style.display='block'" class="btn" style="background: #00aa00; font-size: 11px; padding: 4px 8px;">➕ Tạo phòng</a>
         </div>
         <div class="box-content" style="padding: 10px;">
