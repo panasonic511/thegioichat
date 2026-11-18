@@ -1,3 +1,5 @@
+import { renderUser } from '../worker.js';
+
 export async function handleMailBox(request, env, user, renderLayout) {
     // Tự động tạo bảng mail_box chuẩn hóa nếu chưa có
     try {
@@ -30,7 +32,6 @@ export async function handleMailBox(request, env, user, renderLayout) {
             conversations = res.results;
         }
     } catch (e) {
-        // Fallback tương thích với cấu trúc cũ user_id / partner_id nếu có
         try {
             const query2 = `
                 SELECT DISTINCT 
@@ -57,12 +58,16 @@ export async function handleMailBox(request, env, user, renderLayout) {
 
             let partner = null;
             try {
-                partner = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(pid).first();
+                // Lấy đầy đủ các trường phong cách, icon và chức vụ của người dùng
+                partner = await env.DB.prepare(`
+                    SELECT id, username, display_name, avatar, border_color, avatar_glow, 
+                           name_color, name_glow, name_border, name_border_glow, active_icon, role 
+                    FROM users WHERE id = ?
+                `).bind(pid).first();
             } catch (e) {}
 
             if (!partner) continue;
 
-            // Lấy tin nhắn mới nhất và kiểm tra xem có tin chưa đọc từ đối phương không
             let lastMsg = '';
             let unreadCount = 0;
             try {
@@ -96,21 +101,35 @@ export async function handleMailBox(request, env, user, renderLayout) {
         } else {
             listHtml = partnersData.map((item, index) => {
                 const p = item.partner;
-                const pName = p.display_name || p.username || 'Thành viên';
                 const pId = p.id;
-                const defaultAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/></svg>";
-                const pAvatar = (p.avatar && !String(p.avatar).includes('7gXvS6v')) ? p.avatar : defaultAvatar;
+                
+                // Sử dụng hàm renderUser để lấy đầy đủ hiệu ứng tên, avatar, icon viền và hiệu ứng phát sáng
+                const rUser = renderUser(p);
+
+                // Xây dựng logic hiển thị chức vụ: Quản lý/Chủ Wap có khung, Thành viên hiển thị chữ bình thường
+                const roleDisplayHtml = (p.role && p.role !== 'Thành Viên') ? `
+                    <span style="display: inline-block; background: #1a1a1a; border: 1px solid #444; color: #ffcc00; font-size: 9px; font-weight: bold; padding: 1px 5px; border-radius: 4px; text-shadow: 0 0 4px rgba(255,204,0,0.4); margin-top: 2px;">
+                        ${p.role}
+                    </span>
+                ` : `
+                    <span style="color: #888; font-size: 10px; margin-top: 2px;">${p.role || 'Thành viên'}</span>
+                `;
 
                 return `
                 <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px; border-bottom: 1px solid #222; background: ${index % 2 === 0 ? '#080808' : '#030303'};">
                     <div style="display: flex; align-items: center; gap: 10px; overflow: hidden;">
-                        <img src="${pAvatar}" width="38" height="38" style="border-radius: 50%; object-fit: cover; border: 1px solid #444; flex-shrink: 0;">
+                        <div style="width: 38px; height: 38px; min-width: 38px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                            ${rUser.avatarHtml.replace(/style="[^"]*"/gi, 'style="width: 38px; height: 38px; border-radius: 50%; object-fit: cover;"')}
+                        </div>
                         <div style="overflow: hidden;">
-                            <div style="font-weight: bold; font-size: 14px;">
-                                <a href="/profile?user=${pId}" style="color: ${p.name_color || '#00ff00'};">${pName}</a>
-                                ${item.unreadCount > 0 ? `<span style="background: #ff0000; color: #fff; font-size: 10px; padding: 1px 5px; border-radius: 10px; margin-left: 6px;">Mới (${item.unreadCount})</span>` : ''}
+                            <div style="font-size: 13px; display: flex; align-items: center; gap: 6px;">
+                                <a href="/profile?user=${pId}" style="text-decoration: none;">${rUser.nameHtml}</a>
+                                ${item.unreadCount > 0 ? `<span style="background: #ff0000; color: #fff; font-size: 9px; padding: 1px 5px; border-radius: 10px;">Mới (${item.unreadCount})</span>` : ''}
                             </div>
-                            <div style="color: #aaa; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; margin-top: 2px;">
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                ${roleDisplayHtml}
+                            </div>
+                            <div style="color: #aaa; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; margin-top: 2px;">
                                 ${item.lastMsg ? item.lastMsg : 'Nhấn để trò chuyện...'}
                             </div>
                         </div>
@@ -118,7 +137,7 @@ export async function handleMailBox(request, env, user, renderLayout) {
                     <div>
                         <a href="/mail/chat?user=${pId}" class="btn" style="background: #0044cc; color: #fff; padding: 6px 12px; font-size: 12px; border-radius: 4px; text-decoration: none;">Nhắn tin</a>
                     </div>
-                </div>`;
+                `;
             }).join('');
         }
     }
