@@ -84,26 +84,29 @@ function renderLayout(title, content, user) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${title} - Thế Giới Chat</title>
     <style>
-        /* Chuẩn hóa giao diện GAUBONG: Font to rõ, màu sắc và khoảng cách tối ưu */
+        /* Đồng bộ kích thước chuẩn GAUBONG cho toàn trang */
         body { background: #000; color: #00ff00; font-family: Arial, sans-serif; margin: 0; padding: 0; font-size: 13px; line-height: 1.5; }
+        
         .header { background: #000; text-align: center; padding: 12px 0; border-bottom: 2px solid #222; }
         .header h1 { color: #fff; margin: 0; font-size: 22px; font-weight: bold; text-shadow: 0 0 10px #00ff00; letter-spacing: 1px; }
         .slogan { color: #ffcc00; font-size: 11px; margin-top: 4px; }
         
-        .top-menu-bar { background: #111; border-bottom: 2px solid #222; padding: 8px 0; display: flex; justify-content: center; gap: 18px; text-align: center; }
-        .top-menu-item { color: #00ff00; text-decoration: none; font-size: 12px; display: flex; flex-direction: column; align-items: center; font-weight: bold; }
+        /* Căn chỉnh lại top-menu-bar ôm trọn chiều rộng chuẩn, đồng bộ khung với container bên dưới */
+        .top-menu-wrapper { background: #111; border-bottom: 2px solid #222; padding: 8px 0; }
+        .top-menu-bar { max-width: 650px; margin: 0 auto; display: flex; justify-content: space-around; align-items: center; text-align: center; padding: 0 10px; box-sizing: border-box; }
+        .top-menu-item { color: #00ff00; text-decoration: none; font-size: 12px; display: flex; flex-direction: column; align-items: center; font-weight: bold; flex: 1; }
         .top-menu-item:hover { color: #fff; text-decoration: underline; }
         .top-menu-icon { font-size: 18px; margin-bottom: 2px; }
 
-        .container { padding: 10px; max-width: 650px; margin: 0 auto; }
-        .box { background: #080808; border: 1px solid #333; margin-bottom: 10px; box-shadow: inset 0 0 5px rgba(0,0,0,0.8); }
+        .container { padding: 10px; max-width: 650px; margin: 0 auto; box-sizing: border-box; }
+        .box { background: #080808; border: 1px solid #333; margin-bottom: 10px; box-sizing: border-box; }
         .box-title { background: linear-gradient(to right, #141414, #222); color: #00ff00; padding: 8px 10px; font-weight: bold; border-bottom: 1px solid #333; font-size: 13px; display: flex; align-items: center; gap: 6px; }
         .box-content { padding: 10px; }
 
         a { color: #00ff00; text-decoration: none; }
         a:hover { text-decoration: underline; color: #fff; }
 
-        .btn { background: #1c1c1c; color: #00ff00; border: 1px solid #444; padding: 6px 12px; cursor: pointer; font-size: 12px; font-weight: bold; display: inline-block; text-align: center; }
+        .btn { background: #1c1c1c; color: #00ff00; border: 1px solid #444; padding: 6px 12px; cursor: pointer; font-size: 12px; font-weight: bold; display: inline-block; text-align: center; box-sizing: border-box; }
         .btn:hover { background: #333; border-color: #00ff00; color: #fff; }
 
         .footer { text-align: center; padding: 12px; font-size: 12px; color: #777; border-top: 1px solid #222; background: #050505; }
@@ -115,8 +118,10 @@ function renderLayout(title, content, user) {
         <div class="slogan">Wap chát - Kết bạn - Giải trí</div>
     </div>
     
-    <div class="top-menu-bar">
-        ${menuBarHtml}
+    <div class="top-menu-wrapper">
+        <div class="top-menu-bar">
+            ${menuBarHtml}
+        </div>
     </div>
 
     <div class="container">${content}</div>
