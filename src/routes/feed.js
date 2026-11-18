@@ -36,7 +36,8 @@ export async function handleFeed(request, env, user, renderLayout) {
             CREATE TABLE IF NOT EXISTS stories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
-                image_url TEXT,
+                media_url TEXT,
+                media_type TEXT DEFAULT 'image',
                 caption TEXT,
                 created_at TEXT
             )
@@ -63,14 +64,11 @@ export async function handleFeed(request, env, user, renderLayout) {
                 const postId = formData.get('post_id');
                 const reaction = formData.get('reaction') || '❤️';
                 
-                // Kiểm tra xem user đã thả cảm xúc chưa
                 const existing = await env.DB.prepare("SELECT id, reaction FROM post_likes WHERE post_id = ? AND user_id = ?").bind(postId, user.id).first();
                 if (existing) {
                     if (existing.reaction === reaction) {
-                        // Nếu bấm lại đúng cảm xúc cũ thì gỡ bỏ
                         await env.DB.prepare("DELETE FROM post_likes WHERE post_id = ? AND user_id = ?").bind(postId, user.id).run();
                     } else {
-                        // Đổi cảm xúc mới
                         await env.DB.prepare("UPDATE post_likes SET reaction = ? WHERE post_id = ? AND user_id = ?").bind(reaction, postId, user.id).run();
                     }
                 } else {
@@ -85,12 +83,23 @@ export async function handleFeed(request, env, user, renderLayout) {
                     ).bind(postId, user.id, commentText.trim()).run();
                 }
             } else if (action === 'create_story') {
-                const imageUrl = formData.get('image_url');
-                const caption = formData.get('caption');
-                if (imageUrl && imageUrl.trim() !== '') {
+                let mediaUrl = formData.get('media_url');
+                const caption = formData.get('caption') || '';
+                const mediaFile = formData.get('media_file');
+
+                // Nếu người dùng tải file trực tiếp từ thiết bị
+                if (mediaFile && mediaFile.size > 0) {
+                    // Chuyển file thành base64 data URL để lưu trực tiếp vào D1 hoặc hiển thị
+                    const arrayBuffer = await mediaFile.arrayBuffer();
+                    const base64 = Buffer.from(arrayBuffer).toString('base64');
+                    const mimeType = mediaFile.type || 'image/jpeg';
+                    mediaUrl = `data:${mimeType};base64,${base64}`;
+                }
+
+                if (mediaUrl && mediaUrl.trim() !== '') {
                     await env.DB.prepare(
-                        "INSERT INTO stories (user_id, image_url, caption, created_at) VALUES (?, ?, ?, datetime('now'))"
-                    ).bind(user.id, imageUrl.trim(), caption || '').run();
+                        "INSERT INTO stories (user_id, media_url, caption, created_at) VALUES (?, ?, ?, datetime('now'))"
+                    ).bind(user.id, mediaUrl.trim(), caption).run();
                 }
             }
         } catch (e) {
@@ -121,7 +130,7 @@ export async function handleFeed(request, env, user, renderLayout) {
             const sName = s.display_name || s.username || 'Thành viên';
             const sAvatar = s.avatar || 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'50\' height=\'50\'><rect width=\'50\' height=\'50\' fill=\'%23333\'/></svg>';
             storiesHtml += `
-                <div style="min-width: 68px; height: 110px; background: url('${s.image_url}') center/cover no-repeat; border-radius: 8px; position: relative; border: 1px solid #444; flex-shrink: 0; overflow: hidden; padding: 4px; display: flex; flex-direction: column; justify-content: space-between;">
+                <div style="min-width: 68px; height: 110px; background: url('${s.media_url}') center/cover no-repeat; border-radius: 8px; position: relative; border: 1px solid #444; flex-shrink: 0; overflow: hidden; padding: 4px; display: flex; flex-direction: column; justify-content: space-between;">
                     <img src="${sAvatar}" style="width: 22px; height: 22px; border-radius: 50%; border: 1px solid #00ff00; object-fit: cover;">
                     <div style="font-size: 8px; color: #fff; background: rgba(0,0,0,0.6); padding: 2px; border-radius: 3px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${sName}</div>
                 </div>
@@ -150,16 +159,13 @@ export async function handleFeed(request, env, user, renderLayout) {
             for (let p of posts) {
                 const rUser = renderUser(p);
 
-                // Đếm số lượng cảm xúc
                 const likeCountRes = await env.DB.prepare("SELECT COUNT(*) as cnt FROM post_likes WHERE post_id = ?").bind(p.id).first();
                 const likeCount = likeCountRes ? likeCountRes.cnt : 0;
 
-                // Kiểm tra cảm xúc của user hiện tại
                 const userReact = await env.DB.prepare("SELECT reaction FROM post_likes WHERE post_id = ? AND user_id = ?").bind(p.id, user.id).first();
                 const currentReaction = userReact ? userReact.reaction : '❤️';
                 const hasReacted = !!userReact;
 
-                // Lấy danh sách bình luận
                 const commRes = await env.DB.prepare(`
                     SELECT post_comments.*, users.username, users.display_name, users.name_color 
                     FROM post_comments 
@@ -194,12 +200,8 @@ export async function handleFeed(request, env, user, renderLayout) {
                     <div style="color: #ddd; font-size: 13px; word-break: break-word; white-space: pre-wrap; margin-bottom: 6px;">${p.content || ''}</div>
                     ${imageTag}
 
-                    <!-- Thanh Tương tác: Cảm xúc & Icon Bình luận nằm cạnh nhau -->
                     <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #222; margin-top: 10px; padding-top: 8px;">
-                        
-                        <!-- Khu vực nút Thả tim & Hover hiện bảng cảm xúc mượt mà -->
                         <div class="reaction-container" style="position: relative; display: inline-block;">
-                            <!-- Bảng chọn cảm xúc trượt ra khi hover -->
                             <div class="reaction-popup" style="display: none; position: absolute; bottom: 125%; left: 0; background: #1f1f1f; border: 1px solid #444; border-radius: 20px; padding: 4px 8px; gap: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); z-index: 10;">
                                 <form method="POST" style="display:inline;"><input type="hidden" name="action" value="react_post"><input type="hidden" name="post_id" value="${p.id}"><input type="hidden" name="reaction" value="❤️"><button type="submit" style="background:none;border:none;font-size:16px;cursor:pointer;padding:2px;">❤️</button></form>
                                 <form method="POST" style="display:inline;"><input type="hidden" name="action" value="react_post"><input type="hidden" name="post_id" value="${p.id}"><input type="hidden" name="reaction" value="👍"><button type="submit" style="background:none;border:none;font-size:16px;cursor:pointer;padding:2px;">👍</button></form>
@@ -208,7 +210,6 @@ export async function handleFeed(request, env, user, renderLayout) {
                                 <form method="POST" style="display:inline;"><input type="hidden" name="action" value="react_post"><input type="hidden" name="post_id" value="${p.id}"><input type="hidden" name="reaction" value="😡"><button type="submit" style="background:none;border:none;font-size:16px;cursor:pointer;padding:2px;">😡</button></form>
                             </div>
 
-                            <!-- Nút bấm tim chính -->
                             <form method="POST" style="margin: 0; display: inline;">
                                 <input type="hidden" name="action" value="react_post">
                                 <input type="hidden" name="post_id" value="${p.id}">
@@ -219,7 +220,6 @@ export async function handleFeed(request, env, user, renderLayout) {
                             </form>
                         </div>
 
-                        <!-- Icon Bình luận tích hợp ngay bên cạnh -->
                         <div style="display: flex; align-items: center; gap: 12px;">
                             <button type="button" onclick="toggleCommentBox(${p.id})" style="background: none; border: none; color: #aaa; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 4px;">
                                 💬 <span style="font-size: 11px;">${comments.length} Bình luận</span>
@@ -227,12 +227,10 @@ export async function handleFeed(request, env, user, renderLayout) {
                         </div>
                     </div>
 
-                    <!-- Khung danh sách bình luận -->
                     <div style="margin-top: 6px;">
                         ${commentsHtml}
                     </div>
 
-                    <!-- Form gửi bình luận (Ẩn/Hiện mượt mà qua nút icon bình luận) -->
                     <div id="comment-box-${p.id}" style="display: none; margin-top: 8px;">
                         <form method="POST" style="display: flex; gap: 6px;">
                             <input type="hidden" name="action" value="add_comment">
@@ -246,12 +244,12 @@ export async function handleFeed(request, env, user, renderLayout) {
         }
     } catch (e) {}
 
-    // 5. Giao diện toàn trang & CSS Hover mượt mà tức thì
+    // 5. Giao diện toàn trang & Popup Tạo Story chuẩn ảnh mẫu
     const content = `
     <style>
-        .reaction-container:hover .reaction-popup {
-            display: flex !important;
-        }
+        .reaction-container:hover .reaction-popup { display: flex !important; }
+        .story-tab-content { display: none; }
+        .story-tab-content.active { display: block; }
     </style>
 
     <div class="box">
@@ -278,20 +276,64 @@ export async function handleFeed(request, env, user, renderLayout) {
         </div>
     </div>
 
-    <!-- Popup Modal Đăng Story -->
-    <div id="story-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.88); z-index: 999; justify-content: center; align-items: center; padding: 10px; box-sizing: border-box;">
-        <div style="background: #111; border: 1px solid #444; width: 100%; max-width: 350px; padding: 12px; box-sizing: border-box;">
-            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 6px; margin-bottom: 8px;">
-                <b style="color: #00ff00; font-size: 12px;">📸 Đăng Story mới</b>
-                <button type="button" onclick="closeStoryModal()" style="background:none; border:none; color:#ff5555; font-weight:bold; cursor:pointer;">✕</button>
+    <!-- Popup Modal Tạo Story chuẩn phong cách ảnh mẫu -->
+    <div id="story-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 999; justify-content: center; align-items: center; padding: 10px; box-sizing: border-box;">
+        <div style="background: #181818; border: 1px solid #333; width: 100%; max-width: 480px; border-radius: 8px; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.7);">
+            
+            <!-- Header Modal -->
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #2c2c2c;">
+                <b style="color: #fff; font-size: 14px;">Tạo Story</b>
+                <button type="button" onclick="closeStoryModal()" style="background:none; border:none; color:#aaa; font-size: 16px; font-weight:bold; cursor:pointer;">✕</button>
             </div>
-            <form method="POST">
+
+            <form method="POST" enctype="multipart/form-data">
                 <input type="hidden" name="action" value="create_story">
-                <label style="color: #ccc; font-size: 10px; display: block; margin-bottom: 2px;">Link hình ảnh Story:</label>
-                <input type="text" name="image_url" placeholder="https://..." required style="width: 100%; background: #000; color: #fff; border: 1px solid #444; padding: 6px; box-sizing: border-box; margin-bottom: 8px; font-size: 11px;">
-                <label style="color: #ccc; font-size: 10px; display: block; margin-bottom: 2px;">Chú thích (Caption):</label>
-                <input type="text" name="caption" placeholder="Khoảnh khắc hôm nay..." style="width: 100%; background: #000; color: #fff; border: 1px solid #444; padding: 6px; box-sizing: border-box; margin-bottom: 8px; font-size: 11px;">
-                <button type="submit" class="btn" style="width: 100%; background: #0055ff; color: #fff; padding: 6px; font-size: 11px; border: none; border-radius: 3px;">Đăng Story</button>
+                
+                <!-- Tab Chuyển đổi (Ảnh/video và Văn bản) -->
+                <div style="display: flex; background: #111; padding: 8px 16px; border-bottom: 1px solid #2c2c2c; gap: 8px;">
+                    <button type="button" onclick="switchStoryTab('media')" id="btn-tab-media" style="flex: 1; background: #2a2a2a; color: #fff; border: none; padding: 6px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;">Ảnh/video</button>
+                    <button type="button" onclick="switchStoryTab('text')" id="btn-tab-text" style="flex: 1; background: #111; color: #888; border: none; padding: 6px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;">Văn bản</button>
+                </div>
+
+                <div style="padding: 16px;">
+                    <!-- Tab Nội dung Ảnh/Video -->
+                    <div id="tab-media" class="story-tab-content active">
+                        <div style="border: 2px dashed #444; border-radius: 8px; padding: 30px; text-align: center; background: #121212; position: relative; cursor: pointer;" onclick="document.getElementById('story-file-input').click()">
+                            <div style="font-size: 28px; margin-bottom: 6px;">📁</div>
+                            <div style="color: #fff; font-size: 12px; font-weight: bold;">Chọn ảnh hoặc video từ thiết bị</div>
+                            <div style="color: #888; font-size: 10px; margin-top: 4px;" id="file-name-display">Nhấn vào đây để tải lên tệp tin</div>
+                            <input type="file" id="story-file-input" name="media_file" accept="image/*,video/*" style="display: none;" onchange="previewFileName(this)">
+                        </div>
+                        <div style="margin-top: 10px;">
+                            <input type="text" name="media_url" placeholder="Hoặc dán đường dẫn URL ảnh/video trực tiếp..." style="width: 100%; background: #111; color: #fff; border: 1px solid #444; padding: 8px; border-radius: 4px; font-size: 11px; box-sizing: border-box;">
+                        </div>
+                    </div>
+
+                    <!-- Tab Nội dung Văn bản -->
+                    <div id="tab-text" class="story-tab-content">
+                        <textarea name="caption" rows="4" placeholder="Nhập nội dung story văn bản của bạn..." style="width: 100%; background: #111; color: #fff; border: 1px solid #444; padding: 8px; border-radius: 4px; font-size: 12px; box-sizing: border-box; resize: vertical;"></textarea>
+                    </div>
+
+                    <!-- Quyền riêng tư & Thông tin -->
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; border-top: 1px solid #2c2c2c; padding-top: 12px;">
+                        <div>
+                            <div style="color: #aaa; font-size: 11px;">Quyền riêng tư</div>
+                            <div style="color: #666; font-size: 9px;">Ai có thể xem Story này?</div>
+                        </div>
+                        <select style="background: #222; color: #fff; border: 1px solid #444; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+                            <option>Công khai</option>
+                        </select>
+                    </div>
+
+                    <div style="color: #888; font-size: 10px; margin-top: 10px;">
+                        Story sẽ tự động ẩn sau 24 giờ.
+                    </div>
+                </div>
+
+                <!-- Footer Đăng Story -->
+                <div style="display: flex; justify-content: flex-end; padding: 12px 16px; background: #111; border-top: 1px solid #2c2c2c;">
+                    <button type="submit" class="btn" style="background: #0066ff; color: #fff; border: none; padding: 6px 16px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;">Đăng Story</button>
+                </div>
             </form>
         </div>
     </div>
@@ -301,10 +343,35 @@ export async function handleFeed(request, env, user, renderLayout) {
         function closeStoryModal() { document.getElementById('story-modal').style.display = 'none'; }
         function toggleCommentBox(postId) {
             const box = document.getElementById('comment-box-' + postId);
-            if (box.style.display === 'none') {
-                box.style.display = 'block';
+            box.style.display = box.style.display === 'none' ? 'block' : 'none';
+        }
+        function switchStoryTab(type) {
+            const mediaTab = document.getElementById('tab-media');
+            const textTab = document.getElementById('tab-text');
+            const btnMedia = document.getElementById('btn-tab-media');
+            const btnText = document.getElementById('btn-tab-text');
+
+            if (type === 'media') {
+                mediaTab.classList.add('active');
+                textTab.classList.remove('active');
+                btnMedia.style.background = '#2a2a2a';
+                btnMedia.style.color = '#fff';
+                btnText.style.background = '#111';
+                btnText.style.color = '#888';
             } else {
-                box.style.display = 'none';
+                textTab.classList.add('active');
+                mediaTab.classList.remove('active');
+                btnText.style.background = '#2a2a2a';
+                btnText.style.color = '#fff';
+                btnMedia.style.background = '#111';
+                btnMedia.style.color = '#888';
+            }
+        }
+        function previewFileName(input) {
+            const display = document.getElementById('file-name-display');
+            if (input.files && input.files[0]) {
+                display.innerText = 'Đã chọn tệp: ' + input.files[0].name;
+                display.style.color = '#00ff00';
             }
         }
     </script>
