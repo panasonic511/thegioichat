@@ -159,8 +159,10 @@ export async function handleFeed(request, env, user, renderLayout) {
                 const userLiked = await env.DB.prepare("SELECT id FROM post_likes WHERE post_id = ? AND user_id = ?").bind(p.id, user.id).first();
                 const heartColor = userLiked ? '#ff3333' : '#888';
 
+                // Lấy thông tin đầy đủ các trường phong cách tên của người bình luận
                 const commRes = await env.DB.prepare(`
-                    SELECT post_comments.*, users.username, users.display_name, users.name_color 
+                    SELECT post_comments.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow, 
+                           users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role 
                     FROM post_comments 
                     LEFT JOIN users ON post_comments.user_id = users.id 
                     WHERE post_id = ? ORDER BY post_comments.id ASC
@@ -169,15 +171,14 @@ export async function handleFeed(request, env, user, renderLayout) {
 
                 let commentsHtml = '';
                 comments.forEach(c => {
-                    const cName = c.display_name || c.username || 'Thành viên';
+                    const rCommentUser = renderUser(c); // Render đầy đủ phong cách tên cho người bình luận
                     commentsHtml += `
                         <div style="font-size: 11px; margin-top: 4px; border-top: 1px solid #222; padding-top: 4px;">
-                            <span style="color: #00ff00; font-weight: bold;">${cName}:</span> <span style="color: #ddd;">${c.comment}</span>
+                            ${rCommentUser.nameHtml}: <span style="color: #ddd;">${c.comment}</span>
                         </div>
                     `;
                 });
 
-                // Sử dụng object-fit: contain để ảnh hiển thị đầy đủ 100%, không bị mất khúc trên/dưới
                 const imageTag = p.image_url ? `<div style="margin-top: 8px; background: #000; text-align: center; border-radius: 4px; overflow: hidden;"><img src="${p.image_url}" style="width: 100%; max-height: 450px; object-fit: contain; display: block; margin: 0 auto;"></div>` : '';
 
                 postsHtml += `
@@ -384,16 +385,7 @@ export async function handleFeed(request, env, user, renderLayout) {
                     body: formData
                 });
                 if (res.ok) {
-                    const list = document.getElementById('comment-list-' + postId);
-                    list.innerHTML += \`<div style="font-size: 11px; margin-top: 4px; border-top: 1px solid #222; padding-top: 4px;"><span style="color: #00ff00; font-weight: bold;">Bạn:</span> <span style="color: #ddd;">\${text}</span></div>\`;
-                    input.value = '';
-                    
-                    // Cập nhật lại số lượng bình luận hiển thị trên nút 💬
-                    const commCountSpan = document.querySelector('#comm-count-' + postId);
-                    if (commCountSpan) {
-                        let currentCount = parseInt(commCountSpan.innerText) || 0;
-                        commCountSpan.innerText = currentCount + 1;
-                    }
+                    window.location.reload(); // Reload nhẹ để đồng bộ hiển thị đúng tên và hiệu phong cách cá nhân của user vừa bình luận
                 }
             } catch (e) {
                 window.location.reload();
