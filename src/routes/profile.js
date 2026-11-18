@@ -175,12 +175,17 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 <span style="color: #ffcc00; font-size: 11px;">[Lv.${profileUser.level || 1}]</span>
             </div>
 
-            <!-- Hiển thị Chức vụ dạng khung (badge/button box) giống góc trên -->
-            <div style="text-align: center; margin: 6px 0 10px 0;">
-                <span style="font-size: 11px; color: #aaa; margin-right: 6px;">ID ${profileUser.id}</span>
-                <span style="display: inline-block; background: #1a1a1a; border: 1px solid #444; color: #ffcc00; font-size: 11px; font-weight: bold; padding: 2px 8px; border-radius: 4px; text-shadow: 0 0 4px rgba(255,204,0,0.4);">
-                    ${profileUser.role || 'Thành Viên'}
-                </span>
+            <!-- Hiển thị phân biệt: Quản lý có khung, Thành viên hiển thị chữ bình thường -->
+            <div style="text-align: center; font-size: 13px; margin: 6px 0 10px 0;">
+                <span style="color: #aaa; font-size: 11px;">ID ${profileUser.id}</span> 
+                <span style="margin: 0 4px; color: #666;">·</span> 
+                ${(profileUser.role && profileUser.role !== 'Thành Viên') ? `
+                    <span style="display: inline-block; background: #1a1a1a; border: 1px solid #444; color: #ffcc00; font-size: 11px; font-weight: bold; padding: 2px 8px; border-radius: 4px; text-shadow: 0 0 4px rgba(255,204,0,0.4);">
+                        ${profileUser.role}
+                    </span>
+                ` : `
+                    <span style="color: #888; font-size: 12px;">${profileUser.role || 'Thành Viên'}</span>
+                `}
             </div>
             ${!isOwner ? `
             <div style="padding-bottom: 8px; display: flex; justify-content: center; gap: 6px;">
