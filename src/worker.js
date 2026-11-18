@@ -16,7 +16,6 @@ import { handleGame } from './routes/game.js';
 import { handleAdminDashboard } from './routes/admin_dashboard.js';
 import { handleAdminAction } from './routes/admin_action.js';
 
-// Hàm renderUser toàn cục an toàn tuyệt đối chống lỗi null/undefined
 export function renderUser(u) {
     const safeUser = new Proxy(u || {}, {
         get(target, prop) {
@@ -66,7 +65,19 @@ async function checkAuth(request, env) {
 }
 
 function renderLayout(title, content, user) {
-    const uUI = renderUser(user);
+    // Chỉ hiển thị thanh menu đầy đủ khi người dùng đã đăng nhập
+    const menuBarHtml = user ? `
+        <a href="/" class="top-menu-item"><span class="top-menu-icon">🏠</span>Home</a>
+        <a href="/users/feed" class="top-menu-item"><span class="top-menu-icon">📋</span>Bảng tin</a>
+        <a href="/mail/notification" class="top-menu-item"><span class="top-menu-icon">🔔</span>Thông báo</a>
+        <a href="/mail/box" class="top-menu-item"><span class="top-menu-icon">✉️</span>Tin nhắn</a>
+        <a href="/shop" class="top-menu-item"><span class="top-menu-icon">🛒</span>Cửa hàng</a>
+        ${user.role && user.role !== 'Thành Viên' ? '<a href="/admin" class="top-menu-item"><span class="top-menu-icon">⚙️</span>Quản lý</a>' : ''}
+    ` : `
+        <a href="/login" class="top-menu-item"><span class="top-menu-icon">🔑</span>Đăng nhập</a>
+        <a href="/register" class="top-menu-item"><span class="top-menu-icon">📝</span>Đăng ký</a>
+    `;
+
     return `<!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -100,13 +111,7 @@ function renderLayout(title, content, user) {
     </div>
     
     <div class="top-menu-bar">
-        <a href="/" class="top-menu-item"><span class="top-menu-icon">🏠</span>Home</a>
-        <a href="/users/feed" class="top-menu-item"><span class="top-menu-icon">📋</span>Bảng tin</a>
-        <a href="/mail/notification" class="top-menu-item"><span class="top-menu-icon">🔔</span>Thông báo</a>
-        <a href="/mail/box" class="top-menu-item"><span class="top-menu-icon">✉️</span>Tin nhắn</a>
-        <a href="/shop" class="top-menu-item"><span class="top-menu-icon">🛒</span>Cửa hàng</a>
-        ${user && user.role !== 'Thành Viên' ? '<a href="/admin" class="top-menu-item"><span class="top-menu-icon">⚙️</span>Quản lý</a>' : ''}
-        ${!user ? '<a href="/login" class="top-menu-item"><span class="top-menu-icon">🔑</span>Đăng nhập</a><a href="/register" class="top-menu-item"><span class="top-menu-icon">📝</span>Đăng ký</a>' : ''}
+        ${menuBarHtml}
     </div>
 
     <div class="container">${content}</div>
