@@ -3,13 +3,13 @@ import { renderUser } from '../worker.js';
 export async function handleShop(request, env, user, renderLayout) {
     const rUser = renderUser(user);
 
-    // Hàm chuẩn hóa huy hiệu chức vụ dùng chung cho toàn bộ hệ thống Wap
+    // Đồng bộ chính xác màu sắc huy hiệu bên góc phải giống hệt Trang chủ (index.js)
     function getRoleBadgeStyle(role) {
         const r = String(role || 'Thành Viên').trim();
         if (r === 'Chủ Wap') {
-            return 'background: #2a0800; color: #ff3300; border: 1px solid #ff3300; text-shadow: 0 0 6px #ff0000; font-weight: bold; padding: 3px 10px; font-size: 11px; border-radius: 4px; display: inline-block;';
+            return 'background: #1a1500; color: #ffcc00; border: 1px solid #665200; font-weight: bold; padding: 3px 10px; font-size: 11px; border-radius: 4px; display: inline-block;';
         } else if (r === 'Admin') {
-            return 'background: #2a1a00; color: #ffcc00; border: 1px solid #ffcc00; text-shadow: 0 0 6px #ffcc00; font-weight: bold; padding: 3px 10px; font-size: 11px; border-radius: 4px; display: inline-block;';
+            return 'background: #2a0800; color: #ff3300; border: 1px solid #ff3300; text-shadow: 0 0 6px #ff0000; font-weight: bold; padding: 3px 10px; font-size: 11px; border-radius: 4px; display: inline-block;';
         } else if (r === 'Mod') {
             return 'background: #001a2a; color: #00ffff; border: 1px solid #00ffff; text-shadow: 0 0 6px #00ffff; font-weight: bold; padding: 3px 10px; font-size: 11px; border-radius: 4px; display: inline-block;';
         } else {
@@ -17,18 +17,23 @@ export async function handleShop(request, env, user, renderLayout) {
         }
     }
 
+    // Giữ nguyên viền avatar và hiệu ứng sáng (avatar_glow) từ renderUser
+    const styledAvatarHtml = rUser.avatarHtml.replace('style="', 'style="width: 44px; height: 44px; ');
+
     const content = `
-    <!-- Header thông tin tài khoản đồng bộ chuẩn giao diện Trang chủ -->
+    <!-- Header thông tin tài khoản đồng bộ 100% với Trang chủ -->
     <div class="box" style="margin-bottom: 12px;">
         <div class="box-content" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: #0c0c0c;">
             <div style="display: flex; align-items: center; gap: 12px; overflow: hidden;">
-                <div style="width: 46px; height: 46px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;">
-                    ${rUser.avatarHtml.replace('<img ', '<img style="width: 46px; height: 46px; border-radius: 50%; object-fit: cover;" ')}
+                <div style="width: 44px; height: 44px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;">
+                    ${styledAvatarHtml}
                 </div>
                 <div style="overflow: hidden;">
-                    <div style="font-size: 14px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${rUser.nameHtml}</div>
-                    <div style="font-size: 11px; color: #ffcc00; margin-top: 3px;">
-                        🪙 ${(user.coins || 0).toLocaleString()} Xu · 👑 ${(user.gold || 0).toLocaleString()} Vàng
+                    <div style="font-size: 14px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                        ${rUser.nameHtml} <span style="color: #ffcc00; font-size: 12px; font-weight: bold;">[Lv.${user.level || 1}]</span>
+                    </div>
+                    <div style="font-size: 11px; color: #ccc; margin-top: 3px;">
+                        🪙 ${(user.coins || 0).toLocaleString()} Xu | 👑 ${(user.gold || 0).toLocaleString()} Vàng
                     </div>
                 </div>
             </div>
