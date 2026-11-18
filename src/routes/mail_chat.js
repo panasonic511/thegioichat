@@ -256,15 +256,25 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
             reader.readAsDataURL(file);
         }
 
+        // Tự động ẩn số đỏ thông báo của riêng đối phương này khi đang ở trong phòng chat
+        function hideActivePartnerNotifications() {
+            // Tìm và ẩn các thẻ badge số đỏ có chứa số thông báo gắn liền với user đang chat (nếu có trên header menu)
+            document.querySelectorAll('*').forEach(el => {
+                if (el.innerText && el.innerText.includes('Mới') && el.closest(`a[href*="user=${partnerId}"]`)) {
+                    el.style.display = 'none';
+                }
+            });
+        }
+
         async function fetchRealtimeMessages() {
             try {
                 const res = await fetch('/api/realtime-check?partner_id=' + partnerId);
                 if (res.ok) {
                     const data = await res.json();
                     
-                    // Gửi lệnh ngầm đánh dấu đã đọc các tin nhắn đến từ partner này ngay lập tức 
-                    // để không làm hiện số đỏ thông báo hộp thư trên menu khi đang chat
+                    // Gửi lệnh ngầm đánh dấu đã đọc tin nhắn từ partner này để hệ thống reset trạng thái
                     fetch('/api/mark-read?partner_id=' + partnerId).catch(e => {});
+                    hideActivePartnerNotifications();
 
                     if (data.chat_messages && data.chat_messages.length > 0) {
                         let html = '';
@@ -308,6 +318,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
             } catch (e) {}
         }
 
+        hideActivePartnerNotifications();
         setInterval(fetchRealtimeMessages, 2500);
     </script>
     `;
