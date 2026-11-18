@@ -68,8 +68,8 @@ function renderLayout(title, content, user) {
     const menuBarHtml = user ? `
         <a href="/" class="top-menu-item"><span class="top-menu-icon">🏠</span>Home</a>
         <a href="/users/feed" class="top-menu-item"><span class="top-menu-icon">📋</span>Bảng tin</a>
-        <a href="/mail/notification" class="top-menu-item"><span class="top-menu-icon">🔔</span>Thông báo</a>
-        <a href="/mail/box" class="top-menu-item"><span class="top-menu-icon">✉️</span>Tin nhắn</a>
+        <a href="/mail/notification" class="top-menu-item"><span class="top-menu-icon">🔔</span>Thông báo <span id="notiBadge" style="background:#ff0000;color:#fff;font-size:9px;padding:1px 4px;border-radius:10px;display:none;">0</span></a>
+        <a href="/mail/box" class="top-menu-item"><span class="top-menu-icon">✉️</span>Tin nhắn <span id="msgBadge" style="background:#ff0000;color:#fff;font-size:9px;padding:1px 4px;border-radius:10px;display:none;">0</span></a>
         <a href="/shop" class="top-menu-item"><span class="top-menu-icon">🛒</span>Cửa hàng</a>
         ${user.role && user.role !== 'Thành Viên' ? '<a href="/admin" class="top-menu-item"><span class="top-menu-icon">⚙️</span>Quản lý</a>' : ''}
     ` : `
@@ -89,7 +89,6 @@ function renderLayout(title, content, user) {
         .header { background: #000; text-align: center; padding: 16px 0; border-bottom: 2px solid #222; }
         .header h1 { color: #fff; margin: 0; font-size: 24px; font-weight: bold; text-shadow: 0 0 12px #00ff00; letter-spacing: 1px; }
         
-        /* Hiệu ứng chạy chữ đổi màu 7 màu liên tục (Rainbow Animation) */
         @keyframes rainbowGlow {
             0% { color: #ff0000; text-shadow: 0 0 6px #ff0000; }
             14% { color: #ff7700; text-shadow: 0 0 6px #ff7700; }
@@ -104,7 +103,7 @@ function renderLayout(title, content, user) {
         
         .top-menu-wrapper { background: #111; border-bottom: 2px solid #222; padding: 10px 0; }
         .top-menu-bar { max-width: 680px; margin: 0 auto; display: flex; justify-content: space-around; align-items: center; text-align: center; padding: 0 10px; box-sizing: border-box; }
-        .top-menu-item { color: #00ff00; text-decoration: none; font-size: 13px; display: flex; flex-direction: column; align-items: center; font-weight: bold; flex: 1; }
+        .top-menu-item { color: #00ff00; text-decoration: none; font-size: 13px; display: flex; flex-direction: column; align-items: center; font-weight: bold; flex: 1; position: relative; }
         .top-menu-item:hover { color: #fff; text-decoration: underline; }
         .top-menu-icon { font-size: 20px; margin-bottom: 3px; }
 
@@ -175,33 +174,61 @@ function renderLayout(title, content, user) {
 
     <div class="container">${content}</div>
 
-    <!-- Bong bóng thông báo nổi -->
+    <!-- Bong bóng thông báo nổi góc màn hình -->
     ${user ? `
     <a href="/mail/box" id="floatingMsgBubble" class="floating-bubble" title="Bạn có tin nhắn mới!">
         ✉️
         <span id="bubbleCount" class="badge-count">0</span>
     </a>
     <script>
-        async function checkNewMessages() {
+        async function updateRealtimeData() {
             try {
                 const res = await fetch('/api/realtime-check');
                 if (res.ok) {
                     const data = await res.json();
-                    const totalUnread = (data.unread_messages || 0) + (data.unread_notifications || 0);
+                    const unreadMsg = data.unread_messages || 0;
+                    const unreadNoti = data.unread_notifications || 0;
+                    const totalUnread = unreadMsg + unreadNoti;
+
+                    // Cập nhật số lượng trên menu Tin nhắn
+                    const msgBadge = document.getElementById('msgBadge');
+                    if (msgBadge) {
+                        if (unreadMsg > 0) {
+                            msgBadge.innerText = unreadMsg;
+                            msgBadge.style.display = 'inline-block';
+                        } else {
+                            msgBadge.style.display = 'none';
+                        }
+                    }
+
+                    // Cập nhật số lượng trên menu Thông báo
+                    const notiBadge = document.getElementById('notiBadge');
+                    if (notiBadge) {
+                        if (unreadNoti > 0) {
+                            notiBadge.innerText = unreadNoti;
+                            notiBadge.style.display = 'inline-block';
+                        } else {
+                            notiBadge.style.display = 'none';
+                        }
+                    }
+
+                    // Cập nhật bong bóng nổi góc màn hình
                     const bubble = document.getElementById('floatingMsgBubble');
                     const countSpan = document.getElementById('bubbleCount');
-                    
-                    if (totalUnread > 0) {
-                        countSpan.innerText = totalUnread;
-                        bubble.style.display = 'flex';
-                    } else {
-                        bubble.style.display = 'none';
+                    if (bubble && countSpan) {
+                        if (totalUnread > 0) {
+                            countSpan.innerText = totalUnread;
+                            bubble.style.display = 'flex';
+                        } else {
+                            bubble.style.display = 'none';
+                        }
                     }
                 }
             } catch (e) {}
         }
-        checkNewMessages();
-        setInterval(checkNewMessages, 6000);
+        // Gọi ngay khi tải trang và lặp lại ngầm mỗi 5 giây
+        updateRealtimeData();
+        setInterval(updateRealtimeData, 5000);
     </script>
     ` : ''}
 
