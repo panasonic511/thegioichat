@@ -3,6 +3,7 @@ import { renderUser } from '../worker.js';
 export async function handleShop(request, env, user, renderLayout) {
     const rUser = renderUser(user);
 
+    // Hàm đồng bộ hiệu ứng màu sắc cho huy hiệu Chức vụ (Chủ Wap, Admin, Mod, Thành viên)
     function getRoleBadgeStyle(role) {
         const r = String(role || 'Thành Viên').trim();
         if (r === 'Chủ Wap') {
@@ -17,7 +18,7 @@ export async function handleShop(request, env, user, renderLayout) {
     }
 
     const content = `
-    <!-- Header thông tin tài khoản chuẩn chỉnh, không bị chồng lấn -->
+    <!-- Header thông tin tài khoản đồng bộ chuẩn màu và hiệu ứng -->
     <div class="box" style="margin-bottom: 12px;">
         <div class="box-content" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: #0c0c0c;">
             <div style="display: flex; align-items: center; gap: 12px; overflow: hidden;">
