@@ -196,11 +196,15 @@ export async function handleProfile(request, env, user, renderLayout, url) {
     </div>
 
     <!-- Hộp Quà tặng -->
-    <div class="box">
-        <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
-            <span>🎁 Quà tặng</span>
-            <span style="font-size: 10px; color: #ffcc00;">Tổng: X${totalGifts}</span>
-        </div>
+    <div class="box" style="max-width: 600px; margin: 0 auto 8px auto;">
+    <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
+        <span>Quà tặng</span>
+        <span style="font-size: 10px; color: #ffcc00;">Tổng: ${totalGifts}</span>
+    </div>
+    <div class="box-content" style="display: flex; justify-content: space-around; text-align: center; font-size: 10px; color: #aaa;">
+        <!-- Nội dung quà tặng -->
+    </div>
+</div>
         <div class="box-content" style="display: flex; justify-content: space-around; text-align: center; font-size: 10px; color: #aaa;">
             <div><div style="font-size: 16px;">💌</div><div style="color: #ff55ff;">X${giftCounts.love}</div><div>Lời tỏ tình</div>${!isOwner ? `<form method="POST" style="margin-top:3px;"><input type="hidden" name="action" value="send_gift"><input type="hidden" name="gift_type" value="love"><button type="submit" class="btn" style="font-size:9px; padding:1px 5px;">Tặng (100X)</button></form>` : ''}</div>
             <div><div style="font-size: 16px;">💋</div><div style="color: #ff55ff;">X${giftCounts.kiss}</div><div>Nụ hôn</div>${!isOwner ? `<form method="POST" style="margin-top:3px;"><input type="hidden" name="action" value="send_gift"><input type="hidden" name="gift_type" value="kiss"><button type="submit" class="btn" style="font-size:9px; padding:1px 5px;">Tặng (100X)</button></form>` : ''}</div>
@@ -210,11 +214,15 @@ export async function handleProfile(request, env, user, renderLayout, url) {
     </div>
 
     <!-- Thông tin chi tiết -->
-    <div class="box">
-        <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
-            <span>🟢 Thông tin chi tiết</span>
-            ${isOwner ? `<a href="javascript:void(0)" onclick="openSettingsModal()" style="font-size: 10px; color: #ffcc00;">[Chỉnh sửa]</a>` : ''}
-        </div>
+   <div class="box" style="max-width: 600px; margin: 0 auto 8px auto;">
+    <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
+        <span>Thông tin chi tiết</span>
+        ${isOwner ? `<a href="javascript:void(0)" onclick="openSettingsModal()" style="font-size: 10px; color: #ffcc00;">[Chỉnh sửa]</a>` : ''}
+    </div>
+    <div class="box-content" style="font-size: 11px; line-height: 1.8;">
+        <!-- Nội dung thông tin chi tiết -->
+    </div>
+</div>
         <div class="box-content" style="font-size: 11px; line-height: 1.8;">
             <div>💖 Hẹn hò: <b>${profileUser.relationship || 'Đang độc thân'}</b></div>
             <div>🚻 Giới tính: <b>${profileUser.gender || 'Chưa cập nhật'}</b></div>
