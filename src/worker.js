@@ -1,10 +1,10 @@
-import { handleShopIcon } from './routes/shop_icon.js';
 import { handleLogin, handleRegister } from './routes/auth.js';
 import { handleLogout } from './routes/logout.js';
 import { handleIndex } from './routes/index.js';
 import { handleProfile } from './routes/profile.js';
 import { handleLevel } from './routes/level.js';
 import { handleShop } from './routes/shop.js';
+import { handleShopIcon } from './routes/shop_icon.js';
 import { handleShopFrames } from './routes/shop_frames.js';
 import { handleShopColor } from './routes/shop_color.js';
 import { handleInventory } from './routes/inventory.js';
@@ -86,6 +86,50 @@ function renderLayout(title, content, user) {
         <a href="/register" class="top-menu-item"><span class="top-menu-icon">📝</span>Đăng ký</a>
     `;
 
+    const floatingBubbleHtml = user ? `
+        <a href="/mail/box" id="floatingMsgBubble" style="position: fixed; bottom: 20px; right: 20px; width: 48px; height: 48px; background: #111; border: 2px solid #ff3333; border-radius: 50%; display: none; align-items: center; justify-content: center; text-decoration: none; box-shadow: 0 0 15px rgba(255, 51, 51, 0.7); z-index: 9999; animation: pulseBubble 1.5s infinite;">
+            <span style="font-size: 22px;">✉️</span>
+            <span id="floatingMsgCount" style="position: absolute; top: -4px; right: -4px; background: #ff0000; color: #fff; font-size: 11px; font-weight: bold; padding: 2px 6px; border-radius: 50%;">0</span>
+        </a>
+        <style>
+            @keyframes pulseBubble {
+                0% { transform: scale(1); box-shadow: 0 0 10px rgba(255, 51, 51, 0.7); }
+                50% { transform: scale(1.08); box-shadow: 0 0 20px rgba(255, 51, 51, 1); }
+                100% { transform: scale(1); box-shadow: 0 0 10px rgba(255, 51, 51, 0.7); }
+            }
+        </style>
+        <script>
+            async function checkRealtimeNotifications() {
+                try {
+                    const res = await fetch('/api/realtime-check');
+                    if (!res.ok) return;
+                    const data = await res.json();
+                    
+                    const msgBadge = document.getElementById('msgBadge');
+                    const notiBadge = document.getElementById('notiBadge');
+                    const floatBubble = document.getElementById('floatingMsgBubble');
+                    const floatCount = document.getElementById('floatingMsgCount');
+
+                    if (data.unread_messages > 0) {
+                        if (msgBadge) { msgBadge.innerText = data.unread_messages; msgBadge.style.display = 'inline-block'; }
+                        if (floatBubble && floatCount) { floatCount.innerText = data.unread_messages; floatBubble.style.display = 'flex'; }
+                    } else {
+                        if (msgBadge) msgBadge.style.display = 'none';
+                        if (floatBubble) floatBubble.style.display = 'none';
+                    }
+
+                    if (data.unread_notifications > 0) {
+                        if (notiBadge) { notiBadge.innerText = data.unread_notifications; notiBadge.style.display = 'inline-block'; }
+                    } else {
+                        if (notiBadge) notiBadge.style.display = 'none';
+                    }
+                } catch (e) {}
+            }
+            checkRealtimeNotifications();
+            setInterval(checkRealtimeNotifications, 5000);
+        </script>
+    ` : '';
+
     return `<!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -130,6 +174,7 @@ function renderLayout(title, content, user) {
     </div>
     <div class="top-menu-wrapper"><div class="top-menu-bar">${menuBarHtml}</div></div>
     <div class="container">${content}</div>
+    ${floatingBubbleHtml}
     <div class="footer">
         <div><a href="/">Home</a> · <a href="/terms">Điều khoản</a> · <a href="/contact">Liên hệ</a> ${user ? '· <a href="/logout">Đăng xuất</a>' : ''}</div>
         <div style="color: #00ff00; margin-top: 8px;">Copyright © 2026 - Thế Giới Chat</div>
@@ -158,7 +203,8 @@ export default {
       if (path === '/') return await handleIndex(request, env, user, renderLayout);
       if (path === '/profile') return await handleProfile(request, env, user, renderLayout, url);
       if (path === '/profile/level') return await handleLevel(request, env, user, renderLayout);
-      if (path === '/shop' || path === '/shop/buyicon') return await handleShop(request, env, user, renderLayout);
+      if (path === '/shop') return await handleShop(request, env, user, renderLayout);
+      if (path === '/shop/buyicon') return await handleShopIcon(request, env, user, renderLayout);
       if (path === '/shop/avatar-frames') return await handleShopFrames(request, env, user, renderLayout);
       if (path === '/shop/buycolor') return await handleShopColor(request, env, user, renderLayout);
       if (path === '/shop/inventory') return await handleInventory(request, env, user, renderLayout);
