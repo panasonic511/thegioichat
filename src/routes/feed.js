@@ -1,7 +1,7 @@
 import { renderUser } from '../worker.js';
 
 export async function handleFeed(request, env, user, renderLayout) {
-    // 1. Tự động khởi tạo bảng posts, post_likes, post_comments và stories nếu chưa có
+    // 1. Tự động khởi tạo cấu trúc bảng dữ liệu nếu chưa có
     try {
         await env.DB.prepare(`
             CREATE TABLE IF NOT EXISTS posts (
@@ -44,7 +44,7 @@ export async function handleFeed(request, env, user, renderLayout) {
         `).run();
     } catch (e) {}
 
-    // 2. Xử lý các hành động POST
+    // 2. Xử lý các yêu cầu POST (Đăng bài, Thả cảm xúc, Bình luận, Đăng story)
     let message = '';
     if (request.method === 'POST') {
         try {
@@ -87,9 +87,7 @@ export async function handleFeed(request, env, user, renderLayout) {
                 const caption = formData.get('caption') || '';
                 const mediaFile = formData.get('media_file');
 
-                // Nếu người dùng tải file trực tiếp từ thiết bị
                 if (mediaFile && mediaFile.size > 0) {
-                    // Chuyển file thành base64 data URL để lưu trực tiếp vào D1 hoặc hiển thị
                     const arrayBuffer = await mediaFile.arrayBuffer();
                     const base64 = Buffer.from(arrayBuffer).toString('base64');
                     const mimeType = mediaFile.type || 'image/jpeg';
@@ -107,7 +105,7 @@ export async function handleFeed(request, env, user, renderLayout) {
         }
     }
 
-    // 3. Lấy danh sách Stories
+    // 3. Truy vấn danh sách Stories
     let storiesHtml = '';
     try {
         const storyRes = await env.DB.prepare(`
@@ -141,7 +139,7 @@ export async function handleFeed(request, env, user, renderLayout) {
         storiesHtml = '';
     }
 
-    // 4. Lấy danh sách Bài viết, Cảm xúc & Bình luận
+    // 4. Truy vấn danh sách bài viết kèm tương tác
     let postsHtml = '';
     try {
         const res = await env.DB.prepare(`
@@ -244,7 +242,7 @@ export async function handleFeed(request, env, user, renderLayout) {
         }
     } catch (e) {}
 
-    // 5. Giao diện toàn trang & Popup Tạo Story chuẩn ảnh mẫu
+    // 5. Giao diện tổng thể
     const content = `
     <style>
         .reaction-container:hover .reaction-popup { display: flex !important; }
@@ -276,11 +274,10 @@ export async function handleFeed(request, env, user, renderLayout) {
         </div>
     </div>
 
-    <!-- Popup Modal Tạo Story chuẩn phong cách ảnh mẫu -->
+    <!-- Popup Tạo Story -->
     <div id="story-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 999; justify-content: center; align-items: center; padding: 10px; box-sizing: border-box;">
         <div style="background: #181818; border: 1px solid #333; width: 100%; max-width: 480px; border-radius: 8px; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.7);">
             
-            <!-- Header Modal -->
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #2c2c2c;">
                 <b style="color: #fff; font-size: 14px;">Tạo Story</b>
                 <button type="button" onclick="closeStoryModal()" style="background:none; border:none; color:#aaa; font-size: 16px; font-weight:bold; cursor:pointer;">✕</button>
@@ -289,14 +286,12 @@ export async function handleFeed(request, env, user, renderLayout) {
             <form method="POST" enctype="multipart/form-data">
                 <input type="hidden" name="action" value="create_story">
                 
-                <!-- Tab Chuyển đổi (Ảnh/video và Văn bản) -->
                 <div style="display: flex; background: #111; padding: 8px 16px; border-bottom: 1px solid #2c2c2c; gap: 8px;">
                     <button type="button" onclick="switchStoryTab('media')" id="btn-tab-media" style="flex: 1; background: #2a2a2a; color: #fff; border: none; padding: 6px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;">Ảnh/video</button>
                     <button type="button" onclick="switchStoryTab('text')" id="btn-tab-text" style="flex: 1; background: #111; color: #888; border: none; padding: 6px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;">Văn bản</button>
                 </div>
 
                 <div style="padding: 16px;">
-                    <!-- Tab Nội dung Ảnh/Video -->
                     <div id="tab-media" class="story-tab-content active">
                         <div style="border: 2px dashed #444; border-radius: 8px; padding: 30px; text-align: center; background: #121212; position: relative; cursor: pointer;" onclick="document.getElementById('story-file-input').click()">
                             <div style="font-size: 28px; margin-bottom: 6px;">📁</div>
@@ -309,12 +304,10 @@ export async function handleFeed(request, env, user, renderLayout) {
                         </div>
                     </div>
 
-                    <!-- Tab Nội dung Văn bản -->
                     <div id="tab-text" class="story-tab-content">
                         <textarea name="caption" rows="4" placeholder="Nhập nội dung story văn bản của bạn..." style="width: 100%; background: #111; color: #fff; border: 1px solid #444; padding: 8px; border-radius: 4px; font-size: 12px; box-sizing: border-box; resize: vertical;"></textarea>
                     </div>
 
-                    <!-- Quyền riêng tư & Thông tin -->
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; border-top: 1px solid #2c2c2c; padding-top: 12px;">
                         <div>
                             <div style="color: #aaa; font-size: 11px;">Quyền riêng tư</div>
@@ -330,7 +323,6 @@ export async function handleFeed(request, env, user, renderLayout) {
                     </div>
                 </div>
 
-                <!-- Footer Đăng Story -->
                 <div style="display: flex; justify-content: flex-end; padding: 12px 16px; background: #111; border-top: 1px solid #2c2c2c;">
                     <button type="submit" class="btn" style="background: #0066ff; color: #fff; border: none; padding: 6px 16px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;">Đăng Story</button>
                 </div>
