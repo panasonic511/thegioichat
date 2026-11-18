@@ -95,13 +95,14 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
 
     const content = `
     <div class="box">
-        <div class="box-title" style="display: flex; align-items: center; gap: 6px;">
+        <div class="box-title" style="display: flex; align-items: center; gap: 8px; font-size: 15px;">
             <span>🟢 Trò chuyện với</span> ${rPartnerHeader.nameHtml}
         </div>
-        <div class="box-content" style="padding: 8px;">
+        <div class="box-content" style="padding: 10px;">
             
-            <div id="chatMessageBox" style="height: 380px; overflow-y: scroll; background: #000; border: 1px solid #333; padding: 10px; display: flex; flex-direction: column; gap: 12px; margin-bottom: 10px;">
-                ${messages.length === 0 ? '<div style="color: #777; text-align: center; margin-top: 150px;">Chưa có tin nhắn nào. Hãy gửi tin nhắn mở lời!</div>' : 
+            <!-- Khung chứa tin nhắn phóng to rõ ràng hơn -->
+            <div id="chatMessageBox" style="height: 420px; overflow-y: scroll; background: #000; border: 1px solid #333; padding: 12px; display: flex; flex-direction: column; gap: 14px; margin-bottom: 12px;">
+                ${messages.length === 0 ? '<div style="color: #777; text-align: center; margin-top: 170px; font-size: 14px;">Chưa có tin nhắn nào. Hãy gửi tin nhắn mở lời!</div>' : 
                     messages.map(m => {
                         const sender = m.sender_id || m.user_id;
                         const isMe = Number(sender) === Number(user.id);
@@ -110,31 +111,31 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                         const msgUser = isMe ? user : partner;
                         const rMsgUser = renderUser(msgUser);
 
-                        // Chỉ hiện khung chức vụ nếu là Quản lý / Chủ Wap (khác 'Thành Viên' hoặc 'Thành viên')
+                        // Chỉ hiện khung chức vụ nếu là Quản lý / Chủ Wap
                         const roleName = msgUser.role || 'Thành viên';
                         const isManager = roleName !== 'Thành Viên' && roleName !== 'Thành viên';
                         const roleHtml = isManager ? `
-                            <span style="display: inline-block; background: #1a1a1a; border: 1px solid #444; color: #ffcc00; font-size: 9px; font-weight: bold; padding: 1px 5px; border-radius: 4px; text-shadow: 0 0 4px rgba(255,204,0,0.4); margin-left: 4px;">
+                            <span style="display: inline-block; background: #1a1a1a; border: 1px solid #444; color: #ffcc00; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px; text-shadow: 0 0 4px rgba(255,204,0,0.4); margin-left: 6px;">
                                 ${roleName}
                             </span>
                         ` : '';
 
-                        const imageTag = m.image_url ? `<div style="margin-top: 6px;"><img src="${m.image_url}" style="max-width: 100%; max-height: 250px; border-radius: 4px; object-fit: contain; display: block;"></div>` : '';
+                        const imageTag = m.image_url ? `<div style="margin-top: 8px;"><img src="${m.image_url}" style="max-width: 100%; max-height: 300px; border-radius: 6px; object-fit: contain; display: block;"></div>` : '';
 
                         return `
                         <div style="display: flex; flex-direction: column; align-items: ${isMe ? 'flex-end' : 'flex-start'};">
-                            <!-- Thông tin người gửi: Avatar và Style Tên nằm ở trên -->
-                            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
-                                <div style="width: 26px; height: 26px; min-width: 26px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
-                                    ${rMsgUser.avatarHtml.replace(/style="[^"]*"/gi, 'style="width: 26px; height: 26px; border-radius: 50%; object-fit: cover;"')}
+                            <!-- Thông tin người gửi: Avatar (36px) và Style Tên lớn hơn nằm ở trên -->
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
+                                <div style="width: 36px; height: 36px; min-width: 36px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                                    ${rMsgUser.avatarHtml.replace(/style="[^"]*"/gi, 'style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;"')}
                                 </div>
-                                <div style="font-size: 12px; display: flex; align-items: center;">
+                                <div style="font-size: 13px; display: flex; align-items: center; font-weight: bold;">
                                     ${rMsgUser.nameHtml} ${roleHtml}
                                 </div>
                             </div>
 
-                            <!-- Nội dung tin nhắn nằm ở dưới -->
-                            <div style="max-width: 75%; background: ${isMe ? '#1a3300' : '#1a1a1a'}; border: 1px solid ${isMe ? '#339900' : '#333'}; padding: 8px 12px; border-radius: 8px; color: #fff; font-size: 13px; word-break: break-word;">
+                            <!-- Nội dung tin nhắn phóng to (15px) dễ đọc -->
+                            <div style="max-width: 80%; background: ${isMe ? '#1a3300' : '#1a1a1a'}; border: 1px solid ${isMe ? '#339900' : '#333'}; padding: 10px 14px; border-radius: 8px; color: #fff; font-size: 15px; word-break: break-word; line-height: 1.4;">
                                 <div>${m.message || ''}</div>
                                 ${imageTag}
                             </div>
@@ -142,38 +143,38 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                     }).join('')}
             </div>
 
-            <!-- Form Nhập tin nhắn, chọn ảnh và biểu cảm -->
-            <form method="POST" id="chatForm" style="display: flex; flex-direction: column; gap: 6px;">
-                <div style="display: flex; gap: 6px; align-items: center;">
+            <!-- Form Nhập tin nhắn, chọn ảnh và biểu cảm cỡ lớn -->
+            <form method="POST" id="chatForm" style="display: flex; flex-direction: column; gap: 8px;">
+                <div style="display: flex; gap: 8px; align-items: center;">
                     <!-- Nút icon máy ảnh chọn ảnh -->
-                    <label style="display: inline-flex; align-items: center; justify-content: center; background: #1a1a1a; border: 1px solid #444; color: #00ff00; width: 34px; height: 34px; border-radius: 4px; cursor: pointer; font-size: 16px;" title="Gửi ảnh">
+                    <label style="display: inline-flex; align-items: center; justify-content: center; background: #1a1a1a; border: 1px solid #444; color: #00ff00; width: 40px; height: 40px; border-radius: 6px; cursor: pointer; font-size: 20px;" title="Gửi ảnh">
                         📷
                         <input type="file" accept="image/*" onchange="compressAndSetChatImage(this)" style="display: none;">
                     </label>
                     <input type="hidden" id="chat-image-val" name="image_url">
 
-                    <!-- Ô nhập nội dung -->
-                    <input type="text" name="message" id="messageInput" placeholder="Nhập nội dung chát..." autocomplete="off" style="flex: 1; background: #000; color: #fff; border: 1px solid #444; padding: 8px; font-size: 13px; box-sizing: border-box; border-radius: 4px;">
+                    <!-- Ô nhập nội dung to rõ -->
+                    <input type="text" name="message" id="messageInput" placeholder="Nhập nội dung chát..." autocomplete="off" style="flex: 1; background: #000; color: #fff; border: 1px solid #444; padding: 10px 12px; font-size: 14px; box-sizing: border-box; border-radius: 6px;">
                     
-                    <button type="submit" class="btn" style="background: #0055ff; color: #fff; padding: 8px 14px; font-size: 13px; border-radius: 4px; cursor: pointer;">Gửi</button>
+                    <button type="submit" class="btn" style="background: #0055ff; color: #fff; padding: 10px 18px; font-size: 14px; border-radius: 6px; cursor: pointer; font-weight: bold;">Gửi</button>
                 </div>
 
                 <!-- Bảng chọn nhanh icon biểu cảm (Emoji) -->
-                <div style="display: flex; gap: 6px; align-items: center; background: #0d0d0d; padding: 4px; border: 1px solid #222; border-radius: 4px;">
-                    <span style="font-size: 10px; color: #888; padding-left: 4px;">Biểu cảm:</span>
-                    <button type="button" onclick="insertEmoji('😀')" style="background:none; border:none; cursor:pointer; font-size:14px;">😀</button>
-                    <button type="button" onclick="insertEmoji('😂')" style="background:none; border:none; cursor:pointer; font-size:14px;">😂</button>
-                    <button type="button" onclick="insertEmoji('❤️')" style="background:none; border:none; cursor:pointer; font-size:14px;">❤️</button>
-                    <button type="button" onclick="insertEmoji('👍')" style="background:none; border:none; cursor:pointer; font-size:14px;">👍</button>
-                    <button type="button" onclick="insertEmoji('🔥')" style="background:none; border:none; cursor:pointer; font-size:14px;">🔥</button>
-                    <button type="button" onclick="insertEmoji('🎉')" style="background:none; border:none; cursor:pointer; font-size:14px;">🎉</button>
-                    <button type="button" onclick="insertEmoji('😍')" style="background:none; border:none; cursor:pointer; font-size:14px;">😍</button>
-                    <button type="button" onclick="insertEmoji('😎')" style="background:none; border:none; cursor:pointer; font-size:14px;">😎</button>
-                    <div id="chat-compress-status" style="font-size: 10px; color: #00ff00; margin-left: auto;"></div>
+                <div style="display: flex; gap: 8px; align-items: center; background: #0d0d0d; padding: 6px 8px; border: 1px solid #222; border-radius: 6px;">
+                    <span style="font-size: 11px; color: #888;">Biểu cảm:</span>
+                    <button type="button" onclick="insertEmoji('😀')" style="background:none; border:none; cursor:pointer; font-size:16px;">😀</button>
+                    <button type="button" onclick="insertEmoji('😂')" style="background:none; border:none; cursor:pointer; font-size:16px;">😂</button>
+                    <button type="button" onclick="insertEmoji('❤️')" style="background:none; border:none; cursor:pointer; font-size:16px;">❤️</button>
+                    <button type="button" onclick="insertEmoji('👍')" style="background:none; border:none; cursor:pointer; font-size:16px;">👍</button>
+                    <button type="button" onclick="insertEmoji('🔥')" style="background:none; border:none; cursor:pointer; font-size:16px;">🔥</button>
+                    <button type="button" onclick="insertEmoji('🎉')" style="background:none; border:none; cursor:pointer; font-size:16px;">🎉</button>
+                    <button type="button" onclick="insertEmoji('😍')" style="background:none; border:none; cursor:pointer; font-size:16px;">😍</button>
+                    <button type="button" onclick="insertEmoji('😎')" style="background:none; border:none; cursor:pointer; font-size:16px;">😎</button>
+                    <div id="chat-compress-status" style="font-size: 11px; color: #00ff00; margin-left: auto;"></div>
                 </div>
             </form>
             
-            <div style="text-align: center; margin-top: 10px; font-size: 13px;">
+            <div style="text-align: center; margin-top: 12px; font-size: 13px;">
                 <a href="/mail/box">⬅ Hộp thư tin nhắn</a>
             </div>
         </div>
