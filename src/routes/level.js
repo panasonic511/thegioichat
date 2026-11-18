@@ -1,4 +1,19 @@
 export async function handleLevel(request, env, user, renderLayout) {
+    // Tự động kiểm tra nếu bảng users trống thì tạo vài tài khoản mẫu để hiển thị
+    try {
+        const check = await env.DB.prepare("SELECT COUNT(*) as total FROM users").first();
+        if (!check || check.total === 0) {
+            await env.DB.prepare(`
+                INSERT INTO users (username, display_name, role, level, coins, gold, name_color, name_glow, border_color) 
+                VALUES ('admin', 'Chủ Wap Master', 'Chủ Wap', 99, 500000, 1000, '#ff3300', '#ff0000', '#ff3300')
+            `).run();
+            await env.DB.prepare(`
+                INSERT INTO users (username, display_name, role, level, coins, gold, name_color, name_glow, border_color) 
+                VALUES ('mod01', 'Kiểm Duyệt Viên', 'Mod', 50, 100000, 200, '#00ffff', '#0099ff', '#00ffff')
+            `).run();
+        }
+    } catch (e) {}
+
     let users = { results: [] };
     try {
         users = await env.DB.prepare(`
