@@ -1,5 +1,5 @@
 export function renderUser(u) {
-    // Nếu dữ liệu truyền vào là null, undefined hoặc không phải object
+    // Bảo vệ tuyệt đối: nếu u không phải là object hợp lệ, trả về giá trị mặc định ngay lập tức
     if (!u || typeof u !== 'object') {
         const defaultAvt = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/></svg>";
         return {
@@ -10,17 +10,19 @@ export function renderUser(u) {
         };
     }
 
-    // Xử lý avatar an toàn tuyệt đối
     const defaultAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/><path d='M20 88 C20 65, 80 65, 80 88' fill='%2300ff00'/></svg>";
-    const avatarUrl = (u.avatar && typeof u.avatar === 'string' && !u.avatar.includes('7gXvS6v')) ? u.avatar : defaultAvatar;
+    
+    // Kiểm tra an toàn thuộc tính avatar
+    const avatarVal = u.avatar ? String(u.avatar) : '';
+    const avatarUrl = (avatarVal && !avatarVal.includes('7gXvS6v')) ? avatarVal : defaultAvatar;
 
-    const borderColor = u.border_color || '#ffcc00';
+    const borderColor = u.border_color ? String(u.border_color) : '#ffcc00';
     let avatarStyle = `border-radius: 50%; object-fit: cover; border: 2px solid ${borderColor};`;
     if (u.avatar_glow && u.avatar_glow !== '#000000') {
         avatarStyle += ` box-shadow: 0 0 10px ${u.avatar_glow};`;
     }
 
-    const nameColor = u.name_color || '#00ff00';
+    const nameColor = u.name_color ? String(u.name_color) : '#00ff00';
     let nameStyle = `color: ${nameColor}; font-weight: bold;`;
     let shadows = [];
     if (u.name_glow && u.name_glow !== '#000000') shadows.push(`0 0 6px ${u.name_glow}`);
