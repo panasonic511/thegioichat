@@ -9,19 +9,36 @@ export async function handleRealtimeApi(request, env) {
         }
         const userId = match[1];
 
-        // Đếm số tin nhắn chưa đọc trong hộp thư
-        const msgCount = await env.DB.prepare(
-            "SELECT COUNT(*) as total FROM mail_box WHERE receiver_id = ? AND is_read = 0"
-        ).bind(userId).first();
+        let unreadMessages = 0;
+        let unreadNotifications = 0;
 
-        // Đếm số thông báo chưa đọc
-        const notiCount = await env.DB.prepare(
-            "SELECT COUNT(*) as total FROM notifications WHERE user_id = ? AND is_read = 0"
-        ).bind(userId).first();
+        // Kiểm tra an toàn hộp thư tin nhắn (Hỗ trợ cả cột is_read hoặc status)
+        try {
+            const msgCheck = await env.DB.prepare(
+                "SELECT COUNT(*) as total FROM mail_box WHERE receiver_id = ? AND (is_read = 0 OR is_read IS NULL)"
+            ).bind(userId).first();
+            unreadMessages = msgCheck?.total || 0;
+        } catch (err) {
+            try {
+                // Fallback nếu bảng dùng tên cột khác
+                const msgCheck2 = await env.DB.prepare(
+                    "SELECT COUNT(*) as total FROM mail_box WHERE receiver_id = ?"
+                ).bind(userId).first();
+                unreadMessages = msgCheck2?.total || 0;
+            } catch (e) {}
+        }
+
+        // Kiểm tra an toàn bảng thông báo hệ thống
+        try {
+            const notiCheck = await env.DB.prepare(
+                "SELECT COUNT(*) as total FROM notifications WHERE user_id = ? AND (is_read = 0 OR is_read IS NULL)"
+            ).bind(userId).first();
+            unreadNotifications = notiCheck?.total || 0;
+        } catch (err) {}
 
         return new Response(JSON.stringify({
-            unread_messages: msgCount?.total || 0,
-            unread_notifications: notiCount?.total || 0
+            unread_messages: unreadMessages,
+            unread_notifications: unreadNotifications
         }), {
             headers: { 'Content-Type': 'application/json' }
         });
