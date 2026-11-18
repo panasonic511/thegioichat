@@ -175,14 +175,13 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 <span style="color: #ffcc00; font-size: 11px;">[Lv.${profileUser.level || 1}]</span>
             </div>
 
-            <!-- Hiển thị Chủ Wap mang nguyên bộ hiệu ứng giống hệt tên tài khoản -->
-            <div style="text-align: center; font-size: 13px; margin: 4px 0 8px 0;">
-                <span style="color: #aaa;">ID ${profileUser.id}</span> <span style="margin: 0 4px; color: #666;">·</span> 
-                <span style="${profileUser.name_color ? `color: ${profileUser.name_color};` : 'color: #ffcc00;'} ${profileUser.name_glow ? `text-shadow: 0 0 6px ${profileUser.name_glow};` : ''} ${profileUser.name_border ? `-webkit-text-stroke: 0.5px ${profileUser.name_border};` : ''} font-weight: bold;">
+            <!-- Hiển thị Chức vụ dạng khung (badge/button box) giống góc trên -->
+            <div style="text-align: center; margin: 6px 0 10px 0;">
+                <span style="font-size: 11px; color: #aaa; margin-right: 6px;">ID ${profileUser.id}</span>
+                <span style="display: inline-block; background: #1a1a1a; border: 1px solid #444; color: #ffcc00; font-size: 11px; font-weight: bold; padding: 2px 8px; border-radius: 4px; text-shadow: 0 0 4px rgba(255,204,0,0.4);">
                     ${profileUser.role || 'Thành Viên'}
                 </span>
             </div>
-
             ${!isOwner ? `
             <div style="padding-bottom: 8px; display: flex; justify-content: center; gap: 6px;">
                 <form method="POST" style="margin: 0;"><input type="hidden" name="action" value="toggle_follow"><button type="submit" class="btn" style="font-size: 10px; padding: 3px 8px; background: ${isFollowing ? '#333' : '#0055ff'}; color: #fff;">${isFollowing ? '✓ Đang Follow' : '+ Follow'}</button></form>
