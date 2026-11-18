@@ -184,7 +184,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                         ${profileUser.role}
                     </span>
                 ` : `
-                    <span style="color: #888; font-size: 12px;">${profileUser.role || 'Thành Viên'}</span>
+                    <span style="color: #00ff00; font-size: 12px;">${profileUser.role || 'Thành Viên'}</span>
                 `}
             </div>
             ${!isOwner ? `
