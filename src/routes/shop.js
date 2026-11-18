@@ -6,30 +6,32 @@ export async function handleShop(request, env, user, renderLayout) {
     function getRoleBadgeStyle(role) {
         const r = String(role || 'Thành Viên').trim();
         if (r === 'Chủ Wap') {
-            return 'background: #2a0800; color: #ff3300; border: 1px solid #ff3300; text-shadow: 0 0 6px #ff0000; font-weight: bold; padding: 2px 8px; font-size: 11px; border-radius: 4px; display: inline-block;';
+            return 'background: #2a0800; color: #ff3300; border: 1px solid #ff3300; text-shadow: 0 0 6px #ff0000; font-weight: bold; padding: 3px 10px; font-size: 11px; border-radius: 4px; display: inline-block;';
         } else if (r === 'Admin') {
-            return 'background: #2a1a00; color: #ffcc00; border: 1px solid #ffcc00; text-shadow: 0 0 6px #ffcc00; font-weight: bold; padding: 2px 8px; font-size: 11px; border-radius: 4px; display: inline-block;';
+            return 'background: #2a1a00; color: #ffcc00; border: 1px solid #ffcc00; text-shadow: 0 0 6px #ffcc00; font-weight: bold; padding: 3px 10px; font-size: 11px; border-radius: 4px; display: inline-block;';
         } else if (r === 'Mod') {
-            return 'background: #001a2a; color: #00ffff; border: 1px solid #00ffff; text-shadow: 0 0 6px #00ffff; font-weight: bold; padding: 2px 8px; font-size: 11px; border-radius: 4px; display: inline-block;';
+            return 'background: #001a2a; color: #00ffff; border: 1px solid #00ffff; text-shadow: 0 0 6px #00ffff; font-weight: bold; padding: 3px 10px; font-size: 11px; border-radius: 4px; display: inline-block;';
         } else {
-            return 'background: #141414; color: #00ff00; border: 1px solid #444; font-weight: bold; padding: 2px 8px; font-size: 11px; border-radius: 4px; display: inline-block;';
+            return 'background: #141414; color: #00ff00; border: 1px solid #444; font-weight: bold; padding: 3px 10px; font-size: 11px; border-radius: 4px; display: inline-block;';
         }
     }
 
     const content = `
-    <!-- Khu vực thông tin cá nhân chuẩn hóa toàn cục -->
+    <!-- Header thông tin tài khoản chuẩn chỉnh, không bị chồng lấn -->
     <div class="box" style="margin-bottom: 12px;">
-        <div class="box-content" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px;">
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <div style="width: 42px; height: 42px;">${rUser.avatarHtml}</div>
-                <div>
-                    <div style="font-size: 14px; font-weight: bold;">${rUser.nameHtml}</div>
-                    <div style="font-size: 11px; color: #ffcc00; margin-top: 2px;">
+        <div class="box-content" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: #0c0c0c;">
+            <div style="display: flex; align-items: center; gap: 12px; overflow: hidden;">
+                <div style="width: 46px; height: 46px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;">
+                    ${rUser.avatarHtml.replace('<img ', '<img style="width: 46px; height: 46px; border-radius: 50%; object-fit: cover;" ')}
+                </div>
+                <div style="overflow: hidden;">
+                    <div style="font-size: 14px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${rUser.nameHtml}</div>
+                    <div style="font-size: 11px; color: #ffcc00; margin-top: 3px;">
                         🪙 ${(user.coins || 0).toLocaleString()} Xu · 👑 ${(user.gold || 0).toLocaleString()} Vàng
                     </div>
                 </div>
             </div>
-            <div>
+            <div style="flex-shrink: 0; margin-left: 8px;">
                 <span style="${getRoleBadgeStyle(user.role)}">${user.role || 'Thành viên'}</span>
             </div>
         </div>
