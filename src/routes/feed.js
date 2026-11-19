@@ -781,7 +781,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 <input type="hidden" id="story-media-type-val" name="media_type" value="image">
                 <input type="hidden" id="story-duration-val" name="duration_sec" value="0">
 
-                <label style="color: #ccc; font-size: 11px; display: block; margin-bottom: 6px;">Tự hạ độ phân giải tối đa + giữ tiếng để giảm dung lượng & đăng nhanh:</label>
+                <label style="color: #ccc; font-size: 11px; display: block; margin-bottom: 6px;">Hạ chất lượng & giữ tiếng để đăng nhanh:</label>
                 <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;">
                     <label style="display: inline-flex; align-items: center; gap: 6px; background: #1a1a1a; border: 1px solid #444; color: #00ff00; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; flex-shrink: 0;">
                         🎬 Chọn ảnh hoặc video
@@ -818,8 +818,8 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
 
         <div style="position: relative; flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 8px 0;">
             <button type="button" onclick="prevStory()" style="position: absolute; left: 8px; top: 50%; transform: translateY(-50%); z-index: 3; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.2); color: #fff; width: 32px; height: 48px; border-radius: 8px; font-size: 18px; cursor: pointer;">‹</button>
-            <img id="sv-image" src="" alt="Story" style="display: none; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain;">
-            <video id="sv-video" controls autoplay playsinline loop style="display: none; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain;"></video>
+            <img id="sv-image" src="" alt="Story" style="display: none; max-width: 92vw; max-height: 54vh; width: auto; height: auto; object-fit: contain; border-radius: 8px;">
+            <video id="sv-video" controls autoplay playsinline loop style="display: none; max-width: 360px; width: 88vw; max-height: 50vh; height: auto; object-fit: contain; border-radius: 8px; background: #000;"></video>
             <button type="button" onclick="nextStory()" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); z-index: 3; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.2); color: #fff; width: 32px; height: 48px; border-radius: 8px; font-size: 18px; cursor: pointer;">›</button>
         </div>
 
@@ -886,7 +886,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                             resolve(val || '');
                         }
                     };
-                    const timer = setTimeout(() => finish(''), 500);
+                    const timer = setTimeout(() => finish(''), 400);
 
                     v.onloadeddata = function() {
                         try { v.currentTime = 0.01; } catch (e) { clearTimeout(timer); finish(''); }
@@ -895,11 +895,11 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                         clearTimeout(timer);
                         try {
                             const c = document.createElement('canvas');
-                            c.width = 96;
-                            c.height = 144;
+                            c.width = 80;
+                            c.height = 120;
                             const ctx = c.getContext('2d');
                             ctx.drawImage(v, 0, 0, c.width, c.height);
-                            finish(c.toDataURL('image/jpeg', 0.35));
+                            finish(c.toDataURL('image/jpeg', 0.25));
                         } catch (e) {
                             finish('');
                         }
@@ -946,7 +946,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 video.src = objUrl;
 
                 await new Promise((resolve, reject) => {
-                    const t = setTimeout(() => reject(new Error('timeout')), 3500);
+                    const t = setTimeout(() => reject(new Error('timeout')), 2500);
                     video.onloadedmetadata = () => { clearTimeout(t); resolve(); };
                     video.onerror = () => { clearTimeout(t); reject(new Error('load error')); };
                 });
@@ -959,15 +959,15 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 const destNode = audioCtx.createMediaStreamDestination();
                 sourceNode.connect(destNode);
 
-                const MAX_DIM = 480;
-                let w = video.videoWidth || 360;
-                let h = video.videoHeight || 640;
+                const MAX_DIM = 320;
+                let w = video.videoWidth || 240;
+                let h = video.videoHeight || 320;
                 if (w > MAX_DIM || h > MAX_DIM) {
                     if (w >= h) {
-                        h = Math.max(120, Math.round((h * MAX_DIM) / w));
+                        h = Math.max(96, Math.round((h * MAX_DIM) / w));
                         w = MAX_DIM;
                     } else {
-                        w = Math.max(120, Math.round((w * MAX_DIM) / h));
+                        w = Math.max(96, Math.round((w * MAX_DIM) / h));
                         h = MAX_DIM;
                     }
                 }
@@ -978,7 +978,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 canvas.width = w;
                 canvas.height = h;
                 const ctx = canvas.getContext('2d');
-                const canvasStream = canvas.captureStream(18);
+                const canvasStream = canvas.captureStream(14);
 
                 const audioTracks = destNode.stream.getAudioTracks();
                 const combinedTracks = [
@@ -997,8 +997,8 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 try {
                     recorder = new MediaRecorder(combinedStream, {
                         mimeType: supportedMime,
-                        videoBitsPerSecond: 400000,
-                        audioBitsPerSecond: 48000
+                        videoBitsPerSecond: 220000,
+                        audioBitsPerSecond: 32000
                     });
                 } catch (e) {
                     recorder = new MediaRecorder(combinedStream, { mimeType: supportedMime });
@@ -1019,7 +1019,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     try { video.pause(); } catch (e) {}
                 };
 
-                const maxDurationMs = Math.min(20000, ((video.duration && isFinite(video.duration) && video.duration > 0) ? video.duration * 1000 + 800 : 12000));
+                const maxDurationMs = Math.min(8000, ((video.duration && isFinite(video.duration) && video.duration > 0) ? video.duration * 1000 + 400 : 6000));
                 const hardTimeout = setTimeout(stopRecording, maxDurationMs);
 
                 const donePromise = new Promise((resolve) => {
@@ -1030,7 +1030,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     };
                 });
 
-                recorder.start(300);
+                recorder.start(250);
                 video.currentTime = 0;
                 await video.play().catch(() => {});
 
@@ -1043,7 +1043,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                         ctx.drawImage(video, 0, 0, w, h);
                         if (statusEl && video.duration && isFinite(video.duration) && video.duration > 0) {
                             const p = Math.min(99, Math.round((video.currentTime / video.duration) * 100));
-                            statusEl.innerText = 'Đang giảm dung lượng + tiếng ' + p + '%';
+                            statusEl.innerText = 'Đang giảm nhanh ' + p + '%';
                             statusEl.style.color = '#ffcc00';
                         }
                     } catch (e) {}
@@ -1057,7 +1057,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 try { if (audioCtx) await audioCtx.close(); } catch (e) {}
                 try { URL.revokeObjectURL(objUrl); } catch (e) {}
 
-                if (compressedBlob && compressedBlob.size > 1024 && compressedBlob.size < file.size * 0.92) {
+                if (compressedBlob && compressedBlob.size > 512 && compressedBlob.size < file.size) {
                     return compressedBlob;
                 }
                 return null;
@@ -1087,7 +1087,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     lastError = err;
                 }
                 if (attempt < maxRetries) {
-                    await new Promise(r => setTimeout(r, 500 * attempt));
+                    await new Promise(r => setTimeout(r, 400 * attempt));
                 }
             }
             throw lastError || new Error('Tải lên thất bại sau nhiều lần thử.');
@@ -1362,7 +1362,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 });
 
                 if (statusEl) {
-                    statusEl.innerText = 'Đang giảm dung lượng...';
+                    statusEl.innerText = 'Đang giảm nhanh...';
                     statusEl.style.color = '#ffcc00';
                 }
 
@@ -1372,7 +1372,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             } else {
                 document.getElementById('story-media-type-val').value = 'image';
                 document.getElementById('story-duration-val').value = '0';
-                compressAndSetImage(fileInput, '#story-image-val', 720, 0.72);
+                compressAndSetImage(fileInput, '#story-image-val', 480, 0.55);
             }
         }
 
