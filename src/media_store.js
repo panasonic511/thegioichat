@@ -258,10 +258,6 @@ async function deleteChunkKey(request, env, safeId, idx) {
     }
 }
 
-/**
- * Ghép một dải mảnh [startChunk, endChunk) (kèm partialUrl trước đó nếu có)
- * Trả về { done, nextChunk, url, mimeType, size } để client gọi nối tiếp mà không vượt subrequest
- */
 export async function mergeMediaChunkBatch(request, env, {
     uploadId,
     startChunk = 0,
@@ -321,12 +317,10 @@ export async function mergeMediaChunkBatch(request, env, {
 
     const saved = await writeBytesToStorage(request, env, finalKey, merged, resolvedMime, ttlSeconds);
 
-    // Xóa các chunk vừa ghép xong
     for (let i = start; i < end; i++) {
         await deleteChunkKey(request, env, safeId, i);
     }
 
-    // Xóa bản partial cũ sau khi đã lưu bản mới thành công
     if (prevNorm && prevNorm.includes('/_partial/')) {
         await deleteMediaAsset(request, env, prevNorm);
     }
@@ -339,6 +333,27 @@ export async function mergeMediaChunkBatch(request, env, {
         mimeType: saved.mimeType,
         size: saved.size
     };
+}
+
+// Giữ tương thích nếu có file khác import tên finalizeMediaChunks
+export async function finalizeMediaChunks(request, env, options = {}) {
+    const total = parseInt(options.totalChunks || '0', 10);
+    let cursor = parseInt(options.startChunk || '0', 10) || 0;
+    let currentUrl = options.existingUrl || '';
+    let lastResult = null;
+
+    while (cursor < total) {
+        lastResult = await mergeMediaChunkBatch(request, env, {
+            ...options,
+            startChunk: cursor,
+            existingUrl: currentUrl
+        });
+        currentUrl = lastResult.url;
+        cursor = typeof lastResult.nextChunk === 'number' ? lastResult.nextChunk : (cursor + 6);
+        if (lastResult.done) break;
+    }
+
+    return lastResult || { url: currentUrl, mimeType: options.mimeType || 'video/mp4', size: 0 };
 }
 
 export async function deleteMediaAsset(request, env, mediaUrl) {
@@ -418,12 +433,13 @@ export async function handleMediaRequest(request, env) {
     if (typeof caches !== 'undefined' && caches.default) {
         const cacheKey = new Request(`${url.origin}${MEDIA_ROUTE_PREFIX}${key}`, { method: 'GET' });
         const cached = await caches.default.match(cacheKey);
-        if (cached) {
-            return new Response(cached.body, {
-                status: cached.status,
-                headers: cached.headers
-            });
+        if (!cached) {
+            return new Response('Media not found', { status: 404 });
         }
+        return new Response(cached.body, {
+            status: cached.status,
+            headers: cached.headers
+        });
     }
 
     return new Response('Media not found', { status: 404 });
