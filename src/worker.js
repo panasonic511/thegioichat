@@ -28,7 +28,7 @@ function escapeHtmlText(str) {
         .replace(/'/g, '&#39;');
 }
 
-function getStaffOverNickIcon(safeUser) {
+function getStaffAfterNickBadge(safeUser) {
     if (!safeUser) return '';
     const roleRaw = String(safeUser.role || '').trim().toLowerCase();
     const isAdmin = Number(safeUser.is_admin || 0) === 1
@@ -39,12 +39,13 @@ function getStaffOverNickIcon(safeUser) {
         || roleRaw === 'quản lý';
 
     if (isAdmin) {
-        return `<span class="staff-over-icon staff-over-admin" title="Quản trị viên">👑</span>`;
+        return `<span class="staff-nick-badge staff-badge-admin" title="Quản trị viên"><span class="badge-ico">👑</span>ADMIN</span>`;
     }
 
     const isMod = roleRaw === 'mod' || roleRaw === 'smod';
     if (isMod) {
-        return `<span class="staff-over-icon staff-over-mod" title="Điều hành viên">🛡️</span>`;
+        const label = roleRaw === 'smod' ? 'SMOD' : 'MOD';
+        return `<span class="staff-nick-badge staff-badge-mod" title="Điều hành viên"><span class="badge-ico">🛡️</span>${label}</span>`;
     }
 
     return '';
@@ -86,12 +87,12 @@ export function renderUser(u) {
 
     // Tự động gắn Icon trước tên người dùng trên toàn bộ hệ thống Wap
     const activeIcon = safeUser.active_icon ? `${escapeHtmlText(safeUser.active_icon)} ` : '';
-    const staffOverIcon = getStaffOverNickIcon(safeUser);
+    const staffBadge = getStaffAfterNickBadge(safeUser);
 
     return {
         nameStyle,
         avatarStyle,
-        nameHtml: `<span class="nick-with-role"><a href="/profile?user=${userId}" style="${nameStyle}">${activeIcon}${displayName}</a>${staffOverIcon}</span>`,
+        nameHtml: `<a href="/profile?user=${userId}" style="${nameStyle}">${activeIcon}${displayName}</a>${staffBadge}`,
         avatarHtml: `<a href="/profile?user=${userId}"><img src="${escapeHtmlText(avatarUrl)}" style="${avatarStyle}"></a>`
     };
 }
@@ -202,49 +203,72 @@ function renderLayout(title, content, user) {
         .btn:hover { background: #333; border-color: #00ff00; color: #fff; }
         .footer { text-align: center; padding: 16px; font-size: 13px; color: #777; border-top: 1px solid #222; background: #050505; margin-bottom: 40px; }
 
-        .nick-with-role {
-            position: relative;
-            display: inline-block;
-            padding-top: 4px;
-            line-height: 1.25;
-        }
-        .staff-over-icon {
-            position: absolute;
-            top: -5px;
-            right: -5px;
-            font-size: 0.52em;
-            line-height: 1;
-            pointer-events: none;
+        .staff-nick-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            margin-left: 5px;
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.4px;
+            vertical-align: middle;
+            line-height: 1.3;
+            text-transform: uppercase;
             user-select: none;
-            z-index: 2;
         }
-        .staff-over-admin {
-            filter: drop-shadow(0 0 3px rgba(255, 60, 0, 0.95));
-            animation: overAdminBlink 1.15s infinite alternate;
+        .staff-nick-badge .badge-ico {
+            display: inline-block;
+            animation: staffIconPulse 1.1s infinite ease-in-out;
         }
-        .staff-over-mod {
-            filter: drop-shadow(0 0 3px rgba(0, 229, 255, 0.95));
-            animation: overModBlink 1.15s infinite alternate;
+        .staff-badge-admin {
+            background: linear-gradient(90deg, #3b0000, #8a0000, #3b0000);
+            background-size: 200% 100%;
+            color: #fff200;
+            border: 1px solid #ff3b30;
+            box-shadow: 0 0 6px rgba(255, 59, 48, 0.8);
+            animation: adminNickBlink 1.25s infinite alternate, staffBadgeSlide 2.4s linear infinite;
         }
-        @keyframes overAdminBlink {
+        .staff-badge-mod {
+            background: linear-gradient(90deg, #002633, #006688, #002633);
+            background-size: 200% 100%;
+            color: #7ef9ff;
+            border: 1px solid #00e5ff;
+            box-shadow: 0 0 6px rgba(0, 229, 255, 0.75);
+            animation: modNickBlink 1.25s infinite alternate, staffBadgeSlide 2.4s linear infinite;
+        }
+        @keyframes adminNickBlink {
             0% {
-                opacity: 0.45;
-                transform: scale(0.88) rotate(-8deg);
+                opacity: 0.75;
+                box-shadow: 0 0 3px rgba(255, 59, 48, 0.4);
+                text-shadow: 0 0 2px #ff3b30;
             }
             100% {
                 opacity: 1;
-                transform: scale(1.08) rotate(8deg);
+                box-shadow: 0 0 10px rgba(255, 59, 48, 1), 0 0 16px rgba(255, 230, 0, 0.65);
+                text-shadow: 0 0 6px #fff200;
             }
         }
-        @keyframes overModBlink {
+        @keyframes modNickBlink {
             0% {
-                opacity: 0.45;
-                transform: scale(0.88) rotate(8deg);
+                opacity: 0.75;
+                box-shadow: 0 0 3px rgba(0, 229, 255, 0.4);
+                text-shadow: 0 0 2px #00e5ff;
             }
             100% {
                 opacity: 1;
-                transform: scale(1.08) rotate(-8deg);
+                box-shadow: 0 0 10px rgba(0, 229, 255, 1), 0 0 16px rgba(0, 255, 170, 0.55);
+                text-shadow: 0 0 6px #7ef9ff;
             }
+        }
+        @keyframes staffIconPulse {
+            0%, 100% { transform: scale(1) rotate(0deg); }
+            50% { transform: scale(1.25) rotate(-7deg); }
+        }
+        @keyframes staffBadgeSlide {
+            0% { background-position: 0% 50%; }
+            100% { background-position: 200% 50%; }
         }
     </style>
 </head>
