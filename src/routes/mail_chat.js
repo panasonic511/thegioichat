@@ -10,6 +10,32 @@ function escapeHtml(str) {
         .replace(/'/g, '&#39;');
 }
 
+function getFallbackAvatar(seed = '#00ff00') {
+    const safeFill = encodeURIComponent(String(seed || '#00ff00'));
+    return `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%23181818'/><circle cx='50' cy='38' r='18' fill='${safeFill}'/><path d='M20 84c4-16 18-24 30-24s26 8 30 24' fill='${safeFill}'/></svg>`;
+}
+
+function buildUserVisual(uObj) {
+    const rendered = renderUser(uObj || {});
+    const rawAv = uObj && uObj.avatar ? String(uObj.avatar).trim() : '';
+    const avatarSrc = (rawAv && !rawAv.includes('7gXvS6v'))
+        ? rawAv
+        : getFallbackAvatar(uObj && uObj.name_color ? uObj.name_color : '#00ff00');
+
+    const avatarStyle = rendered.avatarStyle
+        ? `${rendered.avatarStyle}; width: 36px; height: 36px; border-radius: 50%; object-fit: cover; display: block;`
+        : 'width: 36px; height: 36px; border-radius: 50%; object-fit: cover; border: 1px solid #00ff00; display: block;';
+
+    const levelVal = Number(uObj && uObj.level ? uObj.level : 1);
+
+    return {
+        nameHtml: rendered.nameHtml || escapeHtml((uObj && (uObj.display_name || uObj.username)) || 'Thành viên'),
+        avatarSrc,
+        avatarStyle,
+        level: Number.isNaN(levelVal) || levelVal < 1 ? 1 : levelVal
+    };
+}
+
 export async function handleMailChat(request, env, user, renderLayout, url) {
     const partnerIdParam = url.searchParams.get('user');
     if (!partnerIdParam) {
@@ -41,6 +67,16 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         try {
             await env.DB.prepare("ALTER TABLE mail_box ADD COLUMN is_read INTEGER DEFAULT 0").run();
         } catch (e) {}
+
+        await env.DB.prepare(`
+            CREATE TABLE IF NOT EXISTS mail_typing_status (
+                user_id INTEGER NOT NULL,
+                target_user_id INTEGER NOT NULL,
+                is_typing INTEGER DEFAULT 0,
+                updated_at INTEGER DEFAULT 0,
+                PRIMARY KEY (user_id, target_user_id)
+            )
+        `).run();
     } catch (e) {}
 
     const markPartnerMessagesRead = async () => {
@@ -57,9 +93,31 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         }
     };
 
+    const setMyTypingState = async (isTyping) => {
+        try {
+            const nowSec = Math.floor(Date.now() / 1000);
+            await env.DB.prepare(`
+                INSERT INTO mail_typing_status (user_id, target_user_id, is_typing, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id, target_user_id)
+                DO UPDATE SET is_typing = excluded.is_typing, updated_at = excluded.updated_at
+            `).bind(user.id, partnerId, isTyping ? 1 : 0, nowSec).run();
+        } catch (e) {}
+    };
+
     if (request.method === 'POST') {
         try {
             const formData = await request.formData();
+            const action = String(formData.get('action') || '').trim();
+
+            if (action === 'typing_status') {
+                const typingFlag = String(formData.get('is_typing') || '0') === '1';
+                await setMyTypingState(typingFlag);
+                return new Response(JSON.stringify({ success: true, is_typing: typingFlag ? 1 : 0 }), {
+                    headers: { 'Content-Type': 'application/json;charset=UTF-8' }
+                });
+            }
+
             const rawMessage = formData.get('message');
             const rawImageUrl = formData.get('image_url');
 
@@ -77,6 +135,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                     ).bind(user.id, partnerId, message, imageUrl).run();
                 }
 
+                await setMyTypingState(false);
                 await markPartnerMessagesRead();
             }
 
@@ -99,10 +158,18 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
     try {
         partner = await env.DB.prepare(`
             SELECT id, username, display_name, avatar, border_color, avatar_glow,
-                   name_color, name_glow, name_border, name_border_glow, active_icon, role, is_admin
+                   name_color, name_glow, name_border, name_border_glow, active_icon, role, is_admin, level, coins
             FROM users WHERE id = ?
         `).bind(partnerId).first();
-    } catch (e) {}
+    } catch (e) {
+        try {
+            partner = await env.DB.prepare(`
+                SELECT id, username, display_name, avatar, border_color, avatar_glow,
+                       name_color, name_glow, name_border, name_border_glow, active_icon, role, is_admin
+                FROM users WHERE id = ?
+            `).bind(partnerId).first();
+        } catch (e2) {}
+    }
 
     if (!partner) {
         return new Response("Không tìm thấy thành viên này.", { status: 404 });
@@ -132,7 +199,8 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         }
     } catch (e) {}
 
-    const rPartnerHeader = renderUser(partner);
+    const partnerVisual = buildUserVisual(partner);
+    const currentUserVisual = buildUserVisual(user);
 
     const renderMessageHtml = (m, currentUserObj, partnerObj) => {
         const sender = m.sender_id || m.user_id;
@@ -140,7 +208,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         const isRead = Number(m.is_read || 0) === 1;
 
         const msgUser = isMe ? currentUserObj : partnerObj;
-        const rMsgUser = renderUser(msgUser);
+        const vUser = isMe ? currentUserVisual : partnerVisual;
 
         const rawMsg = m.message || '';
         const isGifLink = /^https?:\/\//i.test(rawMsg) &&
@@ -158,14 +226,15 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
             ? `<div style="font-size: 11px; margin-top: 3px; color: ${isRead ? '#00ff88' : '#888'}; font-weight: ${isRead ? 'bold' : 'normal'};">${isRead ? '✓✓ Đã xem' : '✓ Đã gửi'}</div>`
             : '';
 
+        const levelBadgeHtml = `<span style="background: #1b2232; color: #ffd54f; border: 1px solid #394867; border-radius: 4px; padding: 1px 5px; font-size: 10px; font-weight: bold; margin-left: 6px;">Lv.${vUser.level}</span>`;
+
         return `
         <div style="display: flex; flex-direction: column; align-items: ${isMe ? 'flex-end' : 'flex-start'};">
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
-                <div style="width: 36px; height: 36px; min-width: 36px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
-                    ${rMsgUser.avatarHtml.replace(/style="[^"]*"/gi, 'style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;"')}
-                </div>
-                <div style="font-size: 13px; display: flex; align-items: center; font-weight: bold;">
-                    ${rMsgUser.nameHtml}
+                <img src="${escapeHtml(vUser.avatarSrc)}" alt="${escapeHtml(msgUser.display_name || msgUser.username || '')}" style="${escapeHtml(vUser.avatarStyle)}">
+                <div style="font-size: 13px; display: flex; align-items: center; flex-wrap: wrap; font-weight: bold;">
+                    ${vUser.nameHtml}
+                    ${levelBadgeHtml}
                 </div>
             </div>
             <div style="max-width: 80%; background: ${isMe ? '#1a3300' : '#1a1a1a'}; border: 1px solid ${isMe ? '#339900' : '#333'}; padding: 10px 14px; border-radius: 8px; color: #fff; font-size: 15px; word-break: break-word; line-height: 1.4;">
@@ -180,7 +249,10 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         id: user.id,
         username: user.username,
         display_name: user.display_name,
-        avatar: user.avatar,
+        avatar: currentUserVisual.avatarSrc,
+        avatarStyle: currentUserVisual.avatarStyle,
+        nameHtml: currentUserVisual.nameHtml,
+        level: currentUserVisual.level,
         border_color: user.border_color,
         avatar_glow: user.avatar_glow,
         name_color: user.name_color,
@@ -196,7 +268,10 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         id: partner.id,
         username: partner.username,
         display_name: partner.display_name,
-        avatar: partner.avatar,
+        avatar: partnerVisual.avatarSrc,
+        avatarStyle: partnerVisual.avatarStyle,
+        nameHtml: partnerVisual.nameHtml,
+        level: partnerVisual.level,
         border_color: partner.border_color,
         avatar_glow: partner.avatar_glow,
         name_color: partner.name_color,
@@ -210,15 +285,24 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
 
     const content = `
     <div class="box" style="position: relative;">
-        <div class="box-title" style="display: flex; align-items: center; gap: 8px; font-size: 15px;">
-            <span>🟢 Trò chuyện với</span> ${rPartnerHeader.nameHtml}
+        <div class="box-title" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 15px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <span>🟢 Trò chuyện với</span>
+                ${partnerVisual.nameHtml}
+                <span style="background: #1b2232; color: #ffd54f; border: 1px solid #394867; border-radius: 4px; padding: 1px 6px; font-size: 11px; font-weight: bold;">Lv.${partnerVisual.level}</span>
+            </div>
         </div>
         <div class="box-content" style="padding: 10px;">
 
-            <div id="chatMessageBox" style="height: 420px; overflow-y: scroll; background: #000; border: 1px solid #333; padding: 12px; display: flex; flex-direction: column; gap: 14px; margin-bottom: 12px;">
+            <div id="chatMessageBox" style="height: 420px; overflow-y: scroll; background: #000; border: 1px solid #333; padding: 12px; display: flex; flex-direction: column; gap: 14px; margin-bottom: 8px;">
                 ${messages.length === 0
                     ? '<div id="no-msg" style="color: #777; text-align: center; margin-top: 170px; font-size: 14px;">Chưa có tin nhắn nào. Hãy gửi tin nhắn mở lời!</div>'
                     : messages.map(m => renderMessageHtml(m, user, partner)).join('')}
+            </div>
+
+            <div id="partnerTypingIndicator" style="display: none; align-items: center; gap: 6px; font-size: 12px; color: #00ff88; padding: 2px 4px 8px 4px; min-height: 18px;">
+                <span style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #00ff88;"></span>
+                <span id="partnerTypingText">${escapeHtml(partner.display_name || partner.username || 'Đối phương')} đang soạn tin nhắn...</span>
             </div>
 
             <form id="chatForm" onsubmit="sendChatMessage(event)" style="display: flex; flex-direction: column; gap: 8px; position: relative;">
@@ -229,7 +313,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                     </label>
                     <input type="hidden" id="chat-image-val" name="image_url">
 
-                    <input type="text" name="message" id="messageInput" placeholder="Nhập nội dung chát..." autocomplete="off" style="flex: 1; background: #000; color: #fff; border: 1px solid #444; padding: 10px 12px; font-size: 14px; box-sizing: border-box; border-radius: 6px;" required>
+                    <input type="text" name="message" id="messageInput" placeholder="Nhập nội dung chát..." autocomplete="off" oninput="handleChatInputTyping()" onblur="stopChatInputTyping(true)" style="flex: 1; background: #000; color: #fff; border: 1px solid #444; padding: 10px 12px; font-size: 14px; box-sizing: border-box; border-radius: 6px;" required>
 
                     <button type="button" onclick="toggleGifPopup()" class="btn" style="background: #333; color: #ffcc00; padding: 10px 12px; font-size: 14px; border-radius: 6px; cursor: pointer; border: 1px solid #551a8b;" title="Kho Sticker GIF Meme">🎁 GIF</button>
 
@@ -271,6 +355,10 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         const partnerData = ${safePartnerJson};
         const chatBox = document.getElementById('chatMessageBox');
 
+        let lastTypingSentState = false;
+        let typingIdleTimer = null;
+        let lastTypingPulseTs = 0;
+
         function escapeJsHtml(str) {
             if (str === null || str === undefined) return '';
             return String(str)
@@ -281,10 +369,96 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                 .replace(/'/g, '&#39;');
         }
 
+        function getSafeAvatarSrc(uObj) {
+            const av = uObj && uObj.avatar ? String(uObj.avatar).trim() : '';
+            if (av && av.indexOf('7gXvS6v') === -1) return av;
+            return "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%23181818'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/></svg>";
+        }
+
+        function buildClientNameHtml(uObj) {
+            if (uObj && uObj.nameHtml) return uObj.nameHtml;
+            const iconPrefix = (uObj && uObj.active_icon) ? (escapeJsHtml(uObj.active_icon) + ' ') : '';
+            const color = (uObj && uObj.name_color) ? escapeJsHtml(uObj.name_color) : '#00ff00';
+            const glow = (uObj && uObj.name_glow) ? ('text-shadow: 0 0 6px ' + escapeJsHtml(uObj.name_glow) + ';') : '';
+            const border = (uObj && uObj.name_border) ? ('border: 1px solid ' + escapeJsHtml(uObj.name_border) + '; border-radius: 4px; padding: 0 4px;') : '';
+            const label = escapeJsHtml((uObj && (uObj.display_name || uObj.username)) || 'Thành viên');
+            return '<span style="color: ' + color + '; ' + glow + border + '">' + iconPrefix + label + '</span>';
+        }
+
         function scrollToBottom() {
             chatBox.scrollTop = chatBox.scrollHeight;
         }
         scrollToBottom();
+
+        function setPartnerTypingUi(isTyping) {
+            const el = document.getElementById('partnerTypingIndicator');
+            const txtEl = document.getElementById('partnerTypingText');
+            if (!el) return;
+            if (isTyping) {
+                const pName = partnerData.display_name || partnerData.username || 'Đối phương';
+                if (txtEl) txtEl.textContent = pName + ' đang soạn tin nhắn...';
+                el.style.display = 'flex';
+            } else {
+                el.style.display = 'none';
+            }
+        }
+
+        async function pushTypingState(isTyping) {
+            const desired = Boolean(isTyping);
+            const now = Date.now();
+            if (!desired && !lastTypingSentState) return;
+            if (desired && lastTypingSentState && (now - lastTypingPulseTs < 2000)) return;
+
+            lastTypingSentState = desired;
+            lastTypingPulseTs = now;
+
+            try {
+                const body = new URLSearchParams();
+                body.set('action', 'typing_status');
+                body.set('target_user_id', String(partnerId));
+                body.set('partner_id', String(partnerId));
+                body.set('is_typing', desired ? '1' : '0');
+
+                await fetch(window.location.href, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+                    },
+                    body: body.toString()
+                });
+            } catch (e) {}
+        }
+
+        function handleChatInputTyping() {
+            const inp = document.getElementById('messageInput');
+            const hasText = Boolean(inp && inp.value && inp.value.trim().length > 0);
+
+            if (typingIdleTimer) {
+                clearTimeout(typingIdleTimer);
+                typingIdleTimer = null;
+            }
+
+            if (hasText) {
+                pushTypingState(true);
+                typingIdleTimer = setTimeout(function() {
+                    stopChatInputTyping(true);
+                }, 4000);
+            } else {
+                stopChatInputTyping(true);
+            }
+        }
+
+        function stopChatInputTyping(forceSend) {
+            if (typingIdleTimer) {
+                clearTimeout(typingIdleTimer);
+                typingIdleTimer = null;
+            }
+            if (forceSend || lastTypingSentState) {
+                lastTypingSentState = false;
+                pushTypingState(false);
+            }
+        }
 
         function toggleGifPopup() {
             const popup = document.getElementById('gifPopup');
@@ -299,17 +473,9 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         function syncChatNotifications(otherUnreadCount) {
             const safeOtherUnread = typeof otherUnreadCount === 'number' ? otherUnreadCount : 0;
 
-            document.querySelectorAll('a[href*="user=' + partnerId + '"], a[href*="/mail/chat"]').forEach(function(link) {
-                const href = link.getAttribute('href') || '';
-                const isThisPartner = href.indexOf('user=' + partnerId) !== -1;
-
+            document.querySelectorAll('a[href*="user=' + partnerId + '"]').forEach(function(link) {
                 link.querySelectorAll('span, .badge, .mail-badge, [class*="badge"], [class*="count"]').forEach(function(el) {
-                    const txt = (el.textContent || '').trim();
-                    if (isThisPartner) {
-                        el.style.display = 'none';
-                    } else if (href.indexOf('/mail') !== -1 && safeOtherUnread === 0 && /^\\d+$/.test(txt)) {
-                        el.style.display = 'none';
-                    }
+                    el.style.display = 'none';
                 });
             });
 
@@ -325,11 +491,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                 });
 
                 document.querySelectorAll('[id*="mail-popup"], [id*="chat-popup"], [class*="mail-popup"], [class*="chat-popup"], [class*="floating-mail"], [class*="toast-mail"]').forEach(function(popup) {
-                    const popupText = popup.textContent || '';
-                    const partnerName = partnerData.display_name || partnerData.username || '';
-                    if (!partnerName || popupText.indexOf(partnerName) !== -1 || safeOtherUnread === 0) {
-                        popup.style.display = 'none';
-                    }
+                    popup.style.display = 'none';
                 });
             }
         }
@@ -351,6 +513,8 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
             const popup = document.getElementById('gifPopup');
             if (popup) popup.style.display = 'none';
 
+            await stopChatInputTyping(true);
+
             const formData = new FormData();
             formData.append('message', gifUrl);
 
@@ -362,6 +526,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                 });
 
                 if (res.ok) {
+                    setPartnerTypingUi(false);
                     await markCurrentConversationRead();
                     await fetchRealtimeMessages();
                     scrollToBottom();
@@ -376,6 +541,8 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
             const imgVal = document.getElementById('chat-image-val');
 
             if (!input.value.trim() && !imgVal.value) return;
+
+            await stopChatInputTyping(true);
 
             const formData = new FormData(form);
 
@@ -427,6 +594,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                     const compressedBase64 = canvas.toDataURL('image/jpeg', 0.80);
                     document.getElementById('chat-image-val').value = compressedBase64;
                     statusEl.innerText = "✅ Đã đính kèm ảnh!";
+                    handleChatInputTyping();
                 };
                 img.src = e.target.result;
             };
@@ -450,6 +618,15 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                     }
 
                     syncChatNotifications(otherUnread);
+
+                    const partnerIsTyping = Boolean(
+                        data.partner_typing === true ||
+                        data.partner_typing === 1 ||
+                        data.is_typing === true ||
+                        data.is_typing === 1 ||
+                        (Array.isArray(data.typing_users) && data.typing_users.some(function(id) { return Number(id) === partnerId; }))
+                    );
+                    setPartnerTypingUi(partnerIsTyping);
 
                     if (Array.isArray(data.chat_messages) && data.chat_messages.length > 0) {
                         let html = '';
@@ -478,15 +655,19 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                             const alignment = isMe ? 'flex-end' : 'flex-start';
                             const bubbleBg = isMe ? '#1a3300' : '#1a1a1a';
                             const bubbleBorder = isMe ? '#339900' : '#333';
-                            const iconPrefix = msgUser.active_icon ? (escapeJsHtml(msgUser.active_icon) + ' ') : '';
+                            const avSrc = getSafeAvatarSrc(msgUser);
+                            const avStyle = (msgUser && msgUser.avatarStyle)
+                                ? (escapeJsHtml(msgUser.avatarStyle) + '; width: 36px; height: 36px; border-radius: 50%; object-fit: cover; display: block;')
+                                : 'width: 36px; height: 36px; border-radius: 50%; object-fit: cover; border: 1px solid #00ff00; display: block;';
+                            const lvNum = Number((msgUser && msgUser.level) || 1) || 1;
+                            const lvBadge = '<span style="background: #1b2232; color: #ffd54f; border: 1px solid #394867; border-radius: 4px; padding: 1px 5px; font-size: 10px; font-weight: bold; margin-left: 6px;">Lv.' + lvNum + '</span>';
 
                             html += '<div style="display: flex; flex-direction: column; align-items: ' + alignment + ';">' +
                                 '<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">' +
-                                    '<div style="width: 36px; height: 36px; min-width: 36px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">' +
-                                        '<img src="' + escapeJsHtml(msgUser.avatar || '') + '" style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;">' +
-                                    '</div>' +
-                                    '<div style="font-size: 13px; display: flex; align-items: center; font-weight: bold;">' +
-                                        '<span style="color: ' + escapeJsHtml(msgUser.name_color || '#00ff00') + ';">' + iconPrefix + escapeJsHtml(msgUser.display_name || msgUser.username) + '</span>' +
+                                    '<img src="' + escapeJsHtml(avSrc) + '" style="' + avStyle + '">' +
+                                    '<div style="font-size: 13px; display: flex; align-items: center; flex-wrap: wrap; font-weight: bold;">' +
+                                        buildClientNameHtml(msgUser) +
+                                        lvBadge +
                                     '</div>' +
                                 '</div>' +
                                 '<div style="max-width: 80%; background: ' + bubbleBg + '; border: 1px solid ' + bubbleBorder + '; padding: 10px 14px; border-radius: 8px; color: #fff; font-size: 15px; word-break: break-word; line-height: 1.4;">' +
@@ -500,6 +681,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                         if (chatBox.innerHTML !== html) {
                             const isAtBottom = chatBox.scrollHeight - chatBox.scrollTop <= chatBox.clientHeight + 60;
                             chatBox.innerHTML = html;
+                            setPartnerTypingUi(false);
                             if (isAtBottom) {
                                 scrollToBottom();
                             }
@@ -509,11 +691,15 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
             } catch (e) {}
         }
 
+        window.addEventListener('beforeunload', function() {
+            stopChatInputTyping(true);
+        });
+
         markCurrentConversationRead().then(function() {
             syncChatNotifications(0);
             fetchRealtimeMessages();
         });
-        setInterval(fetchRealtimeMessages, 2500);
+        setInterval(fetchRealtimeMessages, 2000);
     </script>
     `;
 
