@@ -3,12 +3,12 @@ import { handleLogin } from './auth.js';
 export async function handleIndex(request, env, user, renderLayout) {
     if (!user) {
         if (request.method === 'POST') return await handleLogin(request, env);
-        
+
         const loginContent = `
         <div class="box">
             <div class="box-title">🔑 Đăng nhập hệ thống</div>
             <div class="box-content">
-                <form method="POST">
+                <form method="POST" action="/login">
                     <label style="color: #00ff00; display: block; margin-bottom: 4px; font-size: 14px;">Tên đăng nhập / ID:</label>
                     <input type="text" name="username" required style="width: 100%; background: #000; color: #fff; border: 1px solid #444; padding: 8px; box-sizing: border-box; margin-bottom: 10px; font-size: 14px;">
                     <label style="color: #00ff00; display: block; margin-bottom: 4px; font-size: 14px;">Mật khẩu:</label>
@@ -47,7 +47,7 @@ export async function handleIndex(request, env, user, renderLayout) {
         recentUsers = rUsers.results || [];
     } catch (e) {}
 
-function safeRenderUser(u) {
+    function safeRenderUser(u) {
         const safe = new Proxy(u || {}, {
             get(target, prop) {
                 if (prop === 'id' || prop === 'user_id') return target[prop] || 0;
