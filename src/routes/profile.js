@@ -33,6 +33,15 @@ function formatTimeAgo(val) {
     return `${Math.floor(months / 12)} năm trước`;
 }
 
+function isStaffOrAdmin(u) {
+    if (!u) return false;
+    if (Number(u.is_admin) === 1 || Number(u.id) === 1) return true;
+    const roleStr = String(u.role || '').trim().toLowerCase();
+    return ['admin', 'chủ wap', 'chu wap', 'quản trị', 'quan tri', 'quản lý', 'quan ly', 'smod', 'mod'].some(
+        (r) => roleStr === r || roleStr.includes(r)
+    );
+}
+
 export async function handleProfile(request, env, user, renderLayout, url) {
     let message = "";
     const targetId = parseInt(url.searchParams.get('user') || user.id);
@@ -77,6 +86,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
     }
 
     const isOwner = (targetId === user.id);
+    const canModerate = isStaffOrAdmin(user);
 
     // Xác định bảng bài viết đang dùng (ưu tiên `feeds`, fallback `posts`)
     let feedTable = 'feeds';
@@ -116,6 +126,26 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                     }
                 }
                 message = `<div style="color: #00ff00; background: #001a00; border: 1px solid #005500; padding: 6px; text-align: center; margin-bottom: 8px;">✅ Đăng bài lên tường nhà thành công!</div>`;
+            } else if (action === 'delete_post') {
+                const postId = parseInt(formData.get('post_id') || '0');
+                if (!postId) throw new Error("ID bài viết không hợp lệ!");
+                const postRow = await env.DB.prepare(`SELECT id, user_id FROM ${feedTable} WHERE id = ?`).bind(postId).first();
+                if (!postRow) throw new Error("Bài viết không tồn tại hoặc đã bị xóa!");
+                if (!canModerate && Number(postRow.user_id) !== Number(user.id)) {
+                    throw new Error("Bạn không có quyền quản lý xóa bài viết này!");
+                }
+                await env.DB.prepare(`DELETE FROM ${feedTable} WHERE id = ?`).bind(postId).run();
+                message = `<div style="color: #ffcc00; background: #1a1500; border: 1px solid #665500; padding: 6px; text-align: center; margin-bottom: 8px;">🗑️ Đã xóa bài viết #${postId}!</div>`;
+            } else if (action === 'like_post') {
+                const postId = parseInt(formData.get('post_id') || '0');
+                if (!postId) throw new Error("ID bài viết không hợp lệ!");
+                try {
+                    await env.DB.prepare(`UPDATE ${feedTable} SET likes_count = COALESCE(likes_count, 0) + 1 WHERE id = ?`).bind(postId).run();
+                } catch (eLike) {
+                    try {
+                        await env.DB.prepare(`UPDATE ${feedTable} SET likes = COALESCE(likes, 0) + 1 WHERE id = ?`).bind(postId).run();
+                    } catch (eLike2) {}
+                }
             } else if (isOwner) {
                 if (action === 'update_cover') {
                     const coverPhoto = formData.get('cover_photo');
@@ -219,39 +249,64 @@ export async function handleProfile(request, env, user, renderLayout, url) {
     const wallPostsHtml = userPosts.length === 0
         ? `<div style="color: #888; text-align: center; padding: 14px; font-size: 12px;">Chưa có bài đăng nào.</div>`
         : userPosts.map((post) => {
+            const postId = Number(post.id || 0);
             const rawText = post.content || post.body || post.caption || '';
             const imgUrl = post.image_url || post.image || post.media_url || '';
             const timeAgo = formatTimeAgo(post.created_at || post.time || post.createdAt);
             const likesCount = Number(post.likes_count ?? post.likes ?? 0);
             const commentsCount = Number(post.comments_count ?? post.comments ?? 0);
+            const canDeleteThisPost = canModerate || Number(post.user_id) === Number(user.id);
 
             return `
             <div style="background: #141414; border: 1px solid #2b2b2b; border-radius: 4px; padding: 10px; margin-top: 8px;">
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                <!-- Header bài đăng -->
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <img src="${avatarSrc}" width="32" height="32" style="${rProfile.avatarStyle} display: block;">
+                        <img src="${avatarSrc}" width="34" height="34" style="${rProfile.avatarStyle} display: block;">
                         <div>
-                            <div style="font-size: 13px;">${rProfile.nameHtml}</div>
-                            <div style="font-size: 11px; color: #999;">🕒 ${escapeHtml(timeAgo)} · 🌐 Công khai</div>
+                            <div style="font-size: 13px; line-height: 1.2;">${rProfile.nameHtml}</div>
+                            <div style="font-size: 11px; color: #999; margin-top: 2px;">🕒 ${escapeHtml(timeAgo)} · 🌐 Công khai</div>
                         </div>
                     </div>
-                    <span style="color: #666; font-size: 12px;">⋮</span>
+
+                    ${canDeleteThisPost ? `
+                    <form method="POST" style="margin: 0;" onsubmit="return confirm('Xóa bài đăng này khỏi hệ thống?');">
+                        <input type="hidden" name="action" value="delete_post">
+                        <input type="hidden" name="post_id" value="${postId}">
+                        <button type="submit" style="background: #2b0909; color: #ff6666; border: 1px solid #661a1a; border-radius: 3px; padding: 2px 7px; font-size: 10px; font-weight: bold; cursor: pointer;">🗑️ Xóa bài</button>
+                    </form>
+                    ` : `<span style="color: #666; font-size: 12px;">⋮</span>`}
                 </div>
 
-                ${rawText ? `<div style="font-size: 13px; color: #f0f0f0; line-height: 1.5; white-space: pre-wrap; margin-bottom: ${imgUrl ? '8px' : '4px'};">${escapeHtml(rawText)}</div>` : ''}
+                <!-- Nội dung bài đăng -->
+                ${rawText ? `<div style="font-size: 13px; color: #f2f2f2; line-height: 1.6; white-space: pre-wrap; text-align: center; margin-bottom: ${imgUrl ? '10px' : '6px'};">${escapeHtml(rawText)}</div>` : ''}
 
+                <!-- Ảnh bài đăng -->
                 ${imgUrl ? `
-                <div style="text-align: center; background: #090909; border: 1px solid #222; border-radius: 4px; overflow: hidden; margin-bottom: 8px;">
-                    <img src="${escapeHtml(imgUrl)}" alt="Ảnh bài đăng" style="max-width: 100%; max-height: 360px; object-fit: contain; display: block; margin: 0 auto;">
+                <div style="text-align: center; background: #080808; border: 1px solid #222; border-radius: 4px; overflow: hidden; margin-bottom: 8px;">
+                    <img src="${escapeHtml(imgUrl)}" alt="Ảnh bài đăng" style="max-width: 100%; max-height: 380px; object-fit: contain; display: block; margin: 0 auto;">
                 </div>
                 ` : ''}
 
-                <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #242424; padding-top: 6px; font-size: 11px; color: #bbb;">
-                    <div style="display: flex; gap: 12px;">
-                        <span>❤️ ${likesCount}</span>
-                        <span>💬 ${commentsCount}</span>
+                <!-- Hàng dưới: Icon tim và icon bình luận kế bên nhau -->
+                <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #242424; padding-top: 7px; font-size: 12px;">
+                    <div style="display: flex; align-items: center; gap: 14px;">
+                        <form method="POST" style="margin: 0; display: inline-flex; align-items: center;">
+                            <input type="hidden" name="action" value="like_post">
+                            <input type="hidden" name="post_id" value="${postId}">
+                            <button type="submit" title="Thích bài viết" style="background: none; border: none; color: #ff3b5c; font-size: 13px; font-weight: bold; cursor: pointer; padding: 0; display: inline-flex; align-items: center; gap: 4px;">
+                                <span>❤️</span>
+                                <span style="color: #ddd; font-size: 12px;">${likesCount}</span>
+                            </button>
+                        </form>
+
+                        <a href="/users/feed?post=${postId}#comment" title="Bình luận bài viết" style="color: #ccc; text-decoration: none; font-size: 13px; display: inline-flex; align-items: center; gap: 4px;">
+                            <span>💬</span>
+                            <span style="color: #ddd; font-size: 12px;">${commentsCount}</span>
+                        </a>
                     </div>
-                    <a href="/users/feed" style="color: #ffcc00; text-decoration: none;">Xem trên bảng tin →</a>
+
+                    ${canModerate ? `<span style="font-size: 10px; color: #ffcc00;">[Quản lý #${postId}]</span>` : ''}
                 </div>
             </div>`;
         }).join('');
@@ -407,7 +462,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 <button type="button" onclick="toggleWallForm()" style="background: #1a1a1a; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 5px 10px; font-size: 12px; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
                     <span>📝</span> Đăng bài
                 </button>
-                <a href="/users/feed" style="font-size: 11px; color: #00ff00; text-decoration: none;">Mở bảng tin đầy đủ →</a>
+                ${canModerate ? `<span style="font-size: 11px; color: #ffcc00;">🛡️ Quyền quản lý: có thể xóa bài</span>` : ''}
             </div>
 
             <!-- Form đăng bài (ẩn/hiện khi bấm nút Đăng bài) -->
