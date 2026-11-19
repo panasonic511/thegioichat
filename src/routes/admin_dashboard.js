@@ -1,6 +1,5 @@
 import {
     ROLE_TIERS,
-    ROLE_LIMITS,
     getRoleTier,
     getRoleConfig,
     canManageTargetUser,
@@ -16,6 +15,22 @@ function escapeHtml(str) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+function getRoleBadgeStyle(tier) {
+    if (tier === ROLE_TIERS.FOUNDER) {
+        return 'background: rgba(250, 204, 21, 0.16); color: #facc15; border: 1px solid rgba(250, 204, 21, 0.45);';
+    }
+    if (tier === ROLE_TIERS.SUPER_ADMIN) {
+        return 'background: rgba(244, 63, 94, 0.16); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.45);';
+    }
+    if (tier === ROLE_TIERS.ADMIN) {
+        return 'background: rgba(168, 85, 247, 0.16); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.45);';
+    }
+    if (tier === ROLE_TIERS.MOD) {
+        return 'background: rgba(56, 189, 248, 0.16); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.45);';
+    }
+    return 'background: rgba(74, 222, 128, 0.12); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.3);';
 }
 
 export async function handleAdminDashboard(request, env, user, renderLayout) {
@@ -62,7 +77,7 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
                 if (!banRes.ok) {
                     throw new Error(banRes.error);
                 }
-                message = `<div style="color: #00ff00; background: #001a00; padding: 8px; text-align: center; margin-bottom: 8px; border: 1px solid #006600;">✅ ${isBan ? `Đã Ban ID #${targetUserId}` : `Đã mở khóa ID #${targetUserId}`} thành công!</div>`;
+                message = `<div class="adm-alert adm-alert-ok">✅ ${isBan ? `Đã Ban ID #${targetUserId}` : `Đã mở khóa ID #${targetUserId}`} thành công!</div>`;
             } else if (actionType === 'delete_user_content') {
                 const check = canManageTargetUser(user, targetUser);
                 if (!check.allowed) {
@@ -79,7 +94,7 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
                         await env.DB.prepare("DELETE FROM posts WHERE user_id = ?").bind(targetUserId).run();
                     } catch (e) {}
                 }
-                message = `<div style="color: #00ff00; background: #001a00; padding: 8px; text-align: center; margin-bottom: 8px; border: 1px solid #006600;">✅ Đã xóa dữ liệu mục chọn của ID #${targetUserId}!</div>`;
+                message = `<div class="adm-alert adm-alert-ok">✅ Đã xóa dữ liệu mục đã chọn của ID #${targetUserId}!</div>`;
             } else {
                 const sanitized = sanitizeManagementUpdates(user, targetUser, {
                     role: formData.get('role'),
@@ -106,10 +121,10 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
                     WHERE id = ?
                 `).bind(finalRole, finalLevel, finalCoins, finalGold, finalOnlineMins, targetUserId).run();
 
-                message = `<div style="color: #00ff00; background: #001a00; padding: 8px; text-align: center; margin-bottom: 8px; border: 1px solid #006600;">✅ Đã cập nhật ID #${targetUserId} (Lv: ${finalLevel} | Xu: ${finalCoins} | Vàng: ${finalGold} | Online: ${finalOnlineMins}p)!</div>`;
+                message = `<div class="adm-alert adm-alert-ok">✅ Đã cập nhật ID #${targetUserId} — Lv: <b>${finalLevel}</b> · Xu: <b>${finalCoins.toLocaleString('en-US')}</b> · Vàng: <b>${finalGold.toLocaleString('en-US')}</b> · Online: <b>${finalOnlineMins}p</b></div>`;
             }
         } catch (e) {
-            message = `<div style="color: #ff5555; background: #1a0000; padding: 8px; text-align: center; margin-bottom: 8px; border: 1px solid #660000;">❌ Lỗi: ${escapeHtml(e.message)}</div>`;
+            message = `<div class="adm-alert adm-alert-err">❌ Lỗi: ${escapeHtml(e.message)}</div>`;
         }
     }
 
@@ -119,7 +134,7 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
             SELECT id, username, display_name, role, is_admin, coins, gold, level, online_minutes, is_banned, ban_reason
             FROM users
             ORDER BY id DESC
-            LIMIT 80
+            LIMIT 100
         `).all();
         usersList = (res && Array.isArray(res.results)) ? res.results : [];
     } catch (e) {
@@ -128,7 +143,7 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
                 SELECT id, username, display_name, role, is_admin, coins, level
                 FROM users
                 ORDER BY id DESC
-                LIMIT 80
+                LIMIT 100
             `).all();
             usersList = (res2 && Array.isArray(res2.results)) ? res2.results : [];
         } catch (e2) {
@@ -144,7 +159,11 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
         return Number(b.id || 0) - Number(a.id || 0);
     });
 
-    const maxLvlDisplay = Number.isFinite(actorCfg.maxLevel) ? actorCfg.maxLevel : 'Không giới hạn';
+    const totalUsers = usersList.length;
+    const totalBanned = usersList.filter(u => Number(u.is_banned || 0) === 1).length;
+    const totalStaff = usersList.filter(u => getRoleTier(u) >= ROLE_TIERS.MOD).length;
+
+    const maxLvlDisplay = Number.isFinite(actorCfg.maxLevel) ? `Max Lv.${actorCfg.maxLevel}` : 'Không giới hạn';
     const maxCoinDisplay = actorCfg.maxCoin === Number.MAX_SAFE_INTEGER ? 'Không giới hạn' : actorCfg.maxCoin.toLocaleString('en-US');
     const maxGoldDisplay = actorCfg.maxGold === Number.MAX_SAFE_INTEGER ? 'Không giới hạn' : actorCfg.maxGold.toLocaleString('en-US');
     const maxOnlineDisplay = actorCfg.maxOnlineMinutes === Number.MAX_SAFE_INTEGER ? 'Không giới hạn' : `${actorCfg.maxOnlineMinutes.toLocaleString('en-US')} phút`;
@@ -160,95 +179,489 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
     };
 
     const content = `
-    <div class="box">
-        <div class="box-title">⚙️ Bảng Quản Trị Hệ Thống (${escapeHtml(actorCfg.label)})</div>
-        <div class="box-content">
-            <div style="background: #12151b; border: 1px solid #2a313d; padding: 9px; font-size: 11px; margin-bottom: 10px; color: #e2e8f0; line-height: 1.6;">
-                <div>💡 Xin chào <b>${escapeHtml(user.display_name || user.username)}</b> — Cấp bậc: <span style="color:#ffcc00;font-weight:bold;">${escapeHtml(actorCfg.label)}</span></div>
-                <div>• Giới hạn Level: <b style="color:#4ade80;">${escapeHtml(String(maxLvlDisplay))}</b> | Max Xu: <b style="color:#4ade80;">${escapeHtml(maxCoinDisplay)}</b> | Max Vàng: <b style="color:#fbbf24;">${escapeHtml(maxGoldDisplay)}</b> | Max Online: <b style="color:#38bdf8;">${escapeHtml(maxOnlineDisplay)}</b></div>
-                <div>• Tự động tăng Level theo online: Mới tạo Lv 1 · 10 phút lên Lv 10 · Thành viên tối đa Lv 99.</div>
+    <style>
+        .adm-shell {
+            background: #090c10;
+            border: 1px solid #262f3d;
+            border-radius: 8px;
+            overflow: hidden;
+            font-size: 14px;
+            color: #e2e8f0;
+        }
+        .adm-header {
+            background: linear-gradient(90deg, #111827, #1e293b);
+            padding: 14px 16px;
+            border-bottom: 1px solid #2d3748;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+        }
+        .adm-title {
+            font-size: 17px;
+            font-weight: bold;
+            color: #4ade80;
+            margin: 0;
+        }
+        .adm-role-pill {
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: bold;
+            background: rgba(250, 204, 21, 0.15);
+            color: #facc15;
+            border: 1px solid rgba(250, 204, 21, 0.4);
+        }
+        .adm-body {
+            padding: 14px;
+        }
+        .adm-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+        .adm-stat-card {
+            background: #11161f;
+            border: 1px solid #242d3b;
+            border-radius: 6px;
+            padding: 10px 12px;
+        }
+        .adm-stat-label {
+            font-size: 12px;
+            color: #94a3b8;
+        }
+        .adm-stat-val {
+            font-size: 18px;
+            font-weight: bold;
+            color: #f8fafc;
+            margin-top: 2px;
+        }
+        .adm-quota-box {
+            background: #0f1520;
+            border: 1px solid #263244;
+            border-radius: 6px;
+            padding: 11px 13px;
+            margin-bottom: 14px;
+            font-size: 13px;
+            line-height: 1.65;
+        }
+        .adm-quota-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 6px;
+        }
+        .adm-qtag {
+            background: #161f2e;
+            border: 1px solid #2c3b52;
+            border-radius: 5px;
+            padding: 4px 9px;
+            font-size: 12.5px;
+        }
+        .adm-alert {
+            padding: 10px 12px;
+            border-radius: 6px;
+            font-size: 13.5px;
+            font-weight: bold;
+            margin-bottom: 14px;
+            text-align: center;
+        }
+        .adm-alert-ok {
+            background: rgba(22, 163, 74, 0.16);
+            color: #4ade80;
+            border: 1px solid rgba(74, 222, 128, 0.45);
+        }
+        .adm-alert-err {
+            background: rgba(220, 38, 38, 0.18);
+            color: #fca5a5;
+            border: 1px solid rgba(248, 113, 113, 0.45);
+        }
+        .adm-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 14px;
+        }
+        .adm-search-input {
+            flex: 1;
+            min-width: 200px;
+            background: #06080b;
+            color: #f8fafc;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 8px 11px;
+            font-size: 13.5px;
+        }
+        .adm-search-input:focus {
+            outline: none;
+            border-color: #4ade80;
+        }
+        .adm-user-card {
+            background: #10151d;
+            border: 1px solid #263040;
+            border-radius: 8px;
+            padding: 13px;
+            margin-bottom: 12px;
+            transition: border-color 0.15s ease;
+        }
+        .adm-user-card:hover {
+            border-color: #3b4b63;
+        }
+        .adm-user-card.is-banned {
+            background: #190b0e;
+            border-color: #7f1d1d;
+        }
+        .adm-user-top {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            padding-bottom: 10px;
+            margin-bottom: 11px;
+            border-bottom: 1px solid #1e2736;
+        }
+        .adm-user-identity {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 7px;
+            font-size: 14.5px;
+        }
+        .adm-uid {
+            color: #38bdf8;
+            font-weight: bold;
+        }
+        .adm-uname {
+            color: #ffffff;
+            font-weight: bold;
+            font-size: 15px;
+        }
+        .adm-handle {
+            color: #94a3b8;
+            font-size: 13px;
+        }
+        .adm-role-badge {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .adm-ban-badge {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11.5px;
+            font-weight: bold;
+            background: #dc2626;
+            color: #fff;
+        }
+        .adm-online-pill {
+            font-size: 13px;
+            color: #38bdf8;
+            font-weight: bold;
+            background: rgba(56, 189, 248, 0.1);
+            padding: 3px 8px;
+            border-radius: 5px;
+        }
+        .adm-fields-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        @media (max-width: 600px) {
+            .adm-stats-grid { grid-template-columns: 1fr; }
+            .adm-fields-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        .adm-field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .adm-field label {
+            font-size: 12.5px;
+            color: #cbd5e1;
+            font-weight: bold;
+        }
+        .adm-input, .adm-select {
+            width: 100%;
+            box-sizing: border-box;
+            background: #06080c;
+            border: 1px solid #334155;
+            border-radius: 5px;
+            padding: 7px 8px;
+            font-size: 13.5px;
+            font-weight: bold;
+        }
+        .adm-input:focus, .adm-select:focus {
+            outline: none;
+            border-color: #38bdf8;
+        }
+        .adm-row-actions {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .adm-role-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex: 1;
+            min-width: 210px;
+        }
+        .adm-role-group span {
+            font-size: 13px;
+            color: #cbd5e1;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+        .adm-btn {
+            border: none;
+            border-radius: 5px;
+            padding: 8px 13px;
+            font-size: 13px;
+            font-weight: bold;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .adm-btn-save {
+            background: #2563eb;
+            color: #ffffff;
+        }
+        .adm-btn-save:hover {
+            background: #3b82f6;
+        }
+        .adm-ban-panel {
+            background: #151015;
+            border: 1px solid #382636;
+            border-radius: 6px;
+            padding: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+        .adm-ban-form {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 7px;
+            flex: 1;
+            min-width: 240px;
+            margin: 0;
+        }
+        .adm-ban-reason {
+            flex: 1;
+            min-width: 150px;
+            background: #090608;
+            color: #fecaca;
+            border: 1px solid #6b2121;
+            border-radius: 5px;
+            padding: 7px 9px;
+            font-size: 13px;
+        }
+        .adm-btn-ban {
+            background: #dc2626;
+            color: #ffffff;
+        }
+        .adm-btn-ban:hover {
+            background: #ef4444;
+        }
+        .adm-btn-unban {
+            background: #16a34a;
+            color: #ffffff;
+        }
+        .adm-btn-unban:hover {
+            background: #22c55e;
+        }
+        .adm-del-form {
+            display: inline-flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+            margin: 0;
+        }
+        .adm-btn-del {
+            background: #451a1a;
+            color: #fca5a5;
+            border: 1px solid #991b1b;
+        }
+        .adm-btn-del:hover {
+            background: #7f1d1d;
+            color: #ffffff;
+        }
+        .adm-ban-note {
+            font-size: 12.5px;
+            color: #cbd5e1;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+    </style>
+
+    <div class="adm-shell">
+        <div class="adm-header">
+            <h2 class="adm-title">⚙️ Bảng Quản Trị Hệ Thống</h2>
+            <span class="adm-role-pill">${escapeHtml(actorCfg.label)}</span>
+        </div>
+
+        <div class="adm-body">
+            <div class="adm-stats-grid">
+                <div class="adm-stat-card">
+                    <div class="adm-stat-label">Tổng thành viên</div>
+                    <div class="adm-stat-val">${totalUsers}</div>
+                </div>
+                <div class="adm-stat-card">
+                    <div class="adm-stat-label">Ban quản trị</div>
+                    <div class="adm-stat-val" style="color:#facc15;">${totalStaff}</div>
+                </div>
+                <div class="adm-stat-card">
+                    <div class="adm-stat-label">Đang bị Ban ID</div>
+                    <div class="adm-stat-val" style="color:#f87171;">${totalBanned}</div>
+                </div>
+            </div>
+
+            <div class="adm-quota-box">
+                <div>Xin chào <b>${escapeHtml(user.display_name || user.username)}</b> — Hạn mức quyền của cấp bậc <b>${escapeHtml(actorCfg.label)}</b>:</div>
+                <div class="adm-quota-tags">
+                    <span class="adm-qtag">Level: <b style="color:#4ade80;">${escapeHtml(maxLvlDisplay)}</b></span>
+                    <span class="adm-qtag">Max Xu: <b style="color:#4ade80;">${escapeHtml(maxCoinDisplay)}</b></span>
+                    <span class="adm-qtag">Max Vàng: <b style="color:#fbbf24;">${escapeHtml(maxGoldDisplay)}</b></span>
+                    <span class="adm-qtag">Max Online: <b style="color:#38bdf8;">${escapeHtml(maxOnlineDisplay)}</b></span>
+                </div>
+                <div style="margin-top:6px;font-size:12.5px;color:#94a3b8;">Auto Level theo online: Tạo nick Lv.1 · 10 phút lên Lv.10 · Thành viên tối đa Lv.99.</div>
             </div>
 
             ${message}
 
-            <div style="font-weight: bold; color: #00ff00; margin-bottom: 8px; font-size: 12px;">👥 Danh sách thành viên (xếp từ cấp bậc & Level cao xuống thấp):</div>
+            <div class="adm-toolbar">
+                <input type="text" id="admSearchInput" class="adm-search-input" placeholder="🔍 Tìm theo ID, tên hiển thị, username hoặc cấp bậc..." oninput="filterAdminUsers()">
+            </div>
 
-            ${usersList.map(u => {
-                const uid = Number(u.id || 0);
-                const uRoleLabel = getRoleConfig(u).label;
-                const uCoins = Number(u.coins || 0);
-                const uGold = Number(u.gold || 0);
-                const uLevel = Number(u.level || 1);
-                const uOnlineMins = Number(u.online_minutes || 0);
-                const isBanned = Number(u.is_banned || 0) === 1;
-                const perm = canManageTargetUser(user, u);
+            <div id="admUsersContainer">
+                ${usersList.map(u => {
+                    const uid = Number(u.id || 0);
+                    const uTier = getRoleTier(u);
+                    const uRoleLabel = getRoleConfig(u).label;
+                    const uCoins = Number(u.coins || 0);
+                    const uGold = Number(u.gold || 0);
+                    const uLevel = Number(u.level || 1);
+                    const uOnlineMins = Number(u.online_minutes || 0);
+                    const isBanned = Number(u.is_banned || 0) === 1;
+                    const perm = canManageTargetUser(user, u);
+                    const searchBlob = `${uid} ${u.display_name || ''} ${u.username || ''} ${uRoleLabel}`.toLowerCase();
 
-                return `
-                <div style="background: ${isBanned ? '#1b090c' : '#121212'}; border: 1px solid ${isBanned ? '#7f1d1d' : '#2d2d2d'}; border-radius: 4px; padding: 9px; margin-bottom: 8px; font-size: 11px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap;">
-                        <div>
-                            <b>ID #${uid}</b> - <span style="color:#fff;font-weight:bold;">${escapeHtml(u.display_name || u.username)}</span>
-                            <span style="color:#94a3b8;">(${escapeHtml(u.username)})</span>
-                            · <span style="color:#ffcc00;font-weight:bold;">${escapeHtml(uRoleLabel)}</span>
-                            ${isBanned ? `<span style="background:#dc2626;color:#fff;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:bold;margin-left:4px;">BANNED</span>` : ''}
+                    return `
+                    <div class="adm-user-card ${isBanned ? 'is-banned' : ''}" data-search="${escapeHtml(searchBlob)}">
+                        <div class="adm-user-top">
+                            <div class="adm-user-identity">
+                                <span class="adm-uid">ID #${uid}</span>
+                                <span class="adm-uname">${escapeHtml(u.display_name || u.username)}</span>
+                                <span class="adm-handle">(@${escapeHtml(u.username)})</span>
+                                <span class="adm-role-badge" style="${getRoleBadgeStyle(uTier)}">${escapeHtml(uRoleLabel)}</span>
+                                ${isBanned ? `<span class="adm-ban-badge">⛔ ĐÃ BAN ID</span>` : ''}
+                            </div>
+                            <span class="adm-online-pill">⏱ Online: ${uOnlineMins} phút</span>
                         </div>
-                        <div style="color:#94a3b8;">Online: <b style="color:#38bdf8;">${uOnlineMins}p</b></div>
-                    </div>
 
-                    ${perm.allowed ? `
-                        <form method="POST" style="margin: 0 0 6px 0; display: flex; flex-direction: column; gap: 6px;">
-                            <input type="hidden" name="action_type" value="update_user">
-                            <input type="hidden" name="user_id" value="${uid}">
-
-                            <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-                                <label>Level: <input type="number" name="level" value="${uLevel}" min="1" style="width: 58px; background: #000; color: #fff; border: 1px solid #444; padding: 2px 4px; border-radius: 3px;"></label>
-                                <label>Xu: <input type="number" name="coins" value="${uCoins}" min="0" style="width: 82px; background: #000; color: #00ff00; border: 1px solid #444; padding: 2px 4px; border-radius: 3px;"></label>
-                                <label>Vàng: <input type="number" name="gold" value="${uGold}" min="0" style="width: 74px; background: #000; color: #fbbf24; border: 1px solid #444; padding: 2px 4px; border-radius: 3px;"></label>
-                                <label>Online (phút): <input type="number" name="online_minutes" value="${uOnlineMins}" min="0" style="width: 68px; background: #000; color: #38bdf8; border: 1px solid #444; padding: 2px 4px; border-radius: 3px;"></label>
+                        ${isBanned && u.ban_reason ? `
+                            <div style="background:rgba(220,38,38,0.14);border-left:3px solid #ef4444;padding:7px 10px;border-radius:4px;margin-bottom:10px;font-size:13px;color:#fca5a5;">
+                                Lý do Ban ID: <b>${escapeHtml(u.ban_reason)}</b>
                             </div>
+                        ` : ''}
 
-                            <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px;">
-                                <label>Cấp bậc:
-                                    <select name="role" style="background: #000; color: #ffcc00; border: 1px solid #444; padding: 3px 5px; border-radius: 3px; font-size: 11px;" ${actorCfg.canChangeRoles ? '' : 'disabled'}>
-                                        ${roleOptionsHtml(uRoleLabel)}
-                                    </select>
-                                </label>
-                                <button type="submit" class="btn" style="background: #0055ff; color: #fff; padding: 3px 10px; font-size: 11px; border-radius: 3px;">Lưu thay đổi</button>
-                            </div>
-                        </form>
-
-                        <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px; padding-top: 6px; border-top: 1px dashed #2a2a2a;">
-                            ${actorCfg.canBan ? `
-                                <form method="POST" style="margin: 0; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px;">
-                                    <input type="hidden" name="user_id" value="${uid}">
-                                    <input type="hidden" name="action_type" value="${isBanned ? 'unban_user' : 'ban_user'}">
-                                    ${!isBanned ? `<input type="text" name="ban_reason" value="${escapeHtml(u.ban_reason || '')}" placeholder="Lý do ban ID..." style="width: 120px; background: #000; color: #fca5a5; border: 1px solid #552222; padding: 2px 5px; border-radius: 3px; font-size: 10px;">` : ''}
-                                    <button type="submit" class="btn" style="background: ${isBanned ? '#15803d' : '#991b1b'}; color: #fff; padding: 2px 8px; font-size: 10px; border-radius: 3px;">
-                                        ${isBanned ? '🔓 Mở Ban ID' : '⛔ Ban ID'}
-                                    </button>
-                                </form>
-                            ` : `<span style="color:#64748b;font-size:10px;">(Cấp bậc hiện tại không dùng Ban ID)</span>`}
-
-                            <form method="POST" onsubmit="return confirm('Xóa dữ liệu mục đã chọn của ID #${uid}?');" style="margin: 0; display: inline-flex; align-items: center; gap: 4px;">
+                        ${perm.allowed ? `
+                            <form method="POST" style="margin:0;">
+                                <input type="hidden" name="action_type" value="update_user">
                                 <input type="hidden" name="user_id" value="${uid}">
-                                <input type="hidden" name="action_type" value="delete_user_content">
-                                <select name="delete_scope" style="background: #000; color: #cbd5e1; border: 1px solid #444; padding: 2px 4px; border-radius: 3px; font-size: 10px;">
-                                    <option value="all">Xóa tin nhắn & bảng tin</option>
-                                    <option value="mail">Chỉ xóa tin nhắn</option>
-                                    <option value="feed">Chỉ xóa bảng tin</option>
-                                </select>
-                                <button type="submit" class="btn" style="background: #3f1d1d; color: #fca5a5; border-color: #7f1d1d; padding: 2px 8px; font-size: 10px; border-radius: 3px;">🗑 Xóa mục</button>
+
+                                <div class="adm-fields-grid">
+                                    <div class="adm-field">
+                                        <label>Level</label>
+                                        <input type="number" name="level" value="${uLevel}" min="1" class="adm-input" style="color:#ffffff;">
+                                    </div>
+                                    <div class="adm-field">
+                                        <label>Xu</label>
+                                        <input type="number" name="coins" value="${uCoins}" min="0" class="adm-input" style="color:#4ade80;">
+                                    </div>
+                                    <div class="adm-field">
+                                        <label>Vàng</label>
+                                        <input type="number" name="gold" value="${uGold}" min="0" class="adm-input" style="color:#fbbf24;">
+                                    </div>
+                                    <div class="adm-field">
+                                        <label>Online (phút)</label>
+                                        <input type="number" name="online_minutes" value="${uOnlineMins}" min="0" class="adm-input" style="color:#38bdf8;">
+                                    </div>
+                                </div>
+
+                                <div class="adm-row-actions">
+                                    <div class="adm-role-group">
+                                        <span>Cấp bậc:</span>
+                                        <select name="role" class="adm-select" style="color:#facc15;" ${actorCfg.canChangeRoles ? '' : 'disabled'}>
+                                            ${roleOptionsHtml(uRoleLabel)}
+                                        </select>
+                                    </div>
+                                    <button type="submit" class="adm-btn adm-btn-save">💾 Lưu thay đổi</button>
+                                </div>
                             </form>
-                        </div>
-                    ` : `
-                        <div style="color: #64748b; font-size: 10px; font-style: italic;">🔒 Bạn không có quyền chỉnh sửa tài khoản cấp bậc cao hơn hoặc ngang hàng.</div>
-                    `}
-                </div>
-                `;
-            }).join('')}
+
+                            <div class="adm-ban-panel">
+                                ${actorCfg.canBan ? `
+                                    <form method="POST" class="adm-ban-form">
+                                        <input type="hidden" name="user_id" value="${uid}">
+                                        <input type="hidden" name="action_type" value="${isBanned ? 'unban_user' : 'ban_user'}">
+                                        ${!isBanned ? `<input type="text" name="ban_reason" value="${escapeHtml(u.ban_reason || '')}" placeholder="Nhập lý do Ban ID..." class="adm-ban-reason">` : ''}
+                                        <button type="submit" class="adm-btn ${isBanned ? 'adm-btn-unban' : 'adm-btn-ban'}">
+                                            ${isBanned ? '🔓 Mở Ban ID' : '⛔ Ban ID'}
+                                        </button>
+                                    </form>
+                                ` : `
+                                    <span class="adm-ban-note">🛡️ <b>Ban ID:</b> Cấp bậc <b>${escapeHtml(actorCfg.label)}</b> không cần khóa tài khoản (toàn quyền hệ thống).</span>
+                                `}
+
+                                <form method="POST" onsubmit="return confirm('Xóa dữ liệu đã chọn của ID #${uid}?');" class="adm-del-form">
+                                    <input type="hidden" name="user_id" value="${uid}">
+                                    <input type="hidden" name="action_type" value="delete_user_content">
+                                    <select name="delete_scope" class="adm-select" style="width:auto;color:#e2e8f0;padding:6px 8px;">
+                                        <option value="all">Tin nhắn &amp; Bảng tin</option>
+                                        <option value="mail">Chỉ Tin nhắn</option>
+                                        <option value="feed">Chỉ Bảng tin</option>
+                                    </select>
+                                    <button type="submit" class="adm-btn adm-btn-del">🗑 Xóa mục</button>
+                                </form>
+                            </div>
+                        ` : `
+                            <div style="color:#94a3b8;font-size:13px;padding:6px 0;">🔒 Tài khoản có cấp bậc cao hơn hoặc ngang hàng — bạn chỉ có thể xem.</div>
+                        `}
+                    </div>
+                    `;
+                }).join('')}
+            </div>
         </div>
     </div>
-    <div style="text-align: center;"><a href="/">⬅️ Về trang chủ</a></div>
+
+    <script>
+        function filterAdminUsers() {
+            var q = (document.getElementById('admSearchInput').value || '').trim().toLowerCase();
+            var cards = document.querySelectorAll('#admUsersContainer .adm-user-card');
+            for (var i = 0; i < cards.length; i++) {
+                var hay = cards[i].getAttribute('data-search') || '';
+                cards[i].style.display = (!q || hay.indexOf(q) !== -1) ? '' : 'none';
+            }
+        }
+    </script>
+
+    <div style="text-align: center; margin-top: 14px;"><a href="/">⬅️ Về trang chủ</a></div>
     `;
 
     return new Response(renderLayout('Quản trị viên', content, user), {
