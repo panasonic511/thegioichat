@@ -31,21 +31,22 @@ function escapeHtmlText(str) {
 function getStaffAfterNickBadge(safeUser) {
     if (!safeUser) return '';
     const roleRaw = String(safeUser.role || '').trim().toLowerCase();
-    const isAdmin = Number(safeUser.is_admin || 0) === 1
-        || Number(safeUser.id || 0) === 1
-        || roleRaw === 'admin'
+
+    const isExplicitMod = roleRaw === 'mod' || roleRaw === 'smod' || roleRaw === 'điều hành viên';
+    if (isExplicitMod) {
+        const label = roleRaw === 'smod' ? 'SMOD' : 'MOD';
+        return `<span class="staff-nick-badge staff-badge-mod" title="Điều hành viên"><span class="badge-ico">🛡️</span>${label}</span>`;
+    }
+
+    const isExplicitAdmin = roleRaw === 'admin'
         || roleRaw === 'chủ wap'
         || roleRaw === 'quản trị'
         || roleRaw === 'quản lý';
 
-    if (isAdmin) {
-        return `<span class="staff-nick-badge staff-badge-admin" title="Quản trị viên"><span class="badge-ico">👑</span>ADMIN</span>`;
-    }
+    const isFallbackRootAdmin = !roleRaw && (Number(safeUser.is_admin || 0) === 1 || Number(safeUser.id || 0) === 1);
 
-    const isMod = roleRaw === 'mod' || roleRaw === 'smod';
-    if (isMod) {
-        const label = roleRaw === 'smod' ? 'SMOD' : 'MOD';
-        return `<span class="staff-nick-badge staff-badge-mod" title="Điều hành viên"><span class="badge-ico">🛡️</span>${label}</span>`;
+    if (isExplicitAdmin || isFallbackRootAdmin) {
+        return `<span class="staff-nick-badge staff-badge-admin" title="Quản trị viên"><span class="badge-ico">👑</span>ADMIN</span>`;
     }
 
     return '';
@@ -92,18 +93,14 @@ export function renderUser(u) {
     return {
         nameStyle,
         avatarStyle,
-        nameHtml: `<a href="/profile?user=${userId}" style="${nameStyle}">${activeIcon}${displayName}</a>${staffBadge}`,
+        nameHtml: `<span class="nick-inline-wrap"><a href="/profile?user=${userId}" style="${nameStyle}">${activeIcon}${displayName}</a>${staffBadge}</span>`,
         avatarHtml: `<a href="/profile?user=${userId}"><img src="${escapeHtmlText(avatarUrl)}" style="${avatarStyle}"></a>`
     };
 }
 
 async function checkAuth(request, env) {
     try {
-        // Chỉ tin session token do server cấp (lưu trong D1), không bao giờ tin cookie user_id từ client
         if (!readSessionToken(request)) return null;
-
-        // Các cột active_icon, name_color, border_color của bảng users được tạo bằng migration chạy một lần (không chạy mỗi request nữa)
-
         return await getSessionUser(request, env);
     } catch (e) {
         return null;
@@ -203,42 +200,51 @@ function renderLayout(title, content, user) {
         .btn:hover { background: #333; border-color: #00ff00; color: #fff; }
         .footer { text-align: center; padding: 16px; font-size: 13px; color: #777; border-top: 1px solid #222; background: #050505; margin-bottom: 40px; }
 
+        .nick-inline-wrap {
+            display: inline-flex !important;
+            align-items: center !important;
+            flex-wrap: nowrap !important;
+            vertical-align: middle !important;
+            max-width: 100%;
+        }
         .staff-nick-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 2px;
-            margin-left: 4px;
-            padding: 0.5px 4px;
-            border-radius: 3px;
-            font-size: 8.5px;
-            font-weight: 700;
-            letter-spacing: 0.25px;
-            vertical-align: middle;
-            line-height: 1.15;
-            text-transform: uppercase;
-            user-select: none;
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 2px !important;
+            margin-left: 4px !important;
+            padding: 0 4px !important;
+            border-radius: 3px !important;
+            font-size: 8.5px !important;
+            font-weight: 700 !important;
+            letter-spacing: 0.25px !important;
+            vertical-align: middle !important;
+            line-height: 1.2 !important;
+            text-transform: uppercase !important;
+            user-select: none !important;
+            flex-shrink: 0 !important;
+            -webkit-text-stroke: 0 !important;
         }
         .staff-nick-badge .badge-ico {
-            display: inline-block;
-            font-size: 9px;
-            line-height: 1;
-            animation: staffIconPulse 1.2s infinite ease-in-out;
+            display: inline-block !important;
+            font-size: 9px !important;
+            line-height: 1 !important;
+            animation: staffIconPulse 1.2s infinite ease-in-out !important;
         }
         .staff-badge-admin {
-            background: linear-gradient(90deg, #3b0000, #8a0000, #3b0000);
-            background-size: 200% 100%;
-            color: #fff200;
-            border: 1px solid rgba(255, 59, 48, 0.85);
-            box-shadow: 0 0 4px rgba(255, 59, 48, 0.65);
-            animation: adminNickBlink 1.3s infinite alternate, staffBadgeSlide 2.6s linear infinite;
+            background: linear-gradient(90deg, #3b0000, #8a0000, #3b0000) !important;
+            background-size: 200% 100% !important;
+            color: #fff200 !important;
+            border: 1px solid rgba(255, 59, 48, 0.85) !important;
+            box-shadow: 0 0 4px rgba(255, 59, 48, 0.65) !important;
+            animation: adminNickBlink 1.3s infinite alternate, staffBadgeSlide 2.6s linear infinite !important;
         }
         .staff-badge-mod {
-            background: linear-gradient(90deg, #002633, #006688, #002633);
-            background-size: 200% 100%;
-            color: #7ef9ff;
-            border: 1px solid rgba(0, 229, 255, 0.85);
-            box-shadow: 0 0 4px rgba(0, 229, 255, 0.6);
-            animation: modNickBlink 1.3s infinite alternate, staffBadgeSlide 2.6s linear infinite;
+            background: linear-gradient(90deg, #002633, #006688, #002633) !important;
+            background-size: 200% 100% !important;
+            color: #7ef9ff !important;
+            border: 1px solid rgba(0, 229, 255, 0.85) !important;
+            box-shadow: 0 0 4px rgba(0, 229, 255, 0.6) !important;
+            animation: modNickBlink 1.3s infinite alternate, staffBadgeSlide 2.6s linear infinite !important;
         }
         @keyframes adminNickBlink {
             0% {
