@@ -46,11 +46,39 @@ function isSafeColor(val) {
     return /^#[0-9a-fA-F]{3,8}$/.test(String(val || '').trim());
 }
 
+function formatCommentUserStyle(row) {
+    const uObj = {
+        id: row.user_id,
+        username: row.username,
+        display_name: row.display_name,
+        role: row.role,
+        is_admin: row.is_admin,
+        active_icon: row.active_icon,
+        name_color: row.name_color,
+        name_glow: row.name_glow,
+        name_border: row.name_border,
+        name_border_glow: row.name_border_glow,
+        border_color: row.border_color,
+        avatar_glow: row.avatar_glow,
+        avatar: row.avatar
+    };
+    const rendered = renderUser(uObj);
+    const iconPrefix = row.active_icon ? `${escapeHtml(row.active_icon)} ` : '';
+    const av = (row.avatar && !String(row.avatar).includes('7gXvS6v'))
+        ? row.avatar
+        : "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/></svg>";
+    return {
+        nameHtml: `${iconPrefix}${rendered.nameHtml}`,
+        avatarSrc: av,
+        avatarStyle: rendered.avatarStyle || 'border-radius: 50%; object-fit: cover;'
+    };
+}
+
 export async function handleProfile(request, env, user, renderLayout, url) {
     let message = "";
     const targetId = parseInt(url.searchParams.get('user') || user.id);
 
-    const cols = ['name_color', 'name_glow', 'name_border', 'name_border_glow', 'border_color', 'avatar_glow', 'cover_photo', 'gender', 'relationship', 'province', 'birthday', 'online_minutes', 'created_at'];
+    const cols = ['name_color', 'name_glow', 'name_border', 'name_border_glow', 'border_color', 'avatar_glow', 'active_icon', 'role', 'is_admin', 'cover_photo', 'gender', 'relationship', 'province', 'birthday', 'online_minutes', 'created_at'];
     for (const col of cols) {
         try { await env.DB.prepare(`ALTER TABLE users ADD COLUMN ${col} TEXT;`).run(); } catch(e) {}
     }
@@ -124,6 +152,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
     if (request.method === 'POST') {
         const formData = await request.formData();
         const action = formData.get('action');
+        const isAjax = request.headers.get('X-Requested-With') === 'XMLHttpRequest' || formData.get('ajax') === '1';
 
         try {
             if (action === 'wall_post') {
@@ -202,7 +231,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 if (!commentText) throw new Error("Vui lòng nhập nội dung bình luận!");
 
                 const nowSec = Math.floor(Date.now() / 1000);
-                await env.DB.prepare(
+                const insRes = await env.DB.prepare(
                     `INSERT INTO wall_post_comments (post_id, user_id, content, created_at) VALUES (?, ?, ?, ?)`
                 ).bind(postId, user.id, commentText, nowSec).run();
 
@@ -213,6 +242,31 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                         await env.DB.prepare(`UPDATE ${feedTable} SET comments = COALESCE(comments, 0) + 1 WHERE id = ?`).bind(postId).run();
                     } catch (eCmtUpd2) {}
                 }
+
+                if (isAjax) {
+                    const cntRow = await env.DB.prepare(`SELECT COUNT(*) as total FROM wall_post_comments WHERE post_id = ?`).bind(postId).first();
+                    const styleInfo = formatCommentUserStyle({
+                        ...user,
+                        user_id: user.id
+                    });
+                    return new Response(JSON.stringify({
+                        ok: true,
+                        postId,
+                        totalComments: Number(cntRow?.total || 0),
+                        comment: {
+                            id: Number(insRes?.meta?.last_row_id || Date.now()),
+                            userId: Number(user.id),
+                            nameHtml: styleInfo.nameHtml,
+                            avatarSrc: styleInfo.avatarSrc,
+                            avatarStyle: styleInfo.avatarStyle,
+                            content: commentText,
+                            timeAgo: 'Vừa xong'
+                        }
+                    }), {
+                        headers: { 'Content-Type': 'application/json;charset=UTF-8' }
+                    });
+                }
+
                 message = `<div style="color: #00ff00; background: #001a00; border: 1px solid #005500; padding: 6px; text-align: center; margin-bottom: 8px;">💬 Đã gửi bình luận!</div>`;
             } else if (isOwner) {
                 if (action === 'update_cover') {
@@ -272,6 +326,12 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             }
             profileUser = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(targetId).first();
         } catch (e) {
+            if (isAjax) {
+                return new Response(JSON.stringify({ ok: false, error: e.message || "Lỗi gửi bình luận!" }), {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json;charset=UTF-8' }
+                });
+            }
             message = `<div style="color: #ff5555; background: #1a0000; border: 1px solid #550000; padding: 6px; text-align: center; margin-bottom: 8px;">❌ Lỗi: ${escapeHtml(e.message)}</div>`;
         }
     }
@@ -314,7 +374,8 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         if (postIds.length > 0) {
             const placeholders = postIds.map(() => '?').join(',');
             const cRows = await env.DB.prepare(`
-                SELECT c.*, u.username, u.display_name, u.avatar
+                SELECT c.*, u.username, u.display_name, u.avatar, u.role, u.is_admin, u.active_icon,
+                       u.name_color, u.name_glow, u.name_border, u.name_border_glow, u.border_color, u.avatar_glow
                 FROM wall_post_comments c
                 LEFT JOIN users u ON u.id = c.user_id
                 WHERE c.post_id IN (${placeholders})
@@ -323,11 +384,13 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             for (const c of (cRows.results || [])) {
                 const pid = Number(c.post_id);
                 if (!commentsByPost[pid]) commentsByPost[pid] = [];
+                const styleInfo = formatCommentUserStyle(c);
                 commentsByPost[pid].push({
                     id: Number(c.id || 0),
                     userId: Number(c.user_id || 0),
-                    name: c.display_name || c.username || `ID #${c.user_id}`,
-                    avatar: c.avatar || '',
+                    nameHtml: styleInfo.nameHtml,
+                    avatarSrc: styleInfo.avatarSrc,
+                    avatarStyle: styleInfo.avatarStyle,
                     content: c.content || '',
                     timeAgo: formatTimeAgo(c.created_at)
                 });
@@ -426,9 +489,9 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                         </button>
                     </form>
 
-                    <button type="button" onclick="openCommentPopup(${postId}, ${commentsCount})" title="Bình luận bài viết" style="background: #121824; border: 1px solid #263654; border-radius: 6px; color: #60a5fa; font-size: 15px; font-weight: bold; cursor: pointer; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px; min-width: 64px; justify-content: center;">
+                    <button type="button" onclick="openCommentPopup(${postId})" title="Bình luận bài viết" style="background: #121824; border: 1px solid #263654; border-radius: 6px; color: #60a5fa; font-size: 15px; font-weight: bold; cursor: pointer; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px; min-width: 64px; justify-content: center;">
                         <span style="font-size: 16px; line-height: 1;">💬</span>
-                        <span style="color: #fff; font-size: 13px; font-weight: bold;">${commentsCount}</span>
+                        <span id="post-comment-count-${postId}" style="color: #fff; font-size: 13px; font-weight: bold;">${commentsCount}</span>
                     </button>
                 </div>
             </div>`;
@@ -640,7 +703,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         </div>
     </div>
 
-    <!-- Popup Modal Bình luận bài viết (giống ảnh 1) -->
+    <!-- Popup Modal Bình luận bài viết -->
     <div id="comment-popup-modal" onclick="if(event.target===this) closeCommentPopup();" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.75); z-index: 1000; justify-content: center; align-items: center; padding: 12px; box-sizing: border-box;">
         <div style="background: #141414; border: 1px solid #383838; border-radius: 10px; width: 100%; max-width: 460px; max-height: 82vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.85);">
             <!-- Header Popup -->
@@ -654,16 +717,17 @@ export async function handleProfile(request, env, user, renderLayout, url) {
 
             <!-- Thanh nhập bình luận -->
             <div style="padding: 10px 12px; border-bottom: 1px solid #262626; background: #141414;">
-                <form method="POST" id="comment-popup-form" style="display: flex; align-items: center; gap: 8px; margin: 0;">
+                <form method="POST" id="comment-popup-form" onsubmit="submitCommentAjax(event)" style="display: flex; align-items: center; gap: 8px; margin: 0;">
                     <input type="hidden" name="action" value="comment_post">
                     <input type="hidden" name="post_id" id="comment-popup-post-id" value="">
                     <button type="button" onclick="toggleCommentEmojiBar()" title="Chèn biểu tượng" style="background: #1f1f1f; border: 1px solid #3a3a3a; border-radius: 50%; width: 32px; height: 32px; color: #ccc; font-size: 15px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">☺</button>
                     <input type="text" id="comment-popup-input" name="comment_content" placeholder="Viết bình luận.." required style="flex: 1; background: #0d0d0d; color: #fff; border: 1px solid #363636; border-radius: 6px; padding: 7px 10px; font-size: 13px; box-sizing: border-box;">
-                    <button type="submit" style="background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 7px 12px; font-size: 12px; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;">
+                    <button type="submit" id="comment-popup-submit-btn" style="background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 7px 12px; font-size: 12px; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;">
                         <span>💬</span>
                         <span>Bình luận</span>
                     </button>
                 </form>
+                <div id="comment-popup-error" style="display: none; color: #ff6666; font-size: 11px; margin-top: 6px;"></div>
                 <div id="comment-popup-emoji-bar" style="display: none; flex-wrap: wrap; gap: 5px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #252525;"></div>
             </div>
 
@@ -750,10 +814,11 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         </div>
     </div>
 
-    <!-- JavaScript kích hoạt Popup Bình luận, Modal, Tường nhà, Icon & Bb Color, Cắt/Kéo ảnh -->
+    <!-- JavaScript kích hoạt Popup Bình luận AJAX, Modal, Tường nhà, Icon & Bb Color, Cắt/Kéo ảnh -->
     <script>
         const WALL_COMMENTS_DATA = ${commentsJsonSafe};
         const FALLBACK_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/></svg>";
+        let activeCommentPostId = 0;
 
         function escapeJsHtml(str) {
             return String(str ?? '')
@@ -763,41 +828,126 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 .replace(/"/g, '&quot;');
         }
 
-        function openCommentPopup(postId, displayCount) {
-            const modal = document.getElementById('comment-popup-modal');
-            const postIdInput = document.getElementById('comment-popup-post-id');
-            const countBadge = document.getElementById('comment-popup-count');
+        function renderCommentListInPopup(postId) {
             const listEl = document.getElementById('comment-popup-list');
-            const inputEl = document.getElementById('comment-popup-input');
-            if (!modal || !postIdInput || !listEl) return;
+            const countBadge = document.getElementById('comment-popup-count');
+            const postCountSpan = document.getElementById('post-comment-count-' + postId);
+            if (!listEl) return;
 
-            postIdInput.value = postId;
             const list = WALL_COMMENTS_DATA[postId] || [];
-            if (countBadge) countBadge.textContent = String(Math.max(Number(displayCount || 0), list.length));
+            const currentPostCount = postCountSpan ? Number(postCountSpan.textContent || 0) : list.length;
+            const total = Math.max(currentPostCount, list.length);
+
+            if (countBadge) countBadge.textContent = String(total);
+            if (postCountSpan) postCountSpan.textContent = String(total);
 
             if (list.length === 0) {
                 listEl.innerHTML = '<div style="text-align:center;color:#777;font-size:12px;padding:18px 8px;">Chưa có bình luận nào.</div>';
-            } else {
-                listEl.innerHTML = list.map(c => {
-                    const av = (c.avatar && !String(c.avatar).includes('7gXvS6v')) ? c.avatar : FALLBACK_AVATAR;
-                    return \`
-                    <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px;">
-                        <img src="\${escapeJsHtml(av)}" width="30" height="30" style="border-radius:50%;object-fit:cover;flex-shrink:0;margin-top:2px;">
-                        <div style="flex:1;min-width:0;">
-                            <div style="background:#1c1c1c;border:1px solid #2b2b2b;border-radius:8px;padding:6px 10px;">
-                                <div style="font-size:12px;font-weight:bold;color:#ff4d79;margin-bottom:2px;">\${escapeJsHtml(c.name)}</div>
-                                <div style="font-size:13px;color:#e5e7eb;white-space:pre-wrap;word-break:break-word;">\${escapeJsHtml(c.content)}</div>
-                            </div>
-                            <div style="font-size:11px;color:#888;margin-top:3px;padding-left:4px;">\${escapeJsHtml(c.timeAgo)}</div>
-                        </div>
-                    </div>\`;
-                }).join('');
+                return;
             }
 
+            listEl.innerHTML = list.map(c => {
+                const av = (c.avatarSrc && !String(c.avatarSrc).includes('7gXvS6v')) ? c.avatarSrc : FALLBACK_AVATAR;
+                const avStyle = c.avatarStyle || 'border-radius: 50%; object-fit: cover;';
+                const nameMarkup = c.nameHtml || escapeJsHtml(c.name || ('ID #' + c.userId));
+                return \`
+                <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px;">
+                    <img src="\${escapeJsHtml(av)}" width="32" height="32" style="\${escapeJsHtml(avStyle)} flex-shrink:0;margin-top:2px;">
+                    <div style="flex:1;min-width:0;">
+                        <div style="background:#1c1c1c;border:1px solid #2b2b2b;border-radius:8px;padding:6px 10px;">
+                            <div style="font-size:12px;line-height:1.3;margin-bottom:2px;">\${nameMarkup}</div>
+                            <div style="font-size:13px;color:#e5e7eb;white-space:pre-wrap;word-break:break-word;">\${escapeJsHtml(c.content)}</div>
+                        </div>
+                        <div style="font-size:11px;color:#888;margin-top:3px;padding-left:4px;">\${escapeJsHtml(c.timeAgo || 'Vừa xong')}</div>
+                    </div>
+                </div>\`;
+            }).join('');
+        }
+
+        function openCommentPopup(postId) {
+            activeCommentPostId = Number(postId || 0);
+            const modal = document.getElementById('comment-popup-modal');
+            const postIdInput = document.getElementById('comment-popup-post-id');
+            const inputEl = document.getElementById('comment-popup-input');
+            const errEl = document.getElementById('comment-popup-error');
+            if (!modal || !postIdInput) return;
+
+            postIdInput.value = String(activeCommentPostId);
+            if (errEl) {
+                errEl.style.display = 'none';
+                errEl.textContent = '';
+            }
+            if (!Array.isArray(WALL_COMMENTS_DATA[activeCommentPostId])) {
+                WALL_COMMENTS_DATA[activeCommentPostId] = [];
+            }
+
+            renderCommentListInPopup(activeCommentPostId);
             modal.style.display = 'flex';
             if (inputEl) {
                 inputEl.value = '';
                 setTimeout(() => inputEl.focus(), 50);
+            }
+        }
+
+        async function submitCommentAjax(ev) {
+            ev.preventDefault();
+            const form = ev.target;
+            const postId = Number(document.getElementById('comment-popup-post-id')?.value || activeCommentPostId || 0);
+            const inputEl = document.getElementById('comment-popup-input');
+            const btnEl = document.getElementById('comment-popup-submit-btn');
+            const errEl = document.getElementById('comment-popup-error');
+            const text = (inputEl?.value || '').trim();
+
+            if (!postId || !text) return;
+            if (errEl) {
+                errEl.style.display = 'none';
+                errEl.textContent = '';
+            }
+            if (btnEl) btnEl.disabled = true;
+
+            try {
+                const body = new URLSearchParams();
+                body.set('action', 'comment_post');
+                body.set('post_id', String(postId));
+                body.set('comment_content', text);
+                body.set('ajax', '1');
+
+                const res = await fetch(window.location.href, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+                    },
+                    body: body.toString()
+                });
+
+                const data = await res.json();
+                if (!res.ok || !data.ok) {
+                    throw new Error(data.error || 'Không thể gửi bình luận!');
+                }
+
+                if (!Array.isArray(WALL_COMMENTS_DATA[postId])) {
+                    WALL_COMMENTS_DATA[postId] = [];
+                }
+                WALL_COMMENTS_DATA[postId].unshift(data.comment);
+
+                const postCountSpan = document.getElementById('post-comment-count-' + postId);
+                if (postCountSpan && typeof data.totalComments === 'number') {
+                    postCountSpan.textContent = String(data.totalComments);
+                }
+
+                if (inputEl) {
+                    inputEl.value = '';
+                    inputEl.focus();
+                }
+                renderCommentListInPopup(postId);
+            } catch (err) {
+                if (errEl) {
+                    errEl.textContent = '❌ ' + (err.message || 'Lỗi gửi bình luận');
+                    errEl.style.display = 'block';
+                }
+            } finally {
+                if (btnEl) btnEl.disabled = false;
             }
         }
 
