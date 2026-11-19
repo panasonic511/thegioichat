@@ -302,6 +302,3 @@ export async function handleShop(request, env, user, renderLayout) {
         headers: { 'Content-Type': 'text/html;charset=UTF-8' }
     });
 }
-```[cite: 10]
-
-Nếu ở Trang chủ (`index.js`) hoặc các trang khác vẫn còn hiển thị `[Lv.xx]` hoặc badge góc phải, bạn gửi thêm file đó để mình dọn sạch cho đồng bộ toàn wap nhé!
