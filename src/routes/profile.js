@@ -1,4 +1,5 @@
 import { renderUser } from '../worker.js';
+import { ANIMATED_ICONS, renderRichTextHtml } from '../data/animatedIcons.js';
 
 function escapeHtml(str) {
     return String(str ?? '')
@@ -259,6 +260,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                             avatarSrc: styleInfo.avatarSrc,
                             avatarStyle: styleInfo.avatarStyle,
                             content: commentText,
+                            contentHtml: renderRichTextHtml(commentText),
                             timeAgo: 'Vừa xong'
                         }
                     }), {
@@ -336,7 +338,6 @@ export async function handleProfile(request, env, user, renderLayout, url) {
     }
 
     const rProfile = renderUser(profileUser);
-    const pIcon = profileUser.active_icon ? `${profileUser.active_icon} ` : '';
     const followingRow = await env.DB.prepare("SELECT COUNT(*) as total FROM follows WHERE follower_id = ?").bind(targetId).first();
     const followerRow = await env.DB.prepare("SELECT COUNT(*) as total FROM follows WHERE following_id = ?").bind(targetId).first();
     const friendsRow = await env.DB.prepare("SELECT COUNT(*) as total FROM friends WHERE user_id = ? OR friend_id = ?").bind(targetId, targetId).first();
@@ -384,13 +385,15 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 const pid = Number(c.post_id);
                 if (!commentsByPost[pid]) commentsByPost[pid] = [];
                 const styleInfo = formatCommentUserStyle(c);
+                const rawCmtContent = c.content || '';
                 commentsByPost[pid].push({
                     id: Number(c.id || 0),
                     userId: Number(c.user_id || 0),
                     nameHtml: styleInfo.nameHtml,
                     avatarSrc: styleInfo.avatarSrc,
                     avatarStyle: styleInfo.avatarStyle,
-                    content: c.content || '',
+                    content: rawCmtContent,
+                    contentHtml: renderRichTextHtml(rawCmtContent),
                     timeAgo: formatTimeAgo(c.created_at)
                 });
             }
@@ -416,6 +419,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         : "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/></svg>";
 
     const commentsJsonSafe = JSON.stringify(commentsByPost).replace(/</g, '\\u003c');
+    const animatedIconsJsonSafe = JSON.stringify(ANIMATED_ICONS).replace(/</g, '\\u003c');
 
     const wallPostsHtml = userPosts.length === 0
         ? `<div style="color: #888; text-align: center; padding: 14px; font-size: 12px;">Chưa có bài đăng nào.</div>`
@@ -468,7 +472,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 </div>
 
                 <!-- Nội dung bài đăng -->
-                ${rawText ? `<div style="font-size: 13px; color: #f2f2f2; line-height: 1.6; white-space: pre-wrap; text-align: center; margin-bottom: ${imgUrl ? '10px' : '8px'}; ${escapeHtml(postStyle)}">${escapeHtml(rawText)}</div>` : ''}
+                ${rawText ? `<div style="font-size: 13px; color: #f2f2f2; line-height: 1.6; white-space: pre-wrap; text-align: center; margin-bottom: ${imgUrl ? '10px' : '8px'}; ${escapeHtml(postStyle)}">${renderRichTextHtml(rawText)}</div>` : ''}
 
                 <!-- Ảnh bài đăng -->
                 ${imgUrl ? `
@@ -679,7 +683,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                     <!-- Popup Icon biểu tượng -->
                     <div id="wall-emoji-picker" style="display: none; background: #161616; border: 1px solid #444; border-radius: 4px; padding: 6px; margin-top: 8px;">
                         <div style="font-size: 11px; color: #ffcc00; margin-bottom: 5px;">Chọn biểu tượng cảm xúc</div>
-                        <div id="wall-emoji-list" style="display: flex; flex-wrap: wrap; gap: 4px;"></div>
+                        <div id="wall-emoji-list" style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;"></div>
                     </div>
 
                     <!-- Popup Bb Color (Màu chữ / Màu nền / Bóng mờ) -->
@@ -727,7 +731,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                     </button>
                 </form>
                 <div id="comment-popup-error" style="display: none; color: #ff6666; font-size: 11px; margin-top: 6px;"></div>
-                <div id="comment-popup-emoji-bar" style="display: none; flex-wrap: wrap; gap: 5px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #252525;"></div>
+                <div id="comment-popup-emoji-bar" style="display: none; flex-wrap: wrap; gap: 5px; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px solid #252525; max-height: 120px; overflow-y: auto;"></div>
             </div>
 
             <!-- Danh sách bình luận -->
@@ -813,9 +817,10 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         </div>
     </div>
 
-    <!-- JavaScript kích hoạt Popup Bình luận AJAX, Modal, Tường nhà, Icon & Bb Color, Cắt/Kéo ảnh -->
+    <!-- JavaScript kích hoạt Popup Bình luận AJAX, Icon động, Modal, Tường nhà, Bb Color, Cắt/Kéo ảnh -->
     <script>
         const WALL_COMMENTS_DATA = ${commentsJsonSafe};
+        const WAP_ANIMATED_ICONS = ${animatedIconsJsonSafe};
         const FALLBACK_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/></svg>";
         let activeCommentPostId = 0;
 
@@ -825,6 +830,31 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;');
+        }
+
+        function renderRichTextClient(text) {
+            const raw = String(text ?? '');
+            const urlRegex = /(https?:\/\/[^\s"'<>]+\.(?:gif|webp|png|jpe?g)(?:\?[^\s"'<>]*)?)/gi;
+            return raw.split(urlRegex).map((part) => {
+                if (!part) return '';
+                if (urlRegex.test(part)) {
+                    urlRegex.lastIndex = 0;
+                    return \`<img src="\${escapeJsHtml(part)}" alt="icon" style="height:24px;width:auto;vertical-align:middle;display:inline-block;margin:0 2px;">\`;
+                }
+                urlRegex.lastIndex = 0;
+                return escapeJsHtml(part);
+            }).join('');
+        }
+
+        function buildAnimatedIconButtonsHtml(insertFnName) {
+            const validIcons = Array.isArray(WAP_ANIMATED_ICONS)
+                ? WAP_ANIMATED_ICONS.filter(it => it && it.url && String(it.url).trim() !== '')
+                : [];
+            return validIcons.map(it => {
+                const safeUrl = escapeJsHtml(String(it.url).trim());
+                const safeName = escapeJsHtml(it.name || 'Icon động');
+                return \`<button type="button" title="\${safeName}" onclick="\${insertFnName}('\${safeUrl}')" style="background:#1a1a1a;border:1px solid #3a3a3a;border-radius:4px;padding:3px 5px;cursor:pointer;display:inline-flex;align-items:center;"><img src="\${safeUrl}" alt="\${safeName}" style="height:22px;width:auto;display:block;"></button>\`;
+            }).join('');
         }
 
         function renderCommentListInPopup(postId) {
@@ -849,13 +879,14 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 const av = (c.avatarSrc && !String(c.avatarSrc).includes('7gXvS6v')) ? c.avatarSrc : FALLBACK_AVATAR;
                 const avStyle = c.avatarStyle || 'border-radius: 50%; object-fit: cover;';
                 const nameMarkup = c.nameHtml || escapeJsHtml(c.name || ('ID #' + c.userId));
+                const bodyMarkup = c.contentHtml || renderRichTextClient(c.content);
                 return \`
                 <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px;">
                     <img src="\${escapeJsHtml(av)}" width="32" height="32" style="\${escapeJsHtml(avStyle)} flex-shrink:0;margin-top:2px;">
                     <div style="flex:1;min-width:0;">
                         <div style="background:#1c1c1c;border:1px solid #2b2b2b;border-radius:8px;padding:6px 10px;">
                             <div style="font-size:12px;line-height:1.3;margin-bottom:2px;">\${nameMarkup}</div>
-                            <div style="font-size:13px;color:#e5e7eb;white-space:pre-wrap;word-break:break-word;">\${escapeJsHtml(c.content)}</div>
+                            <div style="font-size:13px;color:#e5e7eb;white-space:pre-wrap;word-break:break-word;">\${bodyMarkup}</div>
                         </div>
                         <div style="font-size:11px;color:#888;margin-top:3px;padding-left:4px;">\${escapeJsHtml(c.timeAgo || 'Vừa xong')}</div>
                     </div>
@@ -963,9 +994,11 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             bar.style.display = show ? 'flex' : 'none';
             if (show && !bar.dataset.loaded) {
                 const icons = ['😀','😂','😍','😘','😎','😭','😡','👍','❤️','💖','🔥','✨','🎉','🌸'];
-                bar.innerHTML = icons.map(ic =>
+                const emojiHtml = icons.map(ic =>
                     \`<button type="button" onclick="insertCommentEmoji('\${ic}')" style="background:#222;border:1px solid #383838;border-radius:4px;padding:2px 6px;font-size:13px;cursor:pointer;">\${ic}</button>\`
                 ).join('');
+                const animHtml = buildAnimatedIconButtonsHtml('insertCommentEmoji');
+                bar.innerHTML = emojiHtml + animHtml;
                 bar.dataset.loaded = '1';
             }
         }
@@ -1012,9 +1045,11 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         function renderWallEmojis() {
             const el = document.getElementById('wall-emoji-list');
             if (!el) return;
-            el.innerHTML = WALL_EMOJIS.map(em =>
+            const emojiHtml = WALL_EMOJIS.map(em =>
                 \`<button type="button" onclick="insertWallEmoji('\${em}')" style="background:#222;border:1px solid #383838;border-radius:3px;padding:3px 6px;font-size:14px;cursor:pointer;">\${em}</button>\`
             ).join('');
+            const animHtml = buildAnimatedIconButtonsHtml('insertWallEmoji');
+            el.innerHTML = emojiHtml + animHtml;
         }
 
         function insertWallEmoji(emoji) {
