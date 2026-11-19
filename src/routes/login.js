@@ -1,4 +1,4 @@
-Export async function handleLogin(request, env) {
+export async function handleLogin(request, env) {
     if (request.method === 'GET') {
         return new Response(`<!DOCTYPE html>
         <html lang="vi">
