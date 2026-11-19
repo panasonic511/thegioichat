@@ -90,6 +90,32 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         }
     };
 
+    const countOtherUnreadSenders = async () => {
+        try {
+            const res = await env.DB.prepare(`
+                SELECT COUNT(DISTINCT sender_id) as cnt
+                FROM mail_box
+                WHERE receiver_id = ?
+                  AND sender_id != ?
+                  AND (is_read IS NULL OR is_read = 0)
+            `).bind(user.id, partnerId).first();
+            return res ? Number(res.cnt || 0) : 0;
+        } catch (err1) {
+            try {
+                const res2 = await env.DB.prepare(`
+                    SELECT COUNT(DISTINCT partner_id) as cnt
+                    FROM mail_box
+                    WHERE user_id = ?
+                      AND partner_id != ?
+                      AND (is_read IS NULL OR is_read = 0)
+                `).bind(user.id, partnerId).first();
+                return res2 ? Number(res2.cnt || 0) : 0;
+            } catch (err2) {
+                return 0;
+            }
+        }
+    };
+
     const setMyTypingState = async (isTyping) => {
         try {
             const nowSec = Math.floor(Date.now() / 1000);
@@ -112,7 +138,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                 LIMIT 1
             `).bind(partnerId, user.id).first();
 
-            return Boolean(row && Number(row.is_typing) === 1 && (nowSec - Number(row.updated_at || 0)) <= 10);
+            return Boolean(row && Number(row.is_typing) === 1 && (nowSec - Number(row.updated_at || 0)) <= 12);
         } catch (e) {
             return false;
         }
@@ -133,7 +159,12 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
 
             if (action === 'check_typing') {
                 const partnerTyping = await checkPartnerTypingFromDb();
-                return new Response(JSON.stringify({ success: true, partner_typing: partnerTyping ? 1 : 0 }), {
+                const otherUnreadCount = await countOtherUnreadSenders();
+                return new Response(JSON.stringify({
+                    success: true,
+                    partner_typing: partnerTyping ? 1 : 0,
+                    other_unread_count: otherUnreadCount
+                }), {
                     headers: { 'Content-Type': 'application/json;charset=UTF-8' }
                 });
             }
@@ -314,9 +345,9 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                     : messages.map(m => renderMessageHtml(m, user, partner)).join('')}
             </div>
 
-            <div id="partnerTypingIndicator" style="display: none; align-items: center; gap: 6px; font-size: 12px; color: #00ff88; padding: 2px 4px 8px 4px; min-height: 18px;">
+            <div id="partnerTypingIndicator" style="display: none; align-items: center; gap: 6px; font-size: 12px; color: #00ff88; padding: 2px 4px 8px 4px; min-height: 18px; font-weight: bold;">
                 <span style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #00ff88;"></span>
-                <span id="partnerTypingText">${escapeHtml(partner.display_name || partner.username || 'Đối phương')} đang soạn tin nhắn...</span>
+                <span id="partnerTypingText">${escapeHtml(partner.display_name || partner.username || 'Đối phương')} đang nhập nội dung...</span>
             </div>
 
             <form id="chatForm" onsubmit="sendChatMessage(event)" style="display: flex; flex-direction: column; gap: 8px; position: relative;">
@@ -369,6 +400,9 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         const partnerData = ${safePartnerJson};
         const chatBox = document.getElementById('chatMessageBox');
 
+        window.__ACTIVE_CHAT_PARTNER_ID__ = partnerId;
+        window.__OTHER_UNREAD_COUNT__ = 0;
+
         let lastTypingSentState = false;
         let typingIdleTimer = null;
         let typingHeartbeatTimer = null;
@@ -411,10 +445,43 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
             if (!el) return;
             if (isTyping) {
                 const pName = partnerData.display_name || partnerData.username || 'Đối phương';
-                if (txtEl) txtEl.textContent = pName + ' đang soạn tin nhắn...';
+                if (txtEl) txtEl.textContent = pName + ' đang nhập nội dung...';
                 el.style.display = 'flex';
             } else {
                 el.style.display = 'none';
+            }
+        }
+
+        function hideAllMailPopupsAndBadges(otherUnreadCount) {
+            const safeOtherUnread = typeof otherUnreadCount === 'number' ? otherUnreadCount : 0;
+            window.__OTHER_UNREAD_COUNT__ = safeOtherUnread;
+
+            if (safeOtherUnread === 0) {
+                document.querySelectorAll('a[href*="/mail"]').forEach(function(mailLink) {
+                    const container = mailLink.closest('li, div, td, span') || mailLink.parentElement || mailLink;
+                    container.querySelectorAll('span, sup, .badge, .mail-badge, .popup-badge, [class*="badge"], [class*="count"]').forEach(function(badge) {
+                        if (badge.contains(mailLink)) return;
+                        const txt = (badge.textContent || '').trim();
+                        if (/^\\d+$/.test(txt) || txt === '!' || txt === '') {
+                            badge.style.setProperty('display', 'none', 'important');
+                        }
+                    });
+                });
+
+                document.querySelectorAll('[id*="mail-popup"], [id*="chat-popup"], [id*="msg-popup"], [class*="mail-popup"], [class*="chat-popup"], [class*="msg-popup"], [class*="floating-mail"], [class*="toast-mail"]').forEach(function(popup) {
+                    popup.style.setProperty('display', 'none', 'important');
+                });
+
+                document.querySelectorAll('div, button, a').forEach(function(node) {
+                    if (node.id === 'chatMessageBox' || node.id === 'gifPopup' || node.closest('#chatForm') || node.closest('#chatMessageBox')) return;
+                    const st = window.getComputedStyle(node);
+                    const isFixedOrFloat = st.position === 'fixed' || st.position === 'sticky';
+                    const rect = node.getBoundingClientRect ? node.getBoundingClientRect() : null;
+                    const smallBox = rect && rect.width <= 120 && rect.height <= 120;
+                    if (isFixedOrFloat && smallBox && node.querySelector('a[href*="/mail"], [class*="mail"]')) {
+                        node.style.setProperty('display', 'none', 'important');
+                    }
+                });
             }
         }
 
@@ -492,7 +559,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
             }
         }
 
-        async function pollPartnerTypingFallback() {
+        async function pollPartnerTypingAndUnread() {
             try {
                 const body = new URLSearchParams();
                 body.set('action', 'check_typing');
@@ -508,10 +575,13 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                 });
                 if (res.ok) {
                     const d = await res.json();
-                    return Boolean(d && (d.partner_typing === 1 || d.partner_typing === true));
+                    return {
+                        typing: Boolean(d && (d.partner_typing === 1 || d.partner_typing === true)),
+                        otherUnread: typeof d.other_unread_count === 'number' ? d.other_unread_count : 0
+                    };
                 }
             } catch (e) {}
-            return false;
+            return { typing: false, otherUnread: 0 };
         }
 
         function toggleGifPopup() {
@@ -524,41 +594,15 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
             }
         }
 
-        function syncChatNotifications(otherUnreadCount) {
-            const safeOtherUnread = typeof otherUnreadCount === 'number' ? otherUnreadCount : 0;
-
-            document.querySelectorAll('a[href*="user=' + partnerId + '"]').forEach(function(link) {
-                link.querySelectorAll('span, .badge, .mail-badge, [class*="badge"], [class*="count"]').forEach(function(el) {
-                    el.style.display = 'none';
-                });
-            });
-
-            if (safeOtherUnread === 0) {
-                document.querySelectorAll('a[href*="/mail"]').forEach(function(mailLink) {
-                    const parent = mailLink.parentElement || mailLink;
-                    parent.querySelectorAll('span, .badge, .popup-badge, [style*="background"][style*="red"], [style*="background:#ff"], [style*="background: #ff"], [style*="background: #e"], [style*="background:#e"], [style*="background: #c"], [style*="background:#c"]').forEach(function(badge) {
-                        const txt = (badge.textContent || '').trim();
-                        if (/^\\d+$/.test(txt) || txt === '') {
-                            badge.style.display = 'none';
-                        }
-                    });
-                });
-
-                document.querySelectorAll('[id*="mail-popup"], [id*="chat-popup"], [class*="mail-popup"], [class*="chat-popup"], [class*="floating-mail"], [class*="toast-mail"]').forEach(function(popup) {
-                    popup.style.display = 'none';
-                });
-            }
-        }
-
         async function markCurrentConversationRead() {
             try {
-                await fetch('/api/mark-read?partner_id=' + partnerId, {
+                await fetch('/api/mark-read?partner_id=' + partnerId + '&in_chat_with=' + partnerId, {
                     method: 'POST',
                     headers: { 'X-Requested-With': 'XMLHttpRequest' }
                 });
             } catch (e) {
                 try {
-                    await fetch('/api/mark-read?partner_id=' + partnerId);
+                    await fetch('/api/mark-read?partner_id=' + partnerId + '&in_chat_with=' + partnerId);
                 } catch (e2) {}
             }
         }
@@ -568,6 +612,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
             if (popup) popup.style.display = 'none';
 
             await stopChatInputTyping(true);
+            hideAllMailPopupsAndBadges(window.__OTHER_UNREAD_COUNT__ || 0);
 
             const formData = new FormData();
             formData.append('message', gifUrl);
@@ -583,6 +628,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                     setPartnerTypingUi(false);
                     await markCurrentConversationRead();
                     await fetchRealtimeMessages();
+                    hideAllMailPopupsAndBadges(window.__OTHER_UNREAD_COUNT__ || 0);
                     scrollToBottom();
                 }
             } catch (e) {}
@@ -597,6 +643,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
             if (!input.value.trim() && !imgVal.value) return;
 
             await stopChatInputTyping(true);
+            hideAllMailPopupsAndBadges(window.__OTHER_UNREAD_COUNT__ || 0);
 
             const formData = new FormData(form);
 
@@ -611,8 +658,10 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                     input.value = '';
                     imgVal.value = '';
                     document.getElementById('chat-compress-status').innerText = '';
+                    setPartnerTypingUi(false);
                     await markCurrentConversationRead();
                     await fetchRealtimeMessages();
+                    hideAllMailPopupsAndBadges(window.__OTHER_UNREAD_COUNT__ || 0);
                     scrollToBottom();
                 }
             } catch (e) {
@@ -658,11 +707,15 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         async function fetchRealtimeMessages() {
             try {
                 await markCurrentConversationRead();
+                const fallbackState = await pollPartnerTypingAndUnread();
+
+                let otherUnread = fallbackState.otherUnread;
+                let partnerIsTyping = fallbackState.typing;
+
                 const res = await fetch('/api/realtime-check?partner_id=' + partnerId + '&in_chat_with=' + partnerId + '&_t=' + Date.now());
                 if (res.ok) {
                     const data = await res.json();
 
-                    let otherUnread = 0;
                     if (typeof data.other_unread_count === 'number') {
                         otherUnread = data.other_unread_count;
                     } else if (Array.isArray(data.unread_senders)) {
@@ -671,19 +724,14 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                         }).length;
                     }
 
-                    syncChatNotifications(otherUnread);
-
-                    let partnerIsTyping = Boolean(
+                    const apiTyping = Boolean(
                         data.partner_typing === true ||
                         data.partner_typing === 1 ||
                         data.is_typing === true ||
                         data.is_typing === 1 ||
                         (Array.isArray(data.typing_users) && data.typing_users.some(function(id) { return Number(id) === partnerId; }))
                     );
-                    if (!partnerIsTyping) {
-                        partnerIsTyping = await pollPartnerTypingFallback();
-                    }
-                    setPartnerTypingUi(partnerIsTyping);
+                    partnerIsTyping = partnerIsTyping || apiTyping;
 
                     if (Array.isArray(data.chat_messages) && data.chat_messages.length > 0) {
                         let html = '';
@@ -735,13 +783,16 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                         if (chatBox.innerHTML !== html) {
                             const isAtBottom = chatBox.scrollHeight - chatBox.scrollTop <= chatBox.clientHeight + 60;
                             chatBox.innerHTML = html;
-                            setPartnerTypingUi(false);
+                            partnerIsTyping = false;
                             if (isAtBottom) {
                                 scrollToBottom();
                             }
                         }
                     }
                 }
+
+                hideAllMailPopupsAndBadges(otherUnread);
+                setPartnerTypingUi(partnerIsTyping);
             } catch (e) {}
         }
 
@@ -750,10 +801,13 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         });
 
         markCurrentConversationRead().then(function() {
-            syncChatNotifications(0);
+            hideAllMailPopupsAndBadges(0);
             fetchRealtimeMessages();
         });
-        setInterval(fetchRealtimeMessages, 1500);
+        setInterval(fetchRealtimeMessages, 1200);
+        setInterval(function() {
+            hideAllMailPopupsAndBadges(window.__OTHER_UNREAD_COUNT__ || 0);
+        }, 400);
     </script>
     `;
 
