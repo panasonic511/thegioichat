@@ -761,7 +761,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 </div>
 
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
-                    <span style="font-size: 10px; color: #888;">✨ Tự giảm độ phân giải & ghép cuốn chiếu</span>
+                    <span style="font-size: 10px; color: #888;">✨ Tự ép video <= 3MB + giữ tiếng</span>
                     <button type="submit" class="btn" style="background: #00aa00; color: #fff; padding: 6px 16px; border-radius: 4px; cursor: pointer;">Đăng bài</button>
                 </div>
             </form>
@@ -771,7 +771,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
     <div id="story-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.88); z-index: 999; justify-content: center; align-items: center; padding: 10px; box-sizing: border-box;">
         <div style="background: #111; border: 1px solid #444; width: 100%; max-width: 360px; padding: 12px; box-sizing: border-box; border-radius: 6px; max-height: 92vh; overflow-y: auto;">
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 6px; margin-bottom: 10px;">
-                <b style="color: #00ff00; font-size: 12px;">📸 Đăng Story (24h · Tối đa 10 Story)</b>
+                <b style="color: #00ff00; font-size: 12px;">📸 Đăng Story (24h · Tự ép <= 3MB)</b>
                 <button type="button" onclick="closeStoryModal()" style="background:none; border:none; color:#ff5555; font-weight:bold; cursor:pointer;">✕</button>
             </div>
             <form id="story-create-form" method="POST" enctype="multipart/form-data" onsubmit="return handleStoryFormSubmit(event)">
@@ -781,13 +781,23 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 <input type="hidden" id="story-media-type-val" name="media_type" value="image">
                 <input type="hidden" id="story-duration-val" name="duration_sec" value="0">
 
-                <label style="color: #ccc; font-size: 11px; display: block; margin-bottom: 6px;">Hạ chất lượng & giữ tiếng để đăng nhanh:</label>
-                <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;">
+                <label style="color: #ccc; font-size: 11px; display: block; margin-bottom: 6px;">Tự động đưa video về <= 3MB, giữ tiếng & giảm kích thước:</label>
+                <div style="margin-bottom: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;">
                     <label style="display: inline-flex; align-items: center; gap: 6px; background: #1a1a1a; border: 1px solid #444; color: #00ff00; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; flex-shrink: 0;">
                         🎬 Chọn ảnh hoặc video
                         <input type="file" id="story-file-input" name="story_file" accept="image/*,video/*" onchange="handleStoryMediaSelect(this)" style="display: none;">
                     </label>
                     <div id="story-compress-status" style="font-size: 11px; color: #00ff00; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
+                </div>
+
+                <div id="story-progress-wrap" style="display: none; margin-bottom: 10px; background: #181818; border: 1px solid #333; border-radius: 5px; padding: 6px 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: #ccc; margin-bottom: 4px;">
+                        <span id="story-progress-label">Tiến trình</span>
+                        <span id="story-progress-pct" style="color: #00ff00; font-weight: bold;">0%</span>
+                    </div>
+                    <div style="width: 100%; height: 7px; background: #090909; border-radius: 4px; overflow: hidden;">
+                        <div id="story-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #00aa00, #00ff88); transition: width 0.18s ease;"></div>
+                    </div>
                 </div>
 
                 <button type="submit" id="story-submit-btn" class="btn" style="width: 100%; background: #0055ff; color: #fff; padding: 8px; font-size: 12px; border: none; border-radius: 4px; cursor: pointer;">Đăng Story</button>
@@ -818,8 +828,8 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
 
         <div style="position: relative; flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 8px 0;">
             <button type="button" onclick="prevStory()" style="position: absolute; left: 8px; top: 50%; transform: translateY(-50%); z-index: 3; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.2); color: #fff; width: 32px; height: 48px; border-radius: 8px; font-size: 18px; cursor: pointer;">‹</button>
-            <img id="sv-image" src="" alt="Story" style="display: none; max-width: 92vw; max-height: 54vh; width: auto; height: auto; object-fit: contain; border-radius: 8px;">
-            <video id="sv-video" controls autoplay playsinline loop style="display: none; max-width: 360px; width: 88vw; max-height: 50vh; height: auto; object-fit: contain; border-radius: 8px; background: #000;"></video>
+            <img id="sv-image" src="" alt="Story" style="display: none; max-width: 82vw; max-height: 44vh; width: auto; height: auto; object-fit: contain; border-radius: 8px;">
+            <video id="sv-video" controls autoplay playsinline loop style="display: none; max-width: 300px; width: 78vw; max-height: 40vh; height: auto; object-fit: contain; border-radius: 8px; background: #000;"></video>
             <button type="button" onclick="nextStory()" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); z-index: 3; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.2); color: #fff; width: 32px; height: 48px; border-radius: 8px; font-size: 18px; cursor: pointer;">›</button>
         </div>
 
@@ -846,16 +856,39 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
     <script>
         const STORY_VIEWER_LIST = ${storyViewerDataJson};
         const STORY_MEDIA_CACHE = {};
-        const CHUNK_SIZE_BYTES = 2097152; // 2MB mỗi mảnh -> ít request hơn
-        const MERGE_BATCH_SIZE = 6;     // Ghép tối đa 6 mảnh mỗi request -> tránh chạm subrequest limit
+        const MAX_STORY_BYTES = 3 * 1024 * 1024; // Mặc định tối đa 3MB cho video Story
+        const CHUNK_SIZE_BYTES = 1048576;      // 1MB mỗi mảnh -> tiến trình % mượt & ổn định
+        const MERGE_BATCH_SIZE = 4;          // Ghép tối đa 4 mảnh mỗi request
         let currentStoryIndex = -1;
         let isSubmittingStory = false;
         let preparedStoryBlob = null;
 
+        function setStoryProgress(pct, labelText) {
+            const wrap = document.getElementById('story-progress-wrap');
+            const bar = document.getElementById('story-progress-bar');
+            const pctEl = document.getElementById('story-progress-pct');
+            const lblEl = document.getElementById('story-progress-label');
+            const clamped = Math.max(0, Math.min(100, Math.round(pct || 0)));
+
+            if (wrap) wrap.style.display = 'block';
+            if (bar) bar.style.width = clamped + '%';
+            if (pctEl) pctEl.innerText = clamped + '%';
+            if (lblEl && labelText) lblEl.innerText = labelText;
+        }
+
+        function hideStoryProgress() {
+            const wrap = document.getElementById('story-progress-wrap');
+            const bar = document.getElementById('story-progress-bar');
+            const pctEl = document.getElementById('story-progress-pct');
+            if (wrap) wrap.style.display = 'none';
+            if (bar) bar.style.width = '0%';
+            if (pctEl) pctEl.innerText = '0%';
+        }
+
         function formatKb(bytes) {
             if (!bytes || bytes <= 0) return '';
             return bytes >= 1048576
-                ? (bytes / 1048576).toFixed(1) + 'MB'
+                ? (bytes / 1048576).toFixed(2) + 'MB'
                 : Math.max(1, Math.round(bytes / 1024)) + 'KB';
         }
 
@@ -915,11 +948,10 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             });
         }
 
-        async function downscaleVideoIfPossible(file, statusEl) {
+        async function recordVideoPass(file, opts, onProgress) {
             if (!file || typeof MediaRecorder === 'undefined' || typeof document.createElement('canvas').captureStream !== 'function') {
                 return null;
             }
-
             const AudioCtx = window.AudioContext || window.webkitAudioContext;
             if (!AudioCtx) return null;
 
@@ -946,7 +978,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 video.src = objUrl;
 
                 await new Promise((resolve, reject) => {
-                    const t = setTimeout(() => reject(new Error('timeout')), 2500);
+                    const t = setTimeout(() => reject(new Error('timeout')), 3000);
                     video.onloadedmetadata = () => { clearTimeout(t); resolve(); };
                     video.onerror = () => { clearTimeout(t); reject(new Error('load error')); };
                 });
@@ -959,46 +991,63 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 const destNode = audioCtx.createMediaStreamDestination();
                 sourceNode.connect(destNode);
 
-                const MAX_DIM = 320;
-                let w = video.videoWidth || 240;
-                let h = video.videoHeight || 320;
-                if (w > MAX_DIM || h > MAX_DIM) {
-                    if (w >= h) {
-                        h = Math.max(96, Math.round((h * MAX_DIM) / w));
-                        w = MAX_DIM;
-                    } else {
-                        w = Math.max(96, Math.round((w * MAX_DIM) / h));
-                        h = MAX_DIM;
-                    }
-                }
-                if (w % 2 !== 0) w -= 1;
-                if (h % 2 !== 0) h -= 1;
-
-                const canvas = document.createElement('canvas');
-                canvas.width = w;
-                canvas.height = h;
-                const ctx = canvas.getContext('2d');
-                const canvasStream = canvas.captureStream(14);
-
                 const audioTracks = destNode.stream.getAudioTracks();
-                const combinedTracks = [
-                    ...canvasStream.getVideoTracks(),
-                    ...audioTracks
-                ];
                 if (!audioTracks || audioTracks.length === 0) {
                     try { await audioCtx.close(); } catch (e) {}
                     try { URL.revokeObjectURL(objUrl); } catch (e) {}
                     return null;
                 }
 
-                const combinedStream = new MediaStream(combinedTracks);
+                const maxDim = opts.maxDim || 320;
+                const fps = opts.fps || 14;
+                const maxRecordMs = opts.maxRecordMs || 15000;
+
+                let w = video.videoWidth || 240;
+                let h = video.videoHeight || 320;
+                if (w > maxDim || h > maxDim) {
+                    if (w >= h) {
+                        h = Math.max(80, Math.round((h * maxDim) / w));
+                        w = maxDim;
+                    } else {
+                        w = Math.max(80, Math.round((w * maxDim) / h));
+                        h = maxDim;
+                    }
+                }
+                if (w % 2 !== 0) w -= 1;
+                if (h % 2 !== 0) h -= 1;
+
+                const rawDurationSec = (video.duration && isFinite(video.duration) && video.duration > 0)
+                    ? Math.min(video.duration, maxRecordMs / 1000)
+                    : (maxRecordMs / 1000);
+                const safeDurationSec = Math.max(1.5, rawDurationSec);
+
+                // Tính bitrate mục tiêu để tổng dung lượng <= ~2.75MB (an toàn dưới 3MB)
+                const budgetBytes = MAX_STORY_BYTES * 0.90;
+                const audioBps = opts.audioBps || 32000;
+                const totalBitsBudget = budgetBytes * 8;
+                const videoBps = Math.max(
+                    120000,
+                    Math.min(opts.maxVideoBps || 600000, Math.floor((totalBitsBudget / safeDurationSec) - audioBps))
+                );
+
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                const canvasStream = canvas.captureStream(fps);
+
+                const combinedStream = new MediaStream([
+                    ...canvasStream.getVideoTracks(),
+                    ...audioTracks
+                ]);
+
                 const chunks = [];
                 let recorder;
                 try {
                     recorder = new MediaRecorder(combinedStream, {
                         mimeType: supportedMime,
-                        videoBitsPerSecond: 220000,
-                        audioBitsPerSecond: 32000
+                        videoBitsPerSecond: videoBps,
+                        audioBitsPerSecond: audioBps
                     });
                 } catch (e) {
                     recorder = new MediaRecorder(combinedStream, { mimeType: supportedMime });
@@ -1019,14 +1068,12 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     try { video.pause(); } catch (e) {}
                 };
 
-                const maxDurationMs = Math.min(8000, ((video.duration && isFinite(video.duration) && video.duration > 0) ? video.duration * 1000 + 400 : 6000));
-                const hardTimeout = setTimeout(stopRecording, maxDurationMs);
+                const hardTimeout = setTimeout(stopRecording, Math.min(maxRecordMs, safeDurationSec * 1000 + 500));
 
                 const donePromise = new Promise((resolve) => {
                     recorder.onstop = () => {
                         clearTimeout(hardTimeout);
-                        const outBlob = new Blob(chunks, { type: supportedMime });
-                        resolve(outBlob);
+                        resolve(new Blob(chunks, { type: supportedMime }));
                     };
                 });
 
@@ -1041,10 +1088,11 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     }
                     try {
                         ctx.drawImage(video, 0, 0, w, h);
-                        if (statusEl && video.duration && isFinite(video.duration) && video.duration > 0) {
-                            const p = Math.min(99, Math.round((video.currentTime / video.duration) * 100));
-                            statusEl.innerText = 'Đang giảm nhanh ' + p + '%';
-                            statusEl.style.color = '#ffcc00';
+                        if (onProgress) {
+                            const ratio = (video.duration && isFinite(video.duration) && video.duration > 0)
+                                ? Math.min(1, video.currentTime / video.duration)
+                                : Math.min(1, (video.currentTime * 1000) / maxRecordMs);
+                            onProgress(ratio);
                         }
                     } catch (e) {}
                     rafId = requestAnimationFrame(drawFrame);
@@ -1053,19 +1101,65 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 video.onended = stopRecording;
                 rafId = requestAnimationFrame(drawFrame);
 
-                const compressedBlob = await donePromise;
+                const outBlob = await donePromise;
                 try { if (audioCtx) await audioCtx.close(); } catch (e) {}
                 try { URL.revokeObjectURL(objUrl); } catch (e) {}
 
-                if (compressedBlob && compressedBlob.size > 512 && compressedBlob.size < file.size) {
-                    return compressedBlob;
-                }
-                return null;
+                return outBlob && outBlob.size > 256 ? outBlob : null;
             } catch (e) {
                 try { if (audioCtx) await audioCtx.close(); } catch (err) {}
                 if (objUrl) { try { URL.revokeObjectURL(objUrl); } catch (err) {} }
                 return null;
             }
+        }
+
+        async function enforceUnder3MBVideo(file, statusEl) {
+            // Lần 1: ép về <= 3MB với độ phân giải gọn & bitrate tự tính theo thời lượng
+            let bestBlob = await recordVideoPass(file, {
+                maxDim: 320,
+                fps: 14,
+                maxVideoBps: 550000,
+                audioBps: 32000,
+                maxRecordMs: 15000
+            }, (ratio) => {
+                const pct = Math.min(50, Math.round(ratio * 50));
+                if (statusEl) {
+                    statusEl.innerText = 'Ép <=3MB ' + pct + '%';
+                    statusEl.style.color = '#ffcc00';
+                }
+                setStoryProgress(pct, 'Đang nén video <= 3MB...');
+            });
+
+            // Nếu sau lần 1 vẫn > 3MB -> chạy lần 2 siêu nhẹ (240px, 10fps, giới hạn 10s)
+            if (!bestBlob || bestBlob.size > MAX_STORY_BYTES) {
+                const sourceForPass2 = (bestBlob && bestBlob.size > 256) ? bestBlob : file;
+                const pass2Blob = await recordVideoPass(sourceForPass2, {
+                    maxDim: 240,
+                    fps: 10,
+                    maxVideoBps: 260000,
+                    audioBps: 24000,
+                    maxRecordMs: 10000
+                }, (ratio) => {
+                    const pct = 50 + Math.min(20, Math.round(ratio * 20));
+                    if (statusEl) {
+                        statusEl.innerText = 'Ép sâu <=3MB ' + pct + '%';
+                        statusEl.style.color = '#ffcc00';
+                    }
+                    setStoryProgress(pct, 'Đang ép sâu về <= 3MB...');
+                });
+
+                if (pass2Blob && (!bestBlob || pass2Blob.size < bestBlob.size)) {
+                    bestBlob = pass2Blob;
+                }
+            }
+
+            if (bestBlob && bestBlob.size > 0 && bestBlob.size <= MAX_STORY_BYTES) {
+                return bestBlob;
+            }
+            if (bestBlob && file.size > 0 && bestBlob.size < file.size) {
+                return bestBlob;
+            }
+            return file.size <= MAX_STORY_BYTES ? file : (bestBlob || file);
         }
 
         async function fetchWithRetry(url, options, maxRetries = 5) {
@@ -1101,12 +1195,13 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 const start = i * CHUNK_SIZE_BYTES;
                 const end = Math.min(blob.size, start + CHUNK_SIZE_BYTES);
                 const chunkBlob = blob.slice(start, end);
-                const pct = Math.round(((i + 1) / totalChunks) * 80);
+                const pct = 50 + Math.round(((i + 1) / totalChunks) * 35);
 
                 if (statusEl) {
                     statusEl.innerText = 'Đang tải ' + pct + '% (' + (i + 1) + '/' + totalChunks + ')';
                     statusEl.style.color = '#ffcc00';
                 }
+                setStoryProgress(pct, 'Đang tải lên (' + (i + 1) + '/' + totalChunks + ')...');
 
                 const fd = new FormData();
                 fd.append('action', 'upload_media_chunk');
@@ -1125,11 +1220,12 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             let cursor = 0;
             let currentUrl = '';
             while (cursor < totalChunks) {
-                const mergePct = 80 + Math.round((cursor / totalChunks) * 15);
+                const mergePct = 85 + Math.round((cursor / totalChunks) * 10);
                 if (statusEl) {
                     statusEl.innerText = 'Đang ghép ' + mergePct + '%...';
                     statusEl.style.color = '#ffcc00';
                 }
+                setStoryProgress(mergePct, 'Đang ghép file...');
 
                 const finFd = new FormData();
                 finFd.append('action', 'finalize_media_upload');
@@ -1326,6 +1422,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
         function resetStoryForm() {
             isSubmittingStory = false;
             preparedStoryBlob = null;
+            hideStoryProgress();
             const submitBtn = document.getElementById('story-submit-btn');
             if (submitBtn) {
                 submitBtn.disabled = false;
@@ -1362,12 +1459,13 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 });
 
                 if (statusEl) {
-                    statusEl.innerText = 'Đang giảm nhanh...';
+                    statusEl.innerText = 'Đang ép <=3MB...';
                     statusEl.style.color = '#ffcc00';
                 }
+                setStoryProgress(5, 'Đang chuẩn bị ép <= 3MB...');
 
-                const shrunk = await downscaleVideoIfPossible(file, statusEl);
-                preparedStoryBlob = shrunk || file;
+                preparedStoryBlob = await enforceUnder3MBVideo(file, statusEl);
+                setStoryProgress(50, 'Đã sẵn sàng (' + formatKb(preparedStoryBlob.size) + ')');
                 setStoryReadyText(preparedStoryBlob, true);
             } else {
                 document.getElementById('story-media-type-val').value = 'image';
@@ -1399,19 +1497,27 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             }
 
             try {
-                const payloadBlob = preparedStoryBlob || file;
+                let payloadBlob = preparedStoryBlob || file;
+                const isVideoFile = (payloadBlob && payloadBlob.type && payloadBlob.type.startsWith('video/')) ||
+                    (file && /\.(mp4|mov|webm|mkv|avi|m4v|3gp|ogg|ogv|ts|mts)$/i.test(file.name || ''));
+
+                if (isVideoFile && payloadBlob && payloadBlob.size > MAX_STORY_BYTES && !val) {
+                    setStoryProgress(10, 'Đang ép video <= 3MB...');
+                    payloadBlob = await enforceUnder3MBVideo(payloadBlob, statusEl);
+                    preparedStoryBlob = payloadBlob;
+                }
+
                 if (payloadBlob && !val) {
-                    const isVideoFile = (payloadBlob.type && payloadBlob.type.startsWith('video/')) ||
-                        (file && /\.(mp4|mov|webm|mkv|avi|m4v|3gp|ogg|ogv|ts|mts)$/i.test(file.name || ''));
                     const mimeToUse = payloadBlob.type || (file && file.type) || (isVideoFile ? 'video/mp4' : 'image/jpeg');
                     val = await uploadBlobInChunks(payloadBlob, 'stories', mimeToUse, statusEl);
                     document.getElementById('story-image-val').value = val;
                 }
 
                 if (statusEl) {
-                    statusEl.innerText = 'Đang lưu Story 100%...';
+                    statusEl.innerText = 'Đang lưu 98%...';
                     statusEl.style.color = '#ffcc00';
                 }
+                setStoryProgress(98, 'Đang lưu Story...');
 
                 const form = document.getElementById('story-create-form');
                 const formData = new FormData(form);
@@ -1425,6 +1531,12 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     body: formData
                 }, 5);
 
+                setStoryProgress(100, 'Hoàn tất 100%!');
+                if (statusEl) {
+                    statusEl.innerText = 'Hoàn tất 100%!';
+                    statusEl.style.color = '#00ff00';
+                }
+
                 window.location.reload();
                 return false;
             } catch (err) {
@@ -1432,6 +1544,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     statusEl.innerText = err && err.message ? err.message : 'Lỗi tải lên';
                     statusEl.style.color = '#ff5555';
                 }
+                setStoryProgress(0, 'Lỗi tải lên');
             }
 
             if (submitBtn) {
