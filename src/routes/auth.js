@@ -1,4 +1,4 @@
-Export async function handleLogin(request, env) {
+export async function handleLogin(request, env) {
     if (request.method === 'GET') {
         return new Response(`<!DOCTYPE html>
         <html lang="vi">
@@ -36,14 +36,14 @@ Export async function handleLogin(request, env) {
                     <form method="POST" action="/login">
                         <label style="color:#00ff00;">Tên tài khoản / ID / Gmail:</label>
                         <input type="text" name="username" required placeholder="Nhập tên đăng nhập hoặc email...">
-                        
+
                         <label style="color:#00ff00;">Nhập mật khẩu:</label>
                         <input type="password" name="password" required placeholder="Nhập mật khẩu...">
-                        
+
                         <div style="margin-bottom: 15px; font-size: 12px;">
                             <input type="checkbox" name="remember" style="width: auto;"> Ghi nhớ | <a href="/forgot" style="color:#ffcc00;">Quên mật khẩu</a>
                         </div>
-                        
+
                         <button type="submit">Đăng nhập</button>
                     </form>
                     <div style="text-align: center; margin-top: 15px; font-size: 12px;">
@@ -63,12 +63,13 @@ Export async function handleLogin(request, env) {
 
     if (request.method === 'POST') {
         const formData = await request.formData();
-        const username = formData.get('username');
-        const password = formData.get('password');
+        const username = String(formData.get('username') || '').trim();
+        const password = String(formData.get('password') || '');
 
-        // Truy vấn kiểm tra cơ sở dữ liệu D1
-        const user = await env.DB.prepare("SELECT * FROM users WHERE (username = ? OR email = ?) AND password = ?")
-            .bind(username, username, password)
+        const user = await env.DB.prepare(
+            "SELECT * FROM users WHERE (username = ? OR email = ? OR CAST(id AS TEXT) = ?) AND password = ?"
+        )
+            .bind(username, username, username, password)
             .first();
 
         if (!user) {
@@ -78,7 +79,6 @@ Export async function handleLogin(request, env) {
             });
         }
 
-        // Đăng nhập thành công, thiết lập Cookie phiên làm việc
         return new Response("Đăng nhập thành công!", {
             status: 302,
             headers: {
@@ -88,4 +88,91 @@ Export async function handleLogin(request, env) {
         });
     }
 }
-Đây là file login
+
+export async function handleRegister(request, env) {
+    if (request.method === 'GET') {
+        return new Response(`<!DOCTYPE html>
+        <html lang="vi">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Thế Giới Chat - Đăng ký</title>
+            <style>
+                body { background: #000; color: #00ff00; font-family: monospace; margin: 0; padding: 0; }
+                .header { background: #111; text-align: center; padding: 12px; border-bottom: 2px solid #333; }
+                .header h1 { color: #fff; margin: 0; font-size: 22px; text-shadow: 0 0 8px #00ff00; }
+                .slogan { color: #00ff00; font-size: 11px; }
+                .nav-top { background: #111; padding: 6px; text-align: center; border-bottom: 1px solid #333; font-size: 12px; }
+                .nav-top a { color: #00ff00; text-decoration: none; margin: 0 5px; }
+                .container { max-width: 500px; margin: 20px auto; background: #111; border: 1px solid #333; border-radius: 4px; overflow: hidden; }
+                .box-title { background: #1a1a1a; color: #00ff00; padding: 8px 12px; font-weight: bold; border-bottom: 1px solid #333; }
+                .box-body { padding: 15px; font-size: 13px; }
+                input[type="text"], input[type="password"] { background: #000; color: #00ff00; border: 1px solid #444; padding: 8px; width: 100%; box-sizing: border-box; margin-bottom: 12px; }
+                button { background: #007700; color: #fff; border: none; padding: 10px; width: 100%; font-weight: bold; cursor: pointer; border-radius: 3px; }
+                button:hover { background: #009900; }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>THẾ GIỚI CHAT</h1>
+                <div class="slogan">Wap chát - Kết bạn - Giải trí</div>
+            </div>
+            <div class="nav-top">
+                <a href="/">Trang chủ</a> · <a href="/login">Đăng nhập</a> · <a href="/register">Đăng ký</a>
+            </div>
+            <div class="container">
+                <div class="box-title">📝 Đăng ký tài khoản</div>
+                <div class="box-body">
+                    <form method="POST" action="/register">
+                        <label>Tên đăng nhập:</label>
+                        <input type="text" name="username" required placeholder="Nhập tên đăng nhập...">
+                        <label>Tên hiển thị:</label>
+                        <input type="text" name="display_name" placeholder="Nhập tên hiển thị...">
+                        <label>Mật khẩu:</label>
+                        <input type="password" name="password" required placeholder="Nhập mật khẩu...">
+                        <button type="submit">Đăng ký</button>
+                    </form>
+                    <div style="text-align:center;margin-top:12px;font-size:12px;">
+                        Đã có tài khoản? <a href="/login">Đăng nhập ngay</a>
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>`, { headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
+    }
+
+    if (request.method === 'POST') {
+        const formData = await request.formData();
+        const username = String(formData.get('username') || '').trim();
+        const displayName = String(formData.get('display_name') || '').trim() || username;
+        const password = String(formData.get('password') || '');
+
+        if (!username || !password) {
+            return new Response(`Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu! <a href="/register">Quay lại</a>`, {
+                status: 400,
+                headers: { 'Content-Type': 'text/html;charset=UTF-8' }
+            });
+        }
+
+        const existing = await env.DB.prepare("SELECT id FROM users WHERE username = ?").bind(username).first();
+        if (existing) {
+            return new Response(`Tên đăng nhập đã tồn tại! <a href="/register">Thử tên khác</a>`, {
+                status: 400,
+                headers: { 'Content-Type': 'text/html;charset=UTF-8' }
+            });
+        }
+
+        const inserted = await env.DB.prepare(
+            "INSERT INTO users (username, display_name, password, role, coins, level) VALUES (?, ?, ?, 'Thành Viên', 0, 1) RETURNING id"
+        ).bind(username, displayName, password).first();
+
+        const newUserId = inserted ? inserted.id : null;
+        return new Response("Đăng ký thành công!", {
+            status: 302,
+            headers: {
+                'Location': '/',
+                ...(newUserId ? { 'Set-Cookie': `user_id=${newUserId}; Path=/; HttpOnly; Max-Age=2592000` } : {})
+            }
+        });
+    }
+}
