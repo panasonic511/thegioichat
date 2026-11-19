@@ -1449,7 +1449,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 });
 
                 if (statusEl) {
-                    statusEl.innerText = 'Đang xử lý...';
+                    statusEl.innerText = 'Đăng Thôi';
                     statusEl.style.color = '#ffcc00';
                 }
 
@@ -1493,11 +1493,11 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 if (isVideoFile && !val) {
                     if (!preparedStoryBlob || payloadBlob.size > MAX_STORY_BYTES) {
                         payloadBlob = await enforceUnder3MBVideo(payloadBlob || file, (ratio) => {
-                            setStoryProgress(5 + Math.round(ratio * 30), 'Đang ép video <= 3MB');
+                            setStoryProgress(5 + Math.round(ratio * 30),);
                         });
                         preparedStoryBlob = payloadBlob;
                     } else {
-                        setStoryProgress(35, 'Đã nén xong (' + formatKb(payloadBlob.size) + ')');
+                        setStoryProgress(35, 'Đã xong (' + formatKb(payloadBlob.size) + ')');
                     }
                 } else {
                     setStoryProgress(35, 'Đang chuẩn bị tải lên');
