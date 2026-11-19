@@ -314,16 +314,23 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         if (postIds.length > 0) {
             const placeholders = postIds.map(() => '?').join(',');
             const cRows = await env.DB.prepare(`
-                SELECT c.*, u.username, u.display_name
+                SELECT c.*, u.username, u.display_name, u.avatar
                 FROM wall_post_comments c
                 LEFT JOIN users u ON u.id = c.user_id
                 WHERE c.post_id IN (${placeholders})
-                ORDER BY c.id ASC
+                ORDER BY c.id DESC
             `).bind(...postIds).all();
             for (const c of (cRows.results || [])) {
                 const pid = Number(c.post_id);
                 if (!commentsByPost[pid]) commentsByPost[pid] = [];
-                commentsByPost[pid].push(c);
+                commentsByPost[pid].push({
+                    id: Number(c.id || 0),
+                    userId: Number(c.user_id || 0),
+                    name: c.display_name || c.username || `ID #${c.user_id}`,
+                    avatar: c.avatar || '',
+                    content: c.content || '',
+                    timeAgo: formatTimeAgo(c.created_at)
+                });
             }
 
             const lRows = await env.DB.prepare(`
@@ -345,6 +352,8 @@ export async function handleProfile(request, env, user, renderLayout, url) {
     const avatarSrc = profileUser.avatar && !profileUser.avatar.includes('7gXvS6v')
         ? profileUser.avatar
         : "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/></svg>";
+
+    const commentsJsonSafe = JSON.stringify(commentsByPost).replace(/</g, '\\u003c');
 
     const wallPostsHtml = userPosts.length === 0
         ? `<div style="color: #888; text-align: center; padding: 14px; font-size: 12px;">Chưa có bài đăng nào.</div>`
@@ -374,18 +383,6 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             const isLikedByMe = likedByMeSet.has(postId);
             const commentsCount = Math.max(Number(post.comments_count ?? post.comments ?? 0), postComments.length);
             const canDeleteThisPost = canModerate || Number(post.user_id) === Number(user.id);
-
-            const commentsListHtml = postComments.map(c => {
-                const cName = c.display_name || c.username || `ID #${c.user_id}`;
-                return `
-                <div style="background: #0d0d0d; border: 1px solid #222; border-radius: 4px; padding: 6px 8px; margin-bottom: 6px; font-size: 12px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
-                        <b style="color: #ffcc00;">${escapeHtml(cName)}</b>
-                        <span style="font-size: 10px; color: #777;">${escapeHtml(formatTimeAgo(c.created_at))}</span>
-                    </div>
-                    <div style="color: #e6e6e6; white-space: pre-wrap;">${escapeHtml(c.content)}</div>
-                </div>`;
-            }).join('');
 
             return `
             <div style="background: #141414; border: 1px solid #2b2b2b; border-radius: 4px; padding: 10px; margin-top: 8px;">
@@ -418,7 +415,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 </div>
                 ` : ''}
 
-                <!-- Hàng dưới: Ô icon tim và ô icon bình luận lớn hơn, có chức năng trực tiếp -->
+                <!-- Hàng dưới: Ô icon tim và ô icon bình luận mở Popup -->
                 <div style="display: flex; align-items: center; gap: 10px; border-top: 1px solid #242424; padding-top: 8px; flex-wrap: wrap;">
                     <form method="POST" style="margin: 0; display: inline-flex; align-items: center;">
                         <input type="hidden" name="action" value="like_post">
@@ -429,23 +426,10 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                         </button>
                     </form>
 
-                    <button type="button" onclick="togglePostCommentBox(${postId})" title="Bình luận bài viết" style="background: #121824; border: 1px solid #263654; border-radius: 6px; color: #60a5fa; font-size: 15px; font-weight: bold; cursor: pointer; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px; min-width: 64px; justify-content: center;">
+                    <button type="button" onclick="openCommentPopup(${postId}, ${commentsCount})" title="Bình luận bài viết" style="background: #121824; border: 1px solid #263654; border-radius: 6px; color: #60a5fa; font-size: 15px; font-weight: bold; cursor: pointer; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px; min-width: 64px; justify-content: center;">
                         <span style="font-size: 16px; line-height: 1;">💬</span>
                         <span style="color: #fff; font-size: 13px; font-weight: bold;">${commentsCount}</span>
                     </button>
-                </div>
-
-                <!-- Khung bình luận ngay trong bài đăng -->
-                <div id="post-comment-box-${postId}" style="display: ${postComments.length > 0 ? 'block' : 'none'}; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #292929;">
-                    <div style="max-height: 180px; overflow-y: auto; margin-bottom: 6px;">
-                        ${commentsListHtml || `<div style="font-size: 11px; color: #777; margin-bottom: 6px;">Chưa có bình luận nào. Hãy là người đầu tiên bình luận!</div>`}
-                    </div>
-                    <form method="POST" style="display: flex; gap: 6px; align-items: center; margin: 0;">
-                        <input type="hidden" name="action" value="comment_post">
-                        <input type="hidden" name="post_id" value="${postId}">
-                        <input type="text" name="comment_content" placeholder="Viết bình luận..." required style="flex: 1; background: #080808; color: #fff; border: 1px solid #3c3c3c; border-radius: 5px; padding: 6px 8px; font-size: 12px; box-sizing: border-box;">
-                        <button type="submit" style="background: #0055ff; color: #fff; border: none; border-radius: 5px; padding: 6px 12px; font-size: 12px; font-weight: bold; cursor: pointer;">Gửi</button>
-                    </form>
                 </div>
             </div>`;
         }).join('');
@@ -656,6 +640,38 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         </div>
     </div>
 
+    <!-- Popup Modal Bình luận bài viết (giống ảnh 1) -->
+    <div id="comment-popup-modal" onclick="if(event.target===this) closeCommentPopup();" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.75); z-index: 1000; justify-content: center; align-items: center; padding: 12px; box-sizing: border-box;">
+        <div style="background: #141414; border: 1px solid #383838; border-radius: 10px; width: 100%; max-width: 460px; max-height: 82vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.85);">
+            <!-- Header Popup -->
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #1a1a1a; border-bottom: 1px solid #2d2d2d;">
+                <div style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #fff;">
+                    <span>Bình luận</span>
+                    <span id="comment-popup-count" style="background: #2b2b2b; color: #e5e7eb; font-size: 12px; padding: 1px 8px; border-radius: 10px;">0</span>
+                </div>
+                <button type="button" onclick="closeCommentPopup()" title="Đóng" style="background: none; border: none; color: #aaa; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px;">✕</button>
+            </div>
+
+            <!-- Thanh nhập bình luận -->
+            <div style="padding: 10px 12px; border-bottom: 1px solid #262626; background: #141414;">
+                <form method="POST" id="comment-popup-form" style="display: flex; align-items: center; gap: 8px; margin: 0;">
+                    <input type="hidden" name="action" value="comment_post">
+                    <input type="hidden" name="post_id" id="comment-popup-post-id" value="">
+                    <button type="button" onclick="toggleCommentEmojiBar()" title="Chèn biểu tượng" style="background: #1f1f1f; border: 1px solid #3a3a3a; border-radius: 50%; width: 32px; height: 32px; color: #ccc; font-size: 15px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">☺</button>
+                    <input type="text" id="comment-popup-input" name="comment_content" placeholder="Viết bình luận.." required style="flex: 1; background: #0d0d0d; color: #fff; border: 1px solid #363636; border-radius: 6px; padding: 7px 10px; font-size: 13px; box-sizing: border-box;">
+                    <button type="submit" style="background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 7px 12px; font-size: 12px; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;">
+                        <span>💬</span>
+                        <span>Bình luận</span>
+                    </button>
+                </form>
+                <div id="comment-popup-emoji-bar" style="display: none; flex-wrap: wrap; gap: 5px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #252525;"></div>
+            </div>
+
+            <!-- Danh sách bình luận -->
+            <div id="comment-popup-list" style="padding: 12px; overflow-y: auto; flex: 1; background: #111111;"></div>
+        </div>
+    </div>
+
     <!-- Popup Modal Cài đặt thông tin -->
     ${isOwner ? `
     <div id="settings-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.88); z-index: 999; justify-content: center; align-items: center; padding: 10px; box-sizing: border-box;">
@@ -734,17 +750,83 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         </div>
     </div>
 
-    <!-- JavaScript kích hoạt Modal, Tường nhà, Icon & Bb Color, Cắt/Kéo ảnh -->
+    <!-- JavaScript kích hoạt Popup Bình luận, Modal, Tường nhà, Icon & Bb Color, Cắt/Kéo ảnh -->
     <script>
-        function togglePostCommentBox(postId) {
-            const box = document.getElementById('post-comment-box-' + postId);
-            if (!box) return;
-            const show = (box.style.display === 'none' || !box.style.display);
-            box.style.display = show ? 'block' : 'none';
-            if (show) {
-                const inp = box.querySelector('input[name="comment_content"]');
-                if (inp) inp.focus();
+        const WALL_COMMENTS_DATA = ${commentsJsonSafe};
+        const FALLBACK_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/></svg>";
+
+        function escapeJsHtml(str) {
+            return String(str ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function openCommentPopup(postId, displayCount) {
+            const modal = document.getElementById('comment-popup-modal');
+            const postIdInput = document.getElementById('comment-popup-post-id');
+            const countBadge = document.getElementById('comment-popup-count');
+            const listEl = document.getElementById('comment-popup-list');
+            const inputEl = document.getElementById('comment-popup-input');
+            if (!modal || !postIdInput || !listEl) return;
+
+            postIdInput.value = postId;
+            const list = WALL_COMMENTS_DATA[postId] || [];
+            if (countBadge) countBadge.textContent = String(Math.max(Number(displayCount || 0), list.length));
+
+            if (list.length === 0) {
+                listEl.innerHTML = '<div style="text-align:center;color:#777;font-size:12px;padding:18px 8px;">Chưa có bình luận nào.</div>';
+            } else {
+                listEl.innerHTML = list.map(c => {
+                    const av = (c.avatar && !String(c.avatar).includes('7gXvS6v')) ? c.avatar : FALLBACK_AVATAR;
+                    return \`
+                    <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px;">
+                        <img src="\${escapeJsHtml(av)}" width="30" height="30" style="border-radius:50%;object-fit:cover;flex-shrink:0;margin-top:2px;">
+                        <div style="flex:1;min-width:0;">
+                            <div style="background:#1c1c1c;border:1px solid #2b2b2b;border-radius:8px;padding:6px 10px;">
+                                <div style="font-size:12px;font-weight:bold;color:#ff4d79;margin-bottom:2px;">\${escapeJsHtml(c.name)}</div>
+                                <div style="font-size:13px;color:#e5e7eb;white-space:pre-wrap;word-break:break-word;">\${escapeJsHtml(c.content)}</div>
+                            </div>
+                            <div style="font-size:11px;color:#888;margin-top:3px;padding-left:4px;">\${escapeJsHtml(c.timeAgo)}</div>
+                        </div>
+                    </div>\`;
+                }).join('');
             }
+
+            modal.style.display = 'flex';
+            if (inputEl) {
+                inputEl.value = '';
+                setTimeout(() => inputEl.focus(), 50);
+            }
+        }
+
+        function closeCommentPopup() {
+            const modal = document.getElementById('comment-popup-modal');
+            const emojiBar = document.getElementById('comment-popup-emoji-bar');
+            if (modal) modal.style.display = 'none';
+            if (emojiBar) emojiBar.style.display = 'none';
+        }
+
+        function toggleCommentEmojiBar() {
+            const bar = document.getElementById('comment-popup-emoji-bar');
+            if (!bar) return;
+            const show = (bar.style.display === 'none' || !bar.style.display);
+            bar.style.display = show ? 'flex' : 'none';
+            if (show && !bar.dataset.loaded) {
+                const icons = ['😀','😂','😍','😘','😎','😭','😡','👍','❤️','💖','🔥','✨','🎉','🌸'];
+                bar.innerHTML = icons.map(ic =>
+                    \`<button type="button" onclick="insertCommentEmoji('\${ic}')" style="background:#222;border:1px solid #383838;border-radius:4px;padding:2px 6px;font-size:13px;cursor:pointer;">\${ic}</button>\`
+                ).join('');
+                bar.dataset.loaded = '1';
+            }
+        }
+
+        function insertCommentEmoji(ic) {
+            const inp = document.getElementById('comment-popup-input');
+            if (!inp) return;
+            inp.value = (inp.value || '') + ic;
+            inp.focus();
         }
 
         function toggleWallForm() {
