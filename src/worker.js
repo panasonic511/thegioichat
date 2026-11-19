@@ -16,6 +16,7 @@ import { handleFeed } from './routes/feed.js';
 import { handleGame } from './routes/game.js';
 import { handleAdminDashboard } from './routes/admin_dashboard.js';
 import { handleAdminAction } from './routes/admin_action.js';
+import { createSession, destroySession, getSessionUser, readSessionToken, buildSessionCookie, buildLegacyClearCookie, buildClearCookies } from './session.js';
 
 export function renderUser(u) {
     const safeUser = new Proxy(u || {}, {
@@ -64,16 +65,15 @@ export function renderUser(u) {
 
 async function checkAuth(request, env) {
     try {
-        const cookie = request.headers.get('Cookie') || '';
-        const match = cookie.match(/user_id=(\d+)/);
-        if (!match) return null;
+        // Chỉ tin session token do server cấp (lưu trong D1), không bao giờ tin cookie user_id từ client
+        if (!readSessionToken(request)) return null;
         
         // Đảm bảo luôn load đủ các cột cấu hình trang trí tài khoản từ DB
         try { await env.DB.prepare("ALTER TABLE users ADD COLUMN active_icon TEXT DEFAULT ''").run(); } catch (e) {}
         try { await env.DB.prepare("ALTER TABLE users ADD COLUMN name_color TEXT DEFAULT '#00ff00'").run(); } catch (e) {}
         try { await env.DB.prepare("ALTER TABLE users ADD COLUMN border_color TEXT DEFAULT '#ffcc00'").run(); } catch (e) {}
 
-        return await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(match[1]).first() || null;
+        return await getSessionUser(request, env);
     } catch (e) {
         return null;
     }
@@ -189,6 +189,55 @@ function renderLayout(title, content, user) {
 </html>`;
 }
 
+// ===== Bảo mật phiên đăng nhập =====
+function getSetCookies(headers) {
+    if (typeof headers.getSetCookie === 'function') return headers.getSetCookie();
+    const raw = headers.get('Set-Cookie');
+    return raw ? [raw] : [];
+}
+
+// Loại bỏ mọi cookie user_id / sid do client gửi lên, chỉ chèn user_id đã được xác thực từ session.
+// Nhờ vậy các route cũ vẫn đọc được user_id từ Cookie nhưng không thể bị giả mạo.
+function buildTrustedRequest(request, verifiedUserId) {
+    const kept = (request.headers.get('Cookie') || '')
+        .split(';')
+        .map((c) => c.trim())
+        .filter((c) => c && !c.includes('user_id=') && !c.startsWith('sid='));
+    if (verifiedUserId) kept.unshift(`user_id=${verifiedUserId}`);
+
+    const headers = new Headers(request.headers);
+    if (kept.length > 0) headers.set('Cookie', kept.join('; '));
+    else headers.delete('Cookie');
+    return new Request(request, { headers });
+}
+
+// Handler login/register cũ đặt cookie user_id=<số>. Đổi nó thành session token ngẫu nhiên lưu trong D1.
+async function upgradeAuthResponse(response, env) {
+    const cookies = getSetCookies(response.headers);
+    let userId = null;
+    for (const c of cookies) {
+        const m = c.match(/^\s*user_id=(\d+)/);
+        if (m) userId = Number(m[1]);
+    }
+    if (!userId) return response;
+
+    const token = await createSession(env, userId);
+    const headers = new Headers(response.headers);
+    headers.delete('Set-Cookie');
+    for (const c of cookies) {
+        if (!/^\s*user_id=/.test(c)) headers.append('Set-Cookie', c);
+    }
+    headers.append('Set-Cookie', buildSessionCookie(token));
+    headers.append('Set-Cookie', buildLegacyClearCookie());
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
+function withClearedAuthCookies(response) {
+    const headers = new Headers(response.headers);
+    for (const c of buildClearCookies()) headers.append('Set-Cookie', c);
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
 export default {
   async fetch(request, env, ctx) {
     try {
@@ -196,16 +245,25 @@ export default {
       const path = url.pathname;
       const user = await checkAuth(request, env);
 
-      if (path === '/login' || path === '/register') {
-          return path === '/login' ? await handleLogin(request, env) : await handleRegister(request, env);
+      // Đăng xuất: huỷ session trong D1 rồi xoá cookie trên trình duyệt
+      if (path === '/logout') {
+          await destroySession(request, env);
+          return withClearedAuthCookies(await handleLogout(buildTrustedRequest(request, null), env));
       }
-      if (path === '/logout') return await handleLogout(request, env);
+
+      // Từ đây mọi handler chỉ nhận cookie user_id do SERVER xác thực (cookie client gửi lên bị loại bỏ)
+      request = buildTrustedRequest(request, user ? user.id : null);
+
+      if (path === '/login' || path === '/register') {
+          const authRes = path === '/login' ? await handleLogin(request, env) : await handleRegister(request, env);
+          return await upgradeAuthResponse(authRes, env);
+      }
       if (path === '/api/realtime-check') return await handleRealtimeApi(request, env);
 
       if (!user && path !== '/') {
           return Response.redirect(new URL('/login', request.url), 302);
       }
-    
+
       if (path === '/') return await handleIndex(request, env, user, renderLayout);
       if (path === '/profile') return await handleProfile(request, env, user, renderLayout, url);
       if (path === '/profile/level') return await handleLevel(request, env, user, renderLayout);
