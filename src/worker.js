@@ -1,3 +1,4 @@
+import { handleOnline } from './routes/online.js';
 import { handleMediaRequest } from './media_store.js';
 import { handleLogin, handleRegister } from './routes/auth.js';
 import { handleLogout } from './routes/logout.js';
@@ -537,6 +538,7 @@ export default {
       }
 
       if (path === '/') return await handleIndex(request, env, user, renderLayout);
+      if (path === '/online' || path === '/onine') return await handleOnline(request, env, user, renderLayout, url);
       if (path === '/profile') return await handleProfile(request, env, user, renderLayout, url);
       if (path === '/profile/level') return await handleLevel(request, env, user, renderLayout);
       if (path === '/shop') return await handleShop(request, env, user, renderLayout);
