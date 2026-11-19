@@ -462,7 +462,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 <button type="button" onclick="toggleWallForm()" style="background: #1a1a1a; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 5px 10px; font-size: 12px; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
                     <span>📝</span> Đăng bài
                 </button>
-                ${canModerate ? `<span style="font-size: 11px; color: #ffcc00;">🛡️ Quyền quản lý: có thể xóa bài</span>` : ''}
+                ${canModerate ?  : ''}
             </div>
 
             <!-- Form đăng bài (ẩn/hiện khi bấm nút Đăng bài) -->
