@@ -18,6 +18,15 @@ function escapeHtml(str) {
         .replace(/'/g, '&#39;');
 }
 
+function isValidCssColor(val) {
+    if (!val) return false;
+    const s = String(val).trim();
+    if (!s || s.toLowerCase() === 'none' || s.toLowerCase() === 'transparent' || s === '#000000') {
+        return false;
+    }
+    return /^#[0-9a-fA-F]{3,8}$/.test(s) || /^rgba?\([^)]+\)$/i.test(s) || /^[a-zA-Z]{2,24}$/.test(s);
+}
+
 function getRoleBadgeStyle(tier) {
     if (tier === ROLE_TIERS.FOUNDER) {
         return 'background: rgba(250, 204, 21, 0.16); color: #facc15; border: 1px solid rgba(250, 204, 21, 0.45);';
@@ -34,10 +43,68 @@ function getRoleBadgeStyle(tier) {
     return 'background: rgba(74, 222, 128, 0.12); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.3);';
 }
 
-function renderStyledNickWithoutStaffBadge(uItem) {
-    const rendered = renderUser(uItem);
-    const rawHtml = String(rendered.nameHtml || '');
-    return rawHtml.replace(/<span class="staff-nick-badge[^"]*"[\s\S]*?<\/span>/gi, '');
+function extractIconFromRendered(rawHtml) {
+    if (!rawHtml) return '';
+    const imgMatch = rawHtml.match(/<img\b[^>]*>/gi);
+    if (imgMatch && imgMatch.length > 0) {
+        return imgMatch.join(' ');
+    }
+    return '';
+}
+
+function renderFullStyledNick(uItem) {
+    const nickText = escapeHtml(uItem.display_name || uItem.username || 'Thành viên');
+    let renderedIcon = '';
+    try {
+        const rendered = renderUser(uItem);
+        const raw = String((rendered && (rendered.nameHtml || rendered.html || rendered.styledName)) || '');
+        renderedIcon = extractIconFromRendered(raw);
+    } catch (e) {}
+
+    const nameColor = isValidCssColor(uItem.name_color) ? String(uItem.name_color).trim() : '#f8fafc';
+    const nameGlow = isValidCssColor(uItem.name_glow) ? String(uItem.name_glow).trim() : '';
+    const nameBorder = isValidCssColor(uItem.name_border) ? String(uItem.name_border).trim() : '';
+    const nameBorderGlow = isValidCssColor(uItem.name_border_glow) ? String(uItem.name_border_glow).trim() : '';
+
+    const styles = [
+        `color: ${nameColor}`,
+        'font-weight: 700',
+        'font-size: 15px',
+        'line-height: 1.35',
+        'display: inline-flex',
+        'align-items: center',
+        'gap: 4px',
+        'padding: 1px 6px',
+        'border-radius: 4px'
+    ];
+
+    const shadows = [];
+    if (nameGlow) {
+        shadows.push(`0 0 6px ${nameGlow}`, `0 0 12px ${nameGlow}`);
+    }
+    if (shadows.length > 0) {
+        styles.push(`text-shadow: ${shadows.join(', ')}`);
+    }
+
+    if (nameBorder) {
+        styles.push(`border: 1px solid ${nameBorder}`);
+    }
+    if (nameBorderGlow) {
+        styles.push(`box-shadow: 0 0 7px ${nameBorderGlow}, inset 0 0 4px ${nameBorderGlow}`);
+    }
+
+    const dbIcon = uItem.active_icon ? escapeHtml(String(uItem.active_icon).trim()) : '';
+    const iconPart = dbIcon
+        ? `<span style="margin-left:3px;">${dbIcon}</span>`
+        : (renderedIcon ? `<span style="margin-left:3px;display:inline-flex;align-items:center;">${renderedIcon}</span>` : '');
+
+    return `<span style="${escapeHtml(styles.join('; '))}">${nickText}${iconPart}</span>`;
+}
+
+function isUserBannedFlag(uItem) {
+    if (!uItem) return false;
+    const v = uItem.is_banned;
+    return v === 1 || v === '1' || v === true || String(v).toLowerCase() === 'true';
 }
 
 async function isBannedByFounder(env, targetUser) {
@@ -155,6 +222,15 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
                 } else {
                     const banRes = await applyBanIdAction(env, user, targetUser, true, reason);
                     if (!banRes.ok) throw new Error(banRes.error);
+                    const cleanReason = reason || 'Vi phạm quy định hệ thống';
+                    const nowSec = Math.floor(Date.now() / 1000);
+                    try {
+                        await env.DB.prepare(`
+                            UPDATE users
+                            SET is_banned = 1, ban_reason = ?, banned_by = ?, banned_at = ?
+                            WHERE id = ?
+                        `).bind(cleanReason, currentUserId, nowSec, targetUserId).run();
+                    } catch (e) {}
                 }
 
                 message = `<div class="adm-alert adm-alert-ok">✅ ${isBan ? `Đã Ban ID #${targetUserId}` : `Đã gỡ Ban ID #${targetUserId}`} thành công!</div>`;
@@ -311,7 +387,7 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
     founderIds.add(1);
 
     const totalUsers = usersList.length;
-    const totalBanned = usersList.filter(u => Number(u.is_banned || 0) === 1).length;
+    const totalBanned = usersList.filter(u => isUserBannedFlag(u)).length;
     const totalStaff = usersList.filter(u => getRoleTier(u) >= ROLE_TIERS.MOD).length;
 
     const maxLvlDisplay = Number.isFinite(actorCfg.maxLevel) ? `Max Lv.${actorCfg.maxLevel}` : 'Không giới hạn';
@@ -497,20 +573,12 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
             display: flex;
             flex-wrap: wrap;
             align-items: center;
-            gap: 7px;
+            gap: 8px;
             font-size: 14.5px;
         }
         .adm-uid {
             color: #38bdf8;
             font-weight: bold;
-        }
-        .adm-styled-nick {
-            font-size: 15px;
-            display: inline-flex;
-            align-items: center;
-        }
-        .adm-styled-nick a {
-            text-decoration: none;
         }
         .adm-role-badge {
             padding: 2px 8px;
@@ -743,12 +811,12 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
                     const uGold = Number(u.gold || 0);
                     const uLevel = Number(u.level || 1);
                     const uOnlineMins = Number(u.online_minutes || 0);
-                    const isBanned = Number(u.is_banned || 0) === 1;
+                    const isBanned = isUserBannedFlag(u);
                     const perm = canManageTargetUser(user, u);
-                    const showBanControls = actorCfg.canBan || isFounder;
+                    const showBanControls = actorCfg.canBan || isFounder || isSuperAdmin;
                     const bannedByFounderFlag = founderIds.has(Number(u.banned_by || 0));
                     const canUnbanThis = isFounder ? perm.allowed : (isSuperAdmin ? (perm.allowed && !bannedByFounderFlag) : false);
-                    const styledNickHtml = renderStyledNickWithoutStaffBadge(u);
+                    const styledNickHtml = renderFullStyledNick(u);
                     const searchBlob = `${uid} ${u.display_name || ''} ${uRoleLabel}`.toLowerCase();
                     const hideSelfClass = (isFounder && isSelf) ? 'is-self-hidden adm-self-card' : '';
 
@@ -757,7 +825,7 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
                         <div class="adm-user-top">
                             <div class="adm-user-identity">
                                 <span class="adm-uid">ID #${uid}</span>
-                                <span class="adm-styled-nick">${styledNickHtml}</span>
+                                ${styledNickHtml}
                                 <span class="adm-role-badge" style="${getRoleBadgeStyle(uTier)}">${escapeHtml(uRoleLabel)}</span>
                                 ${isBanned ? `<span class="adm-ban-badge">⛔ ĐÃ BAN ID</span>` : ''}
                             </div>
