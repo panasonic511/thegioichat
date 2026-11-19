@@ -138,7 +138,6 @@ export async function handleProfile(request, env, user, renderLayout, url) {
     const isOwner = (targetId === user.id);
     const canModerate = isStaffOrAdmin(user);
 
-    // Xác định bảng bài viết đang dùng (ưu tiên `feeds`, fallback `posts`)
     let feedTable = 'feeds';
     try {
         await env.DB.prepare("SELECT 1 FROM feeds LIMIT 1").first();
@@ -418,8 +417,12 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         ? profileUser.avatar
         : "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/></svg>";
 
+    const safeAnimIcons = (Array.isArray(ANIMATED_ICONS) ? ANIMATED_ICONS : [])
+        .filter(it => it && typeof it.url === 'string' && it.url.trim() !== '')
+        .map(it => ({ name: String(it.name || 'Icon'), url: it.url.trim() }));
+
     const commentsJsonSafe = JSON.stringify(commentsByPost).replace(/</g, '\\u003c');
-    const animatedIconsJsonSafe = JSON.stringify(ANIMATED_ICONS).replace(/</g, '\\u003c');
+    const animatedIconsJsonSafe = JSON.stringify(safeAnimIcons).replace(/</g, '\\u003c');
 
     const wallPostsHtml = userPosts.length === 0
         ? `<div style="color: #888; text-align: center; padding: 14px; font-size: 12px;">Chưa có bài đăng nào.</div>`
@@ -452,7 +455,6 @@ export async function handleProfile(request, env, user, renderLayout, url) {
 
             return `
             <div style="background: #141414; border: 1px solid #2b2b2b; border-radius: 4px; padding: 10px; margin-top: 8px;">
-                <!-- Header bài đăng -->
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <img src="${avatarSrc}" width="34" height="34" style="${rProfile.avatarStyle} display: block;">
@@ -461,7 +463,6 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                             <div style="font-size: 11px; color: #999; margin-top: 2px;">🕒 ${escapeHtml(timeAgo)} · 🌐 Công khai</div>
                         </div>
                     </div>
-
                     ${canDeleteThisPost ? `
                     <form method="POST" style="margin: 0;" onsubmit="return confirm('Xóa bài đăng này khỏi hệ thống?');">
                         <input type="hidden" name="action" value="delete_post">
@@ -471,17 +472,14 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                     ` : `<span style="color: #666; font-size: 12px;">⋮</span>`}
                 </div>
 
-                <!-- Nội dung bài đăng -->
                 ${rawText ? `<div style="font-size: 13px; color: #f2f2f2; line-height: 1.6; white-space: pre-wrap; text-align: center; margin-bottom: ${imgUrl ? '10px' : '8px'}; ${escapeHtml(postStyle)}">${renderRichTextHtml(rawText)}</div>` : ''}
 
-                <!-- Ảnh bài đăng -->
                 ${imgUrl ? `
                 <div style="text-align: center; background: #080808; border: 1px solid #222; border-radius: 4px; overflow: hidden; margin-bottom: 8px;">
                     <img src="${escapeHtml(imgUrl)}" alt="Ảnh bài đăng" style="max-width: 100%; max-height: 380px; object-fit: contain; display: block; margin: 0 auto;">
                 </div>
                 ` : ''}
 
-                <!-- Hàng dưới: Ô icon tim và ô icon bình luận mở Popup -->
                 <div style="display: flex; align-items: center; gap: 10px; border-top: 1px solid #242424; padding-top: 8px; flex-wrap: wrap;">
                     <form method="POST" style="margin: 0; display: inline-flex; align-items: center;">
                         <input type="hidden" name="action" value="like_post">
@@ -506,155 +504,72 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             <span>📁 ${isOwner ? 'Hồ sơ của tôi' : 'Hồ sơ thành viên'}</span>
             ${isOwner ? `<button type="button" onclick="openSettingsModal()" style="background: #1c1c1c; color: #ffcc00; border: 1px solid #444; padding: 2px 6px; font-size: 10px; cursor: pointer;">⚙️ Cài đặt thông tin</button>` : `<span style="font-size: 10px; color: #aaa;">ID: ${profileUser.id}</span>`}
         </div>
-        
         <div style="position: relative; background: #111; border-bottom: 1px solid #333; text-align: center;">
             <div style="height: 120px; ${coverStyle}"></div>
-            
             ${isOwner ? `
             <div style="position: absolute; right: 6px; bottom: 6px; display: flex; gap: 4px;">
                 <button type="button" onclick="openCoverModal()" class="btn" style="background: rgba(0,0,0,0.85); color: #fff; border: 1px solid #555; padding: 3px 7px; font-size: 10px; cursor: pointer;">📷 Đổi ảnh bìa</button>
-                ${hasCover ? `
-                <form method="POST" style="margin: 0;" onsubmit="return confirm('Xóa ảnh bìa?');">
-                    <input type="hidden" name="action" value="delete_cover">
-                    <button type="submit" class="btn" style="background: rgba(120,0,0,0.9); color: #fff; padding: 3px 7px; font-size: 10px;">🗑️ Xóa</button>
-                </form>` : ''}
-            </div>
-            ` : ''}
-
-            <!-- Avatar kèm nút icon máy ảnh mở modal -->
+                ${hasCover ? `<form method="POST" style="margin: 0;" onsubmit="return confirm('Xóa ảnh bìa?');"><input type="hidden" name="action" value="delete_cover"><button type="submit" class="btn" style="background: rgba(120,0,0,0.9); color: #fff; padding: 3px 7px; font-size: 10px;">🗑️ Xóa</button></form>` : ''}
+            </div>` : ''}
             <div style="position: relative; margin-top: -35px; margin-bottom: 4px; display: inline-block;">
                 <img src="${avatarSrc}" width="66" height="66" style="${rProfile.avatarStyle} display: block;">
                 ${isOwner ? `<button type="button" onclick="openAvatarModal()" title="Đổi ảnh đại diện" style="position: absolute; bottom: -2px; right: -2px; background: #111; color: #00ff00; border: 1px solid #00ff00; border-radius: 50%; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; box-shadow: 0 0 4px #000;">📷</button>` : ''}
             </div>
-            
             <div style="font-size: 13px; margin-bottom: 2px;">
                 ${rProfile.nameHtml}
                 <span style="color: #ffcc00; font-size: 11px;">[Lv.${profileUser.level || 1}]</span>
             </div>
-
-            <!-- Hiển thị phân biệt: Quản lý có khung, Thành viên hiển thị chữ bình thường -->
             <div style="text-align: center; font-size: 13px; margin: 6px 0 10px 0;">
-                <span style="color: #aaa; font-size: 11px;">ID ${profileUser.id}</span> 
-                <span style="margin: 0 4px; color: #666;">·</span> 
-                ${(profileUser.role && profileUser.role !== 'Thành Viên') ? `
-                    <span style="display: inline-block; background: #1a1a1a; border: 1px solid #444; color: #ffcc00; font-size: 11px; font-weight: bold; padding: 2px 8px; border-radius: 4px; text-shadow: 0 0 4px rgba(255,204,0,0.4);">
-                        ${profileUser.role}
-                    </span>
-                ` : `
-                    <span style="color: #00ff00; font-size: 12px;">${profileUser.role || 'Thành Viên'}</span>
-                `}
+                <span style="color: #aaa; font-size: 11px;">ID ${profileUser.id}</span>
+                <span style="margin: 0 4px; color: #666;">·</span>
+                ${(profileUser.role && profileUser.role !== 'Thành Viên')
+                    ? `<span style="display: inline-block; background: #1a1a1a; border: 1px solid #444; color: #ffcc00; font-size: 11px; font-weight: bold; padding: 2px 8px; border-radius: 4px;">${escapeHtml(profileUser.role)}</span>`
+                    : `<span style="color: #00ff00; font-size: 12px;">${escapeHtml(profileUser.role || 'Thành Viên')}</span>`}
             </div>
             ${!isOwner ? `
             <div style="padding-bottom: 8px; display: flex; justify-content: center; gap: 6px;">
                 <form method="POST" style="margin: 0;"><input type="hidden" name="action" value="toggle_follow"><button type="submit" class="btn" style="font-size: 10px; padding: 3px 8px; background: ${isFollowing ? '#333' : '#0055ff'}; color: #fff;">${isFollowing ? '✓ Đang Follow' : '+ Follow'}</button></form>
                 <form method="POST" style="margin: 0;"><input type="hidden" name="action" value="toggle_friend"><button type="submit" class="btn" style="font-size: 10px; padding: 3px 8px; background: ${isFriend ? '#333' : '#008800'}; color: #fff;">${isFriend ? '👥 Bạn bè' : '+ Kết bạn'}</button></form>
                 <a href="/mail/chat?user=${profileUser.id}" class="btn" style="font-size: 10px; padding: 3px 8px;">✉️ Nhắn tin</a>
-            </div>
-            ` : ''}
+            </div>` : ''}
         </div>
-
         ${message}
-
         <div style="background: #141414; padding: 6px; text-align: center; border-bottom: 1px solid #333; font-size: 11px;">
-            <span style="color: #ffcc00; margin: 0 8px;">Đang Follow <b>${followingRow?.total || 0}</b></span> · 
-            <span style="color: #ffcc00; margin: 0 8px;">Follower <b>${followerRow?.total || 0}</b></span> · 
+            <span style="color: #ffcc00; margin: 0 8px;">Đang Follow <b>${followingRow?.total || 0}</b></span> ·
+            <span style="color: #ffcc00; margin: 0 8px;">Follower <b>${followerRow?.total || 0}</b></span> ·
             <span style="color: #ffcc00; margin: 0 8px;">Bạn bè <b>${friendsRow?.total || 0}</b></span>
         </div>
     </div>
 
-    <!-- Hộp Quà tặng -->
-    ${(() => {
-        const activeGifts = [];
-        if (giftCounts.love > 0) {
-            activeGifts.push(`
-                <div>
-                    <div style="font-size: 16px;">🎁</div>
-                    <div style="font-size: 11px; color: #ff55ff;">${giftCounts.love}</div>
-                    <div>Lời tỏ tình</div>
-                    ${isOwner ? `<form method="POST" style="margin: 0;"><input type="hidden" name="action" value="return_gift"><input type="hidden" name="gift_type" value="love"><button type="submit" style="background: none; border: none; color: #ff55ff; font-size: 9px; cursor: pointer; text-decoration: underline;">Trả về</button></form>` : ''}
-                </div>
-            `);
-        }
-        if (giftCounts.ring > 0) {
-            activeGifts.push(`
-                <div>
-                    <div style="font-size: 16px;">💍</div>
-                    <div style="font-size: 11px; color: #ff55ff;">${giftCounts.ring}</div>
-                    <div>Nụ hôn</div>
-                    ${isOwner ? `<form method="POST" style="margin: 0;"><input type="hidden" name="action" value="return_gift"><input type="hidden" name="gift_type" value="ring"><button type="submit" style="background: none; border: none; color: #ff55ff; font-size: 9px; cursor: pointer; text-decoration: underline;">Trả về</button></form>` : ''}
-                </div>
-            `);
-        }
-        if (giftCounts.flower > 0) {
-            activeGifts.push(`
-                <div>
-                    <div style="font-size: 16px;">🌹</div>
-                    <div style="font-size: 11px; color: #ff55ff;">${giftCounts.flower}</div>
-                    <div>Lố tình yêu</div>
-                    ${isOwner ? `<form method="POST" style="margin: 0;"><input type="hidden" name="action" value="return_gift"><input type="hidden" name="gift_type" value="flower"><button type="submit" style="background: none; border: none; color: #ff55ff; font-size: 9px; cursor: pointer; text-decoration: underline;">Trả về</button></form>` : ''}
-                </div>
-            `);
-        }
-        if (giftCounts.rose > 0) {
-            activeGifts.push(`
-                <div>
-                    <div style="font-size: 16px;">🌸</div>
-                    <div style="font-size: 11px; color: #ff55ff;">${giftCounts.rose}</div>
-                    <div>Thích bạn</div>
-                    ${isOwner ? `<form method="POST" style="margin: 0;"><input type="hidden" name="action" value="return_gift"><input type="hidden" name="gift_type" value="rose"><button type="submit" style="background: none; border: none; color: #ff55ff; font-size: 9px; cursor: pointer; text-decoration: underline;">Trả về</button></form>` : ''}
-                </div>
-            `);
-        }
-
-        if (activeGifts.length === 0) return '';
-
-        return `
-            <div class="box" style="max-width: 600px; margin: 0 auto 8px auto;">
-                <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
-                    <span>Quà tặng</span>
-                    <span style="font-size: 10px; color: #ffcc00;">Tổng: ${totalGifts}</span>
-                </div>
-                <div class="box-content" style="display: flex; justify-content: space-around; text-align: center; font-size: 10px; color: #aaa;">
-                    ${activeGifts.join('')}
-                </div>
-            </div>
-        `;
-    })()}
-
-    <!-- Thông tin chi tiết -->
     <div class="box" style="max-width: 654px; margin: 0 auto 8px auto;">
         <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
             <span>Thông tin chi tiết</span>
             ${isOwner ? `<a href="javascript:void(0)" onclick="openSettingsModal()" style="font-size: 10px; color: #ffcc00;">[Chỉnh sửa]</a>` : ''}
         </div>
         <div class="box-content" style="font-size: 13px; line-height: 1.8; padding: 8px;">
-            <div>❤️ Hẹn hò: <b>${profileUser.relationships || profileUser.relationship || 'Đang độc thân'}</b></div>
-            <div>👤 Giới tính: <b>${profileUser.gender || 'Chưa cập nhật'}</b></div>
+            <div>❤️ Hẹn hò: <b>${escapeHtml(profileUser.relationships || profileUser.relationship || 'Đang độc thân')}</b></div>
+            <div>👤 Giới tính: <b>${escapeHtml(profileUser.gender || 'Chưa cập nhật')}</b></div>
             <div>⭐ Level: <b style="color: #ffcc00;">${profileUser.level || 1}</b> - <a href="/profile/level" style="color: #00ff00;">Kiểm tra</a></div>
             <div>🪙 Xu: <b style="color: #00ff00;">${(profileUser.coins || 0).toLocaleString()} Xu</b></div>
             <div>💰 Vàng: <b style="color: #ffcc00;">${(profileUser.gold || 0).toLocaleString()} Vàng</b></div>
             <div>📝 Bài viết: <b>${postCount}</b></div>
-            <div>🏙️ Tỉnh thành: <b>${profileUser.province || 'Chưa cập nhật'}</b></div>
-            <div>🎂 Sinh nhật: <b>${profileUser.birthday || 'Chưa cập nhật'}</b></div>
-            <div>📅 Ngày đăng ký: <b>${profileUser.created_at || 'Thành viên hệ thống'}</b></div>
+            <div>🏙️ Tỉnh thành: <b>${escapeHtml(profileUser.province || 'Chưa cập nhật')}</b></div>
+            <div>🎂 Sinh nhật: <b>${escapeHtml(profileUser.birthday || 'Chưa cập nhật')}</b></div>
+            <div>📅 Ngày đăng ký: <b>${escapeHtml(profileUser.created_at || 'Thành viên hệ thống')}</b></div>
         </div>
     </div>
 
-    <!-- Tường nhà & Bài đã đăng -->
     <div class="box" style="max-width: 654px; margin: 0 auto 8px auto;">
         <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
             <span>🏠 Tường nhà</span>
             <span style="font-size: 11px; color: #ccc;">${postCount} bài đăng</span>
         </div>
         <div class="box-content" style="padding: 8px;">
-            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                <button type="button" onclick="toggleWallForm()" style="background: #1a1a1a; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 5px 10px; font-size: 12px; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
-                    <span>📝</span> Đăng bài
-                </button>
-            </div>
+            <button type="button" id="btn-open-wall-post" onclick="toggleWallForm()" style="background: #1a1a1a; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 5px 10px; font-size: 12px; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+                <span>📝</span> Đăng bài
+            </button>
 
-            <!-- Form đăng bài (ẩn/hiện khi bấm nút Đăng bài) -->
-            <div id="wall-post-form" style="display: none; background: #101010; border: 1px solid #333; border-radius: 4px; padding: 8px; margin-top: 8px; position: relative;">
+            <div id="wall-post-form" style="display: none; background: #101010; border: 1px solid #333; border-radius: 4px; padding: 8px; margin-top: 8px;">
                 <form method="POST" id="wall-post-submit-form">
                     <input type="hidden" name="action" value="wall_post">
                     <input type="hidden" name="text_color" id="wall-text-color" value="">
@@ -663,30 +578,23 @@ export async function handleProfile(request, env, user, renderLayout, url) {
 
                     <textarea id="wall-content-textarea" name="content" rows="3" placeholder="${isOwner ? 'Bạn đang nghĩ gì?' : `Viết gì đó lên tường của ${escapeHtml(profileUser.display_name || profileUser.username || 'thành viên')}...`}" style="width: 100%; background: #000; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 8px; box-sizing: border-box; font-size: 13px; margin-bottom: 8px; resize: vertical;"></textarea>
 
-                    <!-- Thanh công cụ: icon biểu tượng & Bb color chỉnh màu -->
                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
-                        <div style="display: flex; align-items: center; gap: 6px; position: relative;">
-                            <button type="button" onclick="toggleWallPicker('emoji')" title="Chèn icon biểu tượng" style="background: #1b1b1b; color: #ffcc00; border: 1px solid #3d3d3d; border-radius: 4px; padding: 4px 8px; font-size: 13px; cursor: pointer; line-height: 1.2;">😀</button>
-                            <button type="button" onclick="toggleWallPicker('color')" title="Chỉnh màu chữ / nền / bóng mờ" style="background: #1b1b1b; color: #fff; border: 1px solid #3d3d3d; border-radius: 4px; padding: 4px 8px; font-size: 12px; font-weight: bold; cursor: pointer; line-height: 1.2; display: inline-flex; align-items: center; gap: 4px;">
-                                <span style="color: #ffcc00;">Bb</span>
-                                <span>🎨</span>
-                            </button>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <button type="button" onclick="toggleWallPicker('emoji')" title="Chèn icon biểu tượng" style="background: #1b1b1b; color: #ffcc00; border: 1px solid #3d3d3d; border-radius: 4px; padding: 4px 8px; font-size: 13px; cursor: pointer;">😀</button>
+                            <button type="button" onclick="toggleWallPicker('color')" title="Chỉnh màu chữ / nền / bóng mờ" style="background: #1b1b1b; color: #fff; border: 1px solid #3d3d3d; border-radius: 4px; padding: 4px 8px; font-size: 12px; font-weight: bold; cursor: pointer;"><span style="color:#ffcc00;">Bb</span> 🎨</button>
                             <span id="wall-color-preview-badge" style="font-size: 11px; color: #999;"></span>
                         </div>
-
                         <div style="display: flex; gap: 6px;">
                             <button type="button" onclick="toggleWallForm()" class="btn" style="background: #2b2b2b; color: #ccc; padding: 5px 10px; font-size: 11px;">Hủy</button>
                             <button type="submit" class="btn" style="background: #0055ff; color: #fff; padding: 5px 12px; font-size: 11px; font-weight: bold;">Đăng bài</button>
                         </div>
                     </div>
 
-                    <!-- Popup Icon biểu tượng -->
                     <div id="wall-emoji-picker" style="display: none; background: #161616; border: 1px solid #444; border-radius: 4px; padding: 6px; margin-top: 8px;">
                         <div style="font-size: 11px; color: #ffcc00; margin-bottom: 5px;">Chọn biểu tượng cảm xúc</div>
-                        <div id="wall-emoji-list" style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;"></div>
+                        <div id="wall-emoji-list" style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center; max-height: 130px; overflow-y: auto;"></div>
                     </div>
 
-                    <!-- Popup Bb Color (Màu chữ / Màu nền / Bóng mờ) -->
                     <div id="wall-color-picker" style="display: none; background: #161616; border: 1px solid #444; border-radius: 4px; padding: 6px; margin-top: 8px;">
                         <div style="display: flex; gap: 4px; margin-bottom: 6px; border-bottom: 1px solid #2b2b2b; padding-bottom: 5px; flex-wrap: wrap;">
                             <button type="button" id="tab-color-fg" onclick="switchWallColorTab('fg')" style="background: #0055ff; color: #fff; border: 1px solid #3b7bff; border-radius: 3px; padding: 3px 8px; font-size: 11px; cursor: pointer;">Màu chữ</button>
@@ -699,50 +607,37 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 </form>
             </div>
 
-            <!-- Danh sách bài đã đăng -->
-            <div style="margin-top: 4px;">
-                ${wallPostsHtml}
-            </div>
+            <div style="margin-top: 4px;">${wallPostsHtml}</div>
         </div>
     </div>
 
-    <!-- Popup Modal Bình luận bài viết -->
     <div id="comment-popup-modal" onclick="if(event.target===this) closeCommentPopup();" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.75); z-index: 1000; justify-content: center; align-items: center; padding: 12px; box-sizing: border-box;">
-        <div style="background: #141414; border: 1px solid #383838; border-radius: 10px; width: 100%; max-width: 460px; max-height: 82vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.85);">
-            <!-- Header Popup -->
+        <div style="background: #141414; border: 1px solid #383838; border-radius: 10px; width: 100%; max-width: 460px; max-height: 82vh; display: flex; flex-direction: column; overflow: hidden;">
             <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #1a1a1a; border-bottom: 1px solid #2d2d2d;">
                 <div style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #fff;">
                     <span>Bình luận</span>
                     <span id="comment-popup-count" style="background: #2b2b2b; color: #e5e7eb; font-size: 12px; padding: 1px 8px; border-radius: 10px;">0</span>
                 </div>
-                <button type="button" onclick="closeCommentPopup()" title="Đóng" style="background: none; border: none; color: #aaa; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px;">✕</button>
+                <button type="button" onclick="closeCommentPopup()" style="background: none; border: none; color: #aaa; font-size: 18px; cursor: pointer;">✕</button>
             </div>
-
-            <!-- Thanh nhập bình luận -->
-            <div style="padding: 10px 12px; border-bottom: 1px solid #262626; background: #141414;">
+            <div style="padding: 10px 12px; border-bottom: 1px solid #262626;">
                 <form method="POST" id="comment-popup-form" onsubmit="submitCommentAjax(event)" style="display: flex; align-items: center; gap: 8px; margin: 0;">
                     <input type="hidden" name="action" value="comment_post">
                     <input type="hidden" name="post_id" id="comment-popup-post-id" value="">
-                    <button type="button" onclick="toggleCommentEmojiBar()" title="Chèn biểu tượng" style="background: #1f1f1f; border: 1px solid #3a3a3a; border-radius: 50%; width: 32px; height: 32px; color: #ccc; font-size: 15px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">☺</button>
-                    <input type="text" id="comment-popup-input" name="comment_content" placeholder="Viết bình luận.." required style="flex: 1; background: #0d0d0d; color: #fff; border: 1px solid #363636; border-radius: 6px; padding: 7px 10px; font-size: 13px; box-sizing: border-box;">
-                    <button type="submit" id="comment-popup-submit-btn" style="background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 7px 12px; font-size: 12px; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;">
-                        <span>💬</span>
-                        <span>Bình luận</span>
-                    </button>
+                    <button type="button" onclick="toggleCommentEmojiBar()" style="background: #1f1f1f; border: 1px solid #3a3a3a; border-radius: 50%; width: 32px; height: 32px; color: #ccc; font-size: 15px; cursor: pointer; flex-shrink: 0;">☺</button>
+                    <input type="text" id="comment-popup-input" name="comment_content" placeholder="Viết bình luận.." required style="flex: 1; background: #0d0d0d; color: #fff; border: 1px solid #363636; border-radius: 6px; padding: 7px 10px; font-size: 13px;">
+                    <button type="submit" id="comment-popup-submit-btn" style="background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 7px 12px; font-size: 12px; font-weight: bold; cursor: pointer; flex-shrink: 0;">💬 Bình luận</button>
                 </form>
                 <div id="comment-popup-error" style="display: none; color: #ff6666; font-size: 11px; margin-top: 6px;"></div>
                 <div id="comment-popup-emoji-bar" style="display: none; flex-wrap: wrap; gap: 5px; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px solid #252525; max-height: 120px; overflow-y: auto;"></div>
             </div>
-
-            <!-- Danh sách bình luận -->
             <div id="comment-popup-list" style="padding: 12px; overflow-y: auto; flex: 1; background: #111111;"></div>
         </div>
     </div>
 
-    <!-- Popup Modal Cài đặt thông tin -->
     ${isOwner ? `
     <div id="settings-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.88); z-index: 999; justify-content: center; align-items: center; padding: 10px; box-sizing: border-box;">
-        <div style="background: #111; border: 1px solid #444; width: 100%; max-width: 400px; padding: 12px; box-sizing: border-box; max-height: 90vh; overflow-y: auto;">
+        <div style="background: #111; border: 1px solid #444; width: 100%; max-width: 400px; padding: 12px; box-sizing: border-box;">
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 6px; margin-bottom: 10px;">
                 <b style="color: #00ff00; font-size: 12px;">⚙️ Cài đặt thông tin cá nhân</b>
                 <button type="button" onclick="closeSettingsModal()" style="background:none; border:none; color:#ff5555; font-weight:bold; cursor:pointer;">✕</button>
@@ -770,10 +665,8 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 <button type="submit" class="btn" style="width: 100%; background: #0055ff; color: #fff; padding: 6px;">Lưu cài đặt</button>
             </form>
         </div>
-    </div>
-    ` : ''}
+    </div>` : ''}
 
-    <!-- Popup Modal Đổi Avatar (Có kéo/zoom) -->
     <div id="avatar-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.88); z-index: 999; justify-content: center; align-items: center; padding: 10px; box-sizing: border-box;">
         <div style="background: #111; border: 1px solid #444; width: 100%; max-width: 380px; padding: 12px; box-sizing: border-box; text-align: center;">
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 6px; margin-bottom: 8px;">
@@ -781,7 +674,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 <button type="button" onclick="closeAvatarModal()" style="background:none; border:none; color:#ff5555; font-weight:bold; cursor:pointer;">✕</button>
             </div>
             <input type="file" accept="image/*" onchange="initImageEditor(this, 'avatar-editor-container', 200, 200)" style="width: 100%; font-size: 11px; color: #ccc; margin-bottom: 8px; background: #000; border: 1px solid #444; padding: 4px;">
-            <div id="avatar-editor-container" style="position: relative; width: 200px; height: 200px; margin: 0 auto 8px auto; background: #000; border: 2px dashed #00ff00; overflow: hidden; cursor: grab; display: none;">
+            <div id="avatar-editor-container" style="position: relative; width: 200px; height: 200px; margin: 0 auto 8px auto; background: #000; border: 2px dashed #00ff00; overflow: hidden; display: none;">
                 <img id="avatar-edit-img" style="position: absolute; top: 0; left: 0; transform-origin: top left; pointer-events: none;">
             </div>
             <form method="POST">
@@ -795,7 +688,6 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         </div>
     </div>
 
-    <!-- Popup Modal Đổi Ảnh bìa -->
     <div id="cover-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.88); z-index: 999; justify-content: center; align-items: center; padding: 10px; box-sizing: border-box;">
         <div style="background: #111; border: 1px solid #444; width: 100%; max-width: 380px; padding: 12px; box-sizing: border-box; text-align: center;">
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 6px; margin-bottom: 8px;">
@@ -803,7 +695,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 <button type="button" onclick="closeCoverModal()" style="background:none; border:none; color:#ff5555; font-weight:bold; cursor:pointer;">✕</button>
             </div>
             <input type="file" accept="image/*" onchange="initImageEditor(this, 'cover-editor-container', 320, 120)" style="width: 100%; font-size: 11px; color: #ccc; margin-bottom: 8px; background: #000; border: 1px solid #444; padding: 4px;">
-            <div id="cover-editor-container" style="position: relative; width: 320px; height: 120px; margin: 0 auto 8px auto; background: #000; border: 2px dashed #ffcc00; overflow: hidden; cursor: grab; display: none;">
+            <div id="cover-editor-container" style="position: relative; width: 320px; height: 120px; margin: 0 auto 8px auto; background: #000; border: 2px dashed #ffcc00; overflow: hidden; display: none;">
                 <img id="cover-edit-img" style="position: absolute; top: 0; left: 0; transform-origin: top left; pointer-events: none;">
             </div>
             <form method="POST">
@@ -817,7 +709,6 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         </div>
     </div>
 
-    <!-- JavaScript kích hoạt Popup Bình luận AJAX, Icon động, Modal, Tường nhà, Bb Color, Cắt/Kéo ảnh -->
     <script>
         const WALL_COMMENTS_DATA = ${commentsJsonSafe};
         const WAP_ANIMATED_ICONS = ${animatedIconsJsonSafe};
@@ -829,7 +720,8 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 .replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;');
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
         }
 
         function renderRichTextClient(text) {
@@ -839,7 +731,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 if (!part) return '';
                 if (urlRegex.test(part)) {
                     urlRegex.lastIndex = 0;
-                    return \`<img src="\${escapeJsHtml(part)}" alt="icon" style="height:24px;width:auto;vertical-align:middle;display:inline-block;margin:0 2px;">\`;
+                    return '<img src="' + escapeJsHtml(part) + '" alt="icon" style="height:24px;width:auto;vertical-align:middle;display:inline-block;margin:0 2px;">';
                 }
                 urlRegex.lastIndex = 0;
                 return escapeJsHtml(part);
@@ -847,13 +739,12 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         }
 
         function buildAnimatedIconButtonsHtml(insertFnName) {
-            const validIcons = Array.isArray(WAP_ANIMATED_ICONS)
-                ? WAP_ANIMATED_ICONS.filter(it => it && it.url && String(it.url).trim() !== '')
-                : [];
-            return validIcons.map(it => {
-                const safeUrl = escapeJsHtml(String(it.url).trim());
-                const safeName = escapeJsHtml(it.name || 'Icon động');
-                return \`<button type="button" title="\${safeName}" onclick="\${insertFnName}('\${safeUrl}')" style="background:#1a1a1a;border:1px solid #3a3a3a;border-radius:4px;padding:3px 5px;cursor:pointer;display:inline-flex;align-items:center;"><img src="\${safeUrl}" alt="\${safeName}" style="height:22px;width:auto;display:block;"></button>\`;
+            if (!Array.isArray(WAP_ANIMATED_ICONS) || WAP_ANIMATED_ICONS.length === 0) return '';
+            return WAP_ANIMATED_ICONS.map((it) => {
+                if (!it || !it.url) return '';
+                const safeUrl = escapeJsHtml(it.url);
+                const safeName = escapeJsHtml(it.name || 'Icon');
+                return '<button type="button" title="' + safeName + '" onclick="' + insertFnName + '(\'' + safeUrl + '\')" style="background:#1a1a1a;border:1px solid #3a3a3a;border-radius:4px;padding:3px 5px;cursor:pointer;display:inline-flex;align-items:center;"><img src="' + safeUrl + '" alt="' + safeName + '" style="height:22px;width:auto;display:block;"></button>';
             }).join('');
         }
 
@@ -875,22 +766,21 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 return;
             }
 
-            listEl.innerHTML = list.map(c => {
+            listEl.innerHTML = list.map((c) => {
                 const av = (c.avatarSrc && !String(c.avatarSrc).includes('7gXvS6v')) ? c.avatarSrc : FALLBACK_AVATAR;
                 const avStyle = c.avatarStyle || 'border-radius: 50%; object-fit: cover;';
                 const nameMarkup = c.nameHtml || escapeJsHtml(c.name || ('ID #' + c.userId));
                 const bodyMarkup = c.contentHtml || renderRichTextClient(c.content);
-                return \`
-                <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px;">
-                    <img src="\${escapeJsHtml(av)}" width="32" height="32" style="\${escapeJsHtml(avStyle)} flex-shrink:0;margin-top:2px;">
-                    <div style="flex:1;min-width:0;">
-                        <div style="background:#1c1c1c;border:1px solid #2b2b2b;border-radius:8px;padding:6px 10px;">
-                            <div style="font-size:12px;line-height:1.3;margin-bottom:2px;">\${nameMarkup}</div>
-                            <div style="font-size:13px;color:#e5e7eb;white-space:pre-wrap;word-break:break-word;">\${bodyMarkup}</div>
-                        </div>
-                        <div style="font-size:11px;color:#888;margin-top:3px;padding-left:4px;">\${escapeJsHtml(c.timeAgo || 'Vừa xong')}</div>
-                    </div>
-                </div>\`;
+                return '<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px;">' +
+                    '<img src="' + escapeJsHtml(av) + '" width="32" height="32" style="' + escapeJsHtml(avStyle) + 'flex-shrink:0;margin-top:2px;">' +
+                    '<div style="flex:1;min-width:0;">' +
+                        '<div style="background:#1c1c1c;border:1px solid #2b2b2b;border-radius:8px;padding:6px 10px;">' +
+                            '<div style="font-size:12px;line-height:1.3;margin-bottom:2px;">' + nameMarkup + '</div>' +
+                            '<div style="font-size:13px;color:#e5e7eb;white-space:pre-wrap;word-break:break-word;">' + bodyMarkup + '</div>' +
+                        '</div>' +
+                        '<div style="font-size:11px;color:#888;margin-top:3px;padding-left:4px;">' + escapeJsHtml(c.timeAgo || 'Vừa xong') + '</div>' +
+                    '</div>' +
+                '</div>';
             }).join('');
         }
 
@@ -903,20 +793,12 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             if (!modal || !postIdInput) return;
 
             postIdInput.value = String(activeCommentPostId);
-            if (errEl) {
-                errEl.style.display = 'none';
-                errEl.textContent = '';
-            }
-            if (!Array.isArray(WALL_COMMENTS_DATA[activeCommentPostId])) {
-                WALL_COMMENTS_DATA[activeCommentPostId] = [];
-            }
+            if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+            if (!Array.isArray(WALL_COMMENTS_DATA[activeCommentPostId])) WALL_COMMENTS_DATA[activeCommentPostId] = [];
 
             renderCommentListInPopup(activeCommentPostId);
             modal.style.display = 'flex';
-            if (inputEl) {
-                inputEl.value = '';
-                setTimeout(() => inputEl.focus(), 50);
-            }
+            if (inputEl) { inputEl.value = ''; setTimeout(() => inputEl.focus(), 50); }
         }
 
         async function submitCommentAjax(ev) {
@@ -926,12 +808,9 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             const btnEl = document.getElementById('comment-popup-submit-btn');
             const errEl = document.getElementById('comment-popup-error');
             const text = (inputEl?.value || '').trim();
-
             if (!postId || !text) return;
-            if (errEl) {
-                errEl.style.display = 'none';
-                errEl.textContent = '';
-            }
+
+            if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
             if (btnEl) btnEl.disabled = true;
 
             try {
@@ -949,26 +828,16 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                     },
                     body: body.toString()
                 });
-
                 const data = await res.json();
-                if (!res.ok || !data.ok) {
-                    throw new Error(data.error || 'Không thể gửi bình luận!');
-                }
+                if (!res.ok || !data.ok) throw new Error(data.error || 'Không thể gửi bình luận!');
 
-                if (!Array.isArray(WALL_COMMENTS_DATA[postId])) {
-                    WALL_COMMENTS_DATA[postId] = [];
-                }
+                if (!Array.isArray(WALL_COMMENTS_DATA[postId])) WALL_COMMENTS_DATA[postId] = [];
                 WALL_COMMENTS_DATA[postId].unshift(data.comment);
 
                 const postCountSpan = document.getElementById('post-comment-count-' + postId);
-                if (postCountSpan && typeof data.totalComments === 'number') {
-                    postCountSpan.textContent = String(data.totalComments);
-                }
+                if (postCountSpan && typeof data.totalComments === 'number') postCountSpan.textContent = String(data.totalComments);
 
-                if (inputEl) {
-                    inputEl.value = '';
-                    inputEl.focus();
-                }
+                if (inputEl) { inputEl.value = ''; inputEl.focus(); }
                 renderCommentListInPopup(postId);
             } catch (err) {
                 if (errEl) {
@@ -994,11 +863,8 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             bar.style.display = show ? 'flex' : 'none';
             if (show && !bar.dataset.loaded) {
                 const icons = ['😀','😂','😍','😘','😎','😭','😡','👍','❤️','💖','🔥','✨','🎉','🌸'];
-                const emojiHtml = icons.map(ic =>
-                    \`<button type="button" onclick="insertCommentEmoji('\${ic}')" style="background:#222;border:1px solid #383838;border-radius:4px;padding:2px 6px;font-size:13px;cursor:pointer;">\${ic}</button>\`
-                ).join('');
-                const animHtml = buildAnimatedIconButtonsHtml('insertCommentEmoji');
-                bar.innerHTML = emojiHtml + animHtml;
+                const emojiHtml = icons.map((ic) => '<button type="button" onclick="insertCommentEmoji(\'' + ic + '\')" style="background:#222;border:1px solid #383838;border-radius:4px;padding:2px 6px;font-size:13px;cursor:pointer;">' + ic + '</button>').join('');
+                bar.innerHTML = emojiHtml + buildAnimatedIconButtonsHtml('insertCommentEmoji');
                 bar.dataset.loaded = '1';
             }
         }
@@ -1013,7 +879,12 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         function toggleWallForm() {
             const formBox = document.getElementById('wall-post-form');
             if (!formBox) return;
-            formBox.style.display = (formBox.style.display === 'none' || !formBox.style.display) ? 'block' : 'none';
+            const isHidden = formBox.style.display === 'none' || window.getComputedStyle(formBox).display === 'none';
+            formBox.style.display = isHidden ? 'block' : 'none';
+            if (isHidden) {
+                const ta = document.getElementById('wall-content-textarea');
+                if (ta) setTimeout(() => ta.focus(), 30);
+            }
         }
 
         const WALL_EMOJIS = ['😀','😁','😂','🤣','😊','😍','😘','😎','🤩','🥳','😭','😡','🥺','🤔','👍','👎','❤️','💖','🔥','✨','🎉','💯','🌸','🌹','🎵','🎶','⭐','👑','💍','🎁'];
@@ -1045,11 +916,8 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         function renderWallEmojis() {
             const el = document.getElementById('wall-emoji-list');
             if (!el) return;
-            const emojiHtml = WALL_EMOJIS.map(em =>
-                \`<button type="button" onclick="insertWallEmoji('\${em}')" style="background:#222;border:1px solid #383838;border-radius:3px;padding:3px 6px;font-size:14px;cursor:pointer;">\${em}</button>\`
-            ).join('');
-            const animHtml = buildAnimatedIconButtonsHtml('insertWallEmoji');
-            el.innerHTML = emojiHtml + animHtml;
+            const emojiHtml = WALL_EMOJIS.map((em) => '<button type="button" onclick="insertWallEmoji(\'' + em + '\')" style="background:#222;border:1px solid #383838;border-radius:3px;padding:3px 6px;font-size:14px;cursor:pointer;">' + em + '</button>').join('');
+            el.innerHTML = emojiHtml + buildAnimatedIconButtonsHtml('insertWallEmoji');
         }
 
         function insertWallEmoji(emoji) {
@@ -1064,7 +932,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
 
         function switchWallColorTab(mode) {
             wallColorMode = mode;
-            ['fg', 'bg', 'glow'].forEach(m => {
+            ['fg', 'bg', 'glow'].forEach((m) => {
                 const btn = document.getElementById('tab-color-' + m);
                 if (!btn) return;
                 const active = (m === mode);
@@ -1078,9 +946,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         function renderWallPalette() {
             const grid = document.getElementById('wall-palette-grid');
             if (!grid) return;
-            grid.innerHTML = WALL_COLORS.map(hex =>
-                \`<button type="button" onclick="applyWallColor('\${hex}')" title="\${hex}" style="height:22px;background:\${hex};border:1px solid #555;border-radius:3px;cursor:pointer;"></button>\`
-            ).join('');
+            grid.innerHTML = WALL_COLORS.map((hex) => '<button type="button" onclick="applyWallColor(\'' + hex + '\')" title="' + hex + '" style="height:22px;background:' + hex + ';border:1px solid #555;border-radius:3px;cursor:pointer;"></button>').join('');
         }
 
         function applyWallColor(hex) {
@@ -1095,14 +961,14 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             if (ta) {
                 ta.style.color = wallSelectedColors.fg || '#fff';
                 ta.style.backgroundColor = wallSelectedColors.bg || '#000';
-                ta.style.textShadow = wallSelectedColors.glow ? \`0 0 8px \${wallSelectedColors.glow}\` : 'none';
+                ta.style.textShadow = wallSelectedColors.glow ? ('0 0 8px ' + wallSelectedColors.glow) : 'none';
             }
             if (badge) {
                 const parts = [];
                 if (wallSelectedColors.fg) parts.push('Chữ');
                 if (wallSelectedColors.bg) parts.push('Nền');
                 if (wallSelectedColors.glow) parts.push('Bóng');
-                badge.textContent = parts.length ? \`Đã chọn: \${parts.join(' + ')}\` : '';
+                badge.textContent = parts.length ? ('Đã chọn: ' + parts.join(' + ')) : '';
             }
         }
 
@@ -1113,22 +979,16 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             document.getElementById('wall-text-glow').value = '';
             const ta = document.getElementById('wall-content-textarea');
             const badge = document.getElementById('wall-color-preview-badge');
-            if (ta) {
-                ta.style.color = '#fff';
-                ta.style.backgroundColor = '#000';
-                ta.style.textShadow = 'none';
-            }
+            if (ta) { ta.style.color = '#fff'; ta.style.backgroundColor = '#000'; ta.style.textShadow = 'none'; }
             if (badge) badge.textContent = '';
         }
 
-        function openSettingsModal() { document.getElementById('settings-modal').style.display = 'flex'; }
-        function closeSettingsModal() { document.getElementById('settings-modal').style.display = 'none'; }
-        
-        function openAvatarModal() { document.getElementById('avatar-modal').style.display = 'flex'; }
-        function closeAvatarModal() { document.getElementById('avatar-modal').style.display = 'none'; }
-        
-        function openCoverModal() { document.getElementById('cover-modal').style.display = 'flex'; }
-        function closeCoverModal() { document.getElementById('cover-modal').style.display = 'none'; }
+        function openSettingsModal() { const m = document.getElementById('settings-modal'); if (m) m.style.display = 'flex'; }
+        function closeSettingsModal() { const m = document.getElementById('settings-modal'); if (m) m.style.display = 'none'; }
+        function openAvatarModal() { const m = document.getElementById('avatar-modal'); if (m) m.style.display = 'flex'; }
+        function closeAvatarModal() { const m = document.getElementById('avatar-modal'); if (m) m.style.display = 'none'; }
+        function openCoverModal() { const m = document.getElementById('cover-modal'); if (m) m.style.display = 'flex'; }
+        function closeCoverModal() { const m = document.getElementById('cover-modal'); if (m) m.style.display = 'none'; }
 
         let editorState = { prefix: '', container: null, imgEl: null, inputVal: null, btnSave: null, boxW: 0, boxH: 0, natW: 0, natH: 0, posX: 0, posY: 0, scale: 1, isDragging: false, startX: 0, startY: 0 };
 
@@ -1151,9 +1011,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                     editorState.natW = img.width;
                     editorState.natH = img.height;
                     editorState.imgEl.src = img.src;
-                    const scaleX = boxW / img.width;
-                    const scaleY = boxH / img.height;
-                    editorState.scale = Math.max(scaleX, scaleY);
+                    editorState.scale = Math.max(boxW / img.width, boxH / img.height);
                     editorState.posX = (boxW - img.width * editorState.scale) / 2;
                     editorState.posY = (boxH - img.height * editorState.scale) / 2;
                     updateTransform();
@@ -1169,8 +1027,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         function updateTransform() {
             editorState.imgEl.style.width = editorState.natW + 'px';
             editorState.imgEl.style.height = editorState.natH + 'px';
-            editorState.imgEl.style.transform = \`translate(\${editorState.posX}px, \${editorState.posY}px) scale(\${editorState.scale})\`;
-            
+            editorState.imgEl.style.transform = 'translate(' + editorState.posX + 'px, ' + editorState.posY + 'px) scale(' + editorState.scale + ')';
             const canvas = document.createElement('canvas');
             canvas.width = editorState.boxW;
             canvas.height = editorState.boxH;
@@ -1199,20 +1056,6 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 updateTransform();
             };
             window.onmouseup = function() { editorState.isDragging = false; };
-            el.ontouchstart = function(e) {
-                if (e.touches.length === 1) {
-                    editorState.isDragging = true;
-                    editorState.startX = e.touches[0].clientX - editorState.posX;
-                    editorState.startY = e.touches[0].clientY - editorState.posY;
-                }
-            };
-            window.ontouchmove = function(e) {
-                if (!editorState.isDragging || e.touches.length !== 1) return;
-                editorState.posX = e.touches[0].clientX - editorState.startX;
-                editorState.posY = e.touches[0].clientY - editorState.startY;
-                updateTransform();
-            };
-            window.ontouchend = function() { editorState.isDragging = false; };
         }
     </script>
     `;
