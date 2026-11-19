@@ -124,9 +124,24 @@ async function writeBytesToStorage(request, env, key, bytes, mimeType, ttlSecond
     };
 }
 
-/**
- * Lưu file hoặc DataURL ra R2 hoặc Cache API, trả về URL nội bộ (/media/...)
- */
+async function readStoredKeyBytes(request, env, key) {
+    const cleanKey = sanitizeKey(key);
+    const bucket = getBucket(env);
+    if (bucket && typeof bucket.get === 'function') {
+        const obj = await bucket.get(cleanKey);
+        if (!obj) return null;
+        return new Uint8Array(await obj.arrayBuffer());
+    }
+    if (typeof caches !== 'undefined' && caches.default && request) {
+        const origin = new URL(request.url).origin;
+        const cacheKey = new Request(`${origin}${MEDIA_ROUTE_PREFIX}${cleanKey}`, { method: 'GET' });
+        const cached = await caches.default.match(cacheKey);
+        if (!cached) return null;
+        return new Uint8Array(await cached.arrayBuffer());
+    }
+    return null;
+}
+
 export async function saveMediaAsset(request, env, {
     folder = 'stories',
     userId = 0,
@@ -166,9 +181,6 @@ export async function saveMediaAsset(request, env, {
     return await writeBytesToStorage(request, env, key, bytes, resolvedMime, ttlSeconds);
 }
 
-/**
- * Lưu từng mảnh (chunk) của video/file
- */
 export async function saveMediaChunk(request, env, {
     uploadId,
     chunkIndex,
@@ -214,97 +226,119 @@ export async function saveMediaChunk(request, env, {
     throw new Error('Không có bộ nhớ tạm cho chunk upload.');
 }
 
+async function getChunkBytes(request, env, safeId, idx) {
+    const bucket = getBucket(env);
+    if (bucket && typeof bucket.get === 'function') {
+        const chunkKey = sanitizeKey(`_chunks/${safeId}/${String(idx).padStart(6, '0')}.part`);
+        const obj = await bucket.get(chunkKey);
+        if (!obj) return null;
+        return new Uint8Array(await obj.arrayBuffer());
+    }
+    if (typeof caches !== 'undefined' && caches.default && request) {
+        const origin = new URL(request.url).origin;
+        const req = new Request(`${origin}${CHUNK_STORE_PREFIX}${safeId}/${idx}`, { method: 'GET' });
+        const cached = await caches.default.match(req);
+        if (!cached) return null;
+        return new Uint8Array(await cached.arrayBuffer());
+    }
+    return null;
+}
+
+async function deleteChunkKey(request, env, safeId, idx) {
+    const bucket = getBucket(env);
+    if (bucket && typeof bucket.delete === 'function') {
+        const chunkKey = sanitizeKey(`_chunks/${safeId}/${String(idx).padStart(6, '0')}.part`);
+        try { await bucket.delete(chunkKey); } catch (e) {}
+        return;
+    }
+    if (typeof caches !== 'undefined' && caches.default && request) {
+        const origin = new URL(request.url).origin;
+        const req = new Request(`${origin}${CHUNK_STORE_PREFIX}${safeId}/${idx}`, { method: 'GET' });
+        try { await caches.default.delete(req); } catch (e) {}
+    }
+}
+
 /**
- * Ghép toàn bộ các chunk thành file hoàn chỉnh và xóa mảnh tạm
+ * Ghép một dải mảnh [startChunk, endChunk) (kèm partialUrl trước đó nếu có)
+ * Trả về { done, nextChunk, url, mimeType, size } để client gọi nối tiếp mà không vượt subrequest
  */
-export async function finalizeMediaChunks(request, env, {
+export async function mergeMediaChunkBatch(request, env, {
     uploadId,
+    startChunk = 0,
+    batchSize = 6,
     totalChunks,
+    existingUrl = '',
     folder = 'stories',
     userId = 0,
     mimeType = 'video/mp4',
     ttlSeconds = DEFAULT_MEDIA_TTL_SEC
 }) {
     const safeId = sanitizeUploadId(uploadId);
-    const count = parseInt(totalChunks, 10);
-    if (!safeId || isNaN(count) || count <= 0) {
+    const total = parseInt(totalChunks, 10);
+    const start = Math.max(0, parseInt(startChunk, 10) || 0);
+    const limitBatch = Math.max(1, Math.min(6, parseInt(batchSize, 10) || 6));
+
+    if (!safeId || isNaN(total) || total <= 0) {
         throw new Error('Thông tin ghép file không hợp lệ.');
     }
 
-    const bucket = getBucket(env);
+    const end = Math.min(total, start + limitBatch);
     const parts = [];
     let totalBytes = 0;
 
-    if (bucket && typeof bucket.get === 'function') {
-        for (let i = 0; i < count; i++) {
-            const chunkKey = sanitizeKey(`_chunks/${safeId}/${String(i).padStart(6, '0')}.part`);
-            const obj = await bucket.get(chunkKey);
-            if (!obj) {
-                throw new Error(`Thiếu mảnh video #${i + 1}/${count}.`);
-            }
-            const arr = new Uint8Array(await obj.arrayBuffer());
-            parts.push(arr);
-            totalBytes += arr.byteLength;
+    const prevNorm = normalizeMediaUrl(existingUrl);
+    if (prevNorm && prevNorm.startsWith(MEDIA_ROUTE_PREFIX)) {
+        const prevKey = prevNorm.slice(MEDIA_ROUTE_PREFIX.length);
+        const prevBytes = await readStoredKeyBytes(request, env, prevKey);
+        if (prevBytes && prevBytes.byteLength > 0) {
+            parts.push(prevBytes);
+            totalBytes += prevBytes.byteLength;
         }
-
-        const merged = new Uint8Array(totalBytes);
-        let offset = 0;
-        for (const p of parts) {
-            merged.set(p, offset);
-            offset += p.byteLength;
-        }
-
-        const resolvedMime = String(mimeType || 'video/mp4').trim() || 'video/mp4';
-        const ext = extensionFromMime(resolvedMime, resolvedMime.startsWith('video/') ? 'mp4' : 'jpg');
-        const rand = Math.random().toString(36).slice(2, 10);
-        const finalKey = sanitizeKey(`${folder}/${userId || 0}/${Date.now()}_${rand}.${ext}`);
-
-        const saved = await writeBytesToStorage(request, env, finalKey, merged, resolvedMime, ttlSeconds);
-
-        for (let i = 0; i < count; i++) {
-            const chunkKey = sanitizeKey(`_chunks/${safeId}/${String(i).padStart(6, '0')}.part`);
-            try { await bucket.delete(chunkKey); } catch (e) {}
-        }
-
-        return saved;
     }
 
-    if (typeof caches !== 'undefined' && caches.default && request) {
-        const origin = new URL(request.url).origin;
-        for (let i = 0; i < count; i++) {
-            const req = new Request(`${origin}${CHUNK_STORE_PREFIX}${safeId}/${i}`, { method: 'GET' });
-            const cached = await caches.default.match(req);
-            if (!cached) {
-                throw new Error(`Thiếu mảnh video #${i + 1}/${count} trong Cache.`);
-            }
-            const arr = new Uint8Array(await cached.arrayBuffer());
-            parts.push(arr);
-            totalBytes += arr.byteLength;
+    for (let i = start; i < end; i++) {
+        const partBytes = await getChunkBytes(request, env, safeId, i);
+        if (!partBytes) {
+            throw new Error(`Thiếu mảnh video #${i + 1}/${total}.`);
         }
-
-        const merged = new Uint8Array(totalBytes);
-        let offset = 0;
-        for (const p of parts) {
-            merged.set(p, offset);
-            offset += p.byteLength;
-        }
-
-        const resolvedMime = String(mimeType || 'video/mp4').trim() || 'video/mp4';
-        const ext = extensionFromMime(resolvedMime, resolvedMime.startsWith('video/') ? 'mp4' : 'jpg');
-        const rand = Math.random().toString(36).slice(2, 10);
-        const finalKey = sanitizeKey(`${folder}/${userId || 0}/${Date.now()}_${rand}.${ext}`);
-
-        const saved = await writeBytesToStorage(request, env, finalKey, merged, resolvedMime, ttlSeconds);
-
-        for (let i = 0; i < count; i++) {
-            const req = new Request(`${origin}${CHUNK_STORE_PREFIX}${safeId}/${i}`, { method: 'GET' });
-            try { await caches.default.delete(req); } catch (e) {}
-        }
-
-        return saved;
+        parts.push(partBytes);
+        totalBytes += partBytes.byteLength;
     }
 
-    throw new Error('Không thể ghép file trên môi trường hiện tại.');
+    const merged = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const p of parts) {
+        merged.set(p, offset);
+        offset += p.byteLength;
+    }
+
+    const resolvedMime = String(mimeType || 'video/mp4').trim() || 'video/mp4';
+    const ext = extensionFromMime(resolvedMime, resolvedMime.startsWith('video/') ? 'mp4' : 'jpg');
+    const rand = Math.random().toString(36).slice(2, 10);
+    const isFinal = end >= total;
+    const targetFolder = isFinal ? folder : `_partial/${safeId}`;
+    const finalKey = sanitizeKey(`${targetFolder}/${userId || 0}/${Date.now()}_${rand}.${ext}`);
+
+    const saved = await writeBytesToStorage(request, env, finalKey, merged, resolvedMime, ttlSeconds);
+
+    // Xóa các chunk vừa ghép xong
+    for (let i = start; i < end; i++) {
+        await deleteChunkKey(request, env, safeId, i);
+    }
+
+    // Xóa bản partial cũ sau khi đã lưu bản mới thành công
+    if (prevNorm && prevNorm.includes('/_partial/')) {
+        await deleteMediaAsset(request, env, prevNorm);
+    }
+
+    return {
+        done: isFinal,
+        nextChunk: end,
+        totalChunks: total,
+        url: saved.url,
+        mimeType: saved.mimeType,
+        size: saved.size
+    };
 }
 
 export async function deleteMediaAsset(request, env, mediaUrl) {
@@ -326,9 +360,6 @@ export async function deleteMediaAsset(request, env, mediaUrl) {
     }
 }
 
-/**
- * Phục vụ file ảnh / video từ R2 hoặc Cache API (hỗ trợ Range cho video)
- */
 export async function handleMediaRequest(request, env) {
     const url = new URL(request.url);
     if (!url.pathname.startsWith(MEDIA_ROUTE_PREFIX)) return null;
