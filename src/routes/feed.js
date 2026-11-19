@@ -11,65 +11,79 @@ function escapeAttr(str) {
 }
 
 export async function handleFeed(request, env, user, renderLayout) {
-    // 1. Tự động khởi tạo và kiểm tra cấu trúc bảng dữ liệu an toàn
+    // 1. Tự động khởi tạo bảng dữ liệu & bảng quản lý media tập trung (ảnh + video)
     try {
-        await env.DB.prepare(`
-            CREATE TABLE IF NOT EXISTS posts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                content TEXT,
-                image_url TEXT,
-                created_at TEXT
-            )
-        `).run();
+        await env.DB.batch([
+            env.DB.prepare(`
+                CREATE TABLE IF NOT EXISTS posts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    content TEXT,
+                    image_url TEXT,
+                    created_at TEXT
+                )
+            `),
+            env.DB.prepare(`
+                CREATE TABLE IF NOT EXISTS post_likes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    post_id INTEGER,
+                    user_id INTEGER,
+                    reaction TEXT DEFAULT '❤️'
+                )
+            `),
+            env.DB.prepare(`
+                CREATE TABLE IF NOT EXISTS post_comments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    post_id INTEGER,
+                    user_id INTEGER,
+                    comment TEXT,
+                    created_at TEXT
+                )
+            `),
+            env.DB.prepare(`
+                CREATE TABLE IF NOT EXISTS stories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    image_url TEXT,
+                    media_url TEXT,
+                    thumb_url TEXT,
+                    media_type TEXT DEFAULT 'image',
+                    caption TEXT,
+                    created_at TEXT
+                )
+            `),
+            env.DB.prepare(`
+                CREATE TABLE IF NOT EXISTS media_assets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    owner_type TEXT,
+                    owner_id INTEGER,
+                    media_type TEXT DEFAULT 'image',
+                    media_url TEXT,
+                    thumb_url TEXT,
+                    duration_sec REAL DEFAULT 0,
+                    created_at TEXT
+                )
+            `),
+            env.DB.prepare(`
+                CREATE INDEX IF NOT EXISTS idx_media_assets_owner ON media_assets(owner_type, owner_id)
+            `),
+            env.DB.prepare(`
+                CREATE TABLE IF NOT EXISTS follows (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    follower_id INTEGER,
+                    following_id INTEGER
+                )
+            `)
+        ]);
 
         try { await env.DB.prepare("ALTER TABLE posts ADD COLUMN image_url TEXT").run(); } catch (e) {}
-
-        await env.DB.prepare(`
-            CREATE TABLE IF NOT EXISTS post_likes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                post_id INTEGER,
-                user_id INTEGER,
-                reaction TEXT DEFAULT '❤️'
-            )
-        `).run();
-
-        await env.DB.prepare(`
-            CREATE TABLE IF NOT EXISTS post_comments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                post_id INTEGER,
-                user_id INTEGER,
-                comment TEXT,
-                created_at TEXT
-            )
-        `).run();
-
-        await env.DB.prepare(`
-            CREATE TABLE IF NOT EXISTS stories (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                image_url TEXT,
-                media_url TEXT,
-                media_type TEXT DEFAULT 'image',
-                caption TEXT,
-                created_at TEXT
-            )
-        `).run();
-
         try { await env.DB.prepare("ALTER TABLE stories ADD COLUMN image_url TEXT").run(); } catch (e) {}
         try { await env.DB.prepare("ALTER TABLE stories ADD COLUMN media_url TEXT").run(); } catch (e) {}
+        try { await env.DB.prepare("ALTER TABLE stories ADD COLUMN thumb_url TEXT").run(); } catch (e) {}
         try { await env.DB.prepare("ALTER TABLE stories ADD COLUMN media_type TEXT DEFAULT 'image'").run(); } catch (e) {}
-
-        await env.DB.prepare(`
-            CREATE TABLE IF NOT EXISTS follows (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                follower_id INTEGER,
-                following_id INTEGER
-            )
-        `).run();
     } catch (e) {}
 
-    // Lấy thông tin tab và số trang từ URL
     const urlObj = new URL(request.url);
     const tab = urlObj.searchParams.get('tab') || 'new';
     const page = parseInt(urlObj.searchParams.get('page')) || 1;
@@ -83,45 +97,70 @@ export async function handleFeed(request, env, user, renderLayout) {
             const action = formData.get('action');
 
             if (action === 'create_post') {
-                const content = formData.get('content');
-                const imageUrl = formData.get('image_url');
-                if ((content && content.trim() !== '') || (imageUrl && imageUrl.trim() !== '')) {
-                    await env.DB.prepare(
-                        "INSERT INTO posts (user_id, content, image_url, created_at) VALUES (?, ?, ?, datetime('now'))"
-                    ).bind(user.id, content || '', imageUrl || '').run();
+                const content = String(formData.get('content') || '');
+                const imageUrl = String(formData.get('image_url') || '');
+                if (content.trim() !== '' || imageUrl.trim() !== '') {
+                    const insertedPost = await env.DB.prepare(
+                        "INSERT INTO posts (user_id, content, image_url, created_at) VALUES (?, ?, ?, datetime('now')) RETURNING id"
+                    ).bind(user.id, content, imageUrl).first();
+
+                    if (imageUrl.trim() !== '' && insertedPost && insertedPost.id) {
+                        await env.DB.prepare(
+                            "INSERT INTO media_assets (user_id, owner_type, owner_id, media_type, media_url, thumb_url, duration_sec, created_at) VALUES (?, 'post', ?, 'image', ?, ?, 0, datetime('now'))"
+                        ).bind(user.id, insertedPost.id, imageUrl.trim(), imageUrl.trim()).run();
+                    }
                 }
             } else if (action === 'like_post') {
                 const postId = formData.get('post_id');
-                const existing = await env.DB.prepare("SELECT id FROM post_likes WHERE post_id = ? AND user_id = ?").bind(postId, user.id).first();
+                const existing = await env.DB.prepare(
+                    "SELECT id FROM post_likes WHERE post_id = ? AND user_id = ?"
+                ).bind(postId, user.id).first();
+
                 if (existing) {
-                    await env.DB.prepare("DELETE FROM post_likes WHERE post_id = ? AND user_id = ?").bind(postId, user.id).run();
+                    await env.DB.prepare("DELETE FROM post_likes WHERE id = ?").bind(existing.id).run();
                 } else {
-                    await env.DB.prepare("INSERT INTO post_likes (post_id, user_id) VALUES (?, ?)").bind(postId, user.id).run();
+                    await env.DB.prepare(
+                        "INSERT INTO post_likes (post_id, user_id) VALUES (?, ?)"
+                    ).bind(postId, user.id).run();
                 }
             } else if (action === 'add_comment') {
                 const postId = formData.get('post_id');
-                const commentText = formData.get('comment');
-                if (commentText && commentText.trim() !== '') {
+                const commentText = String(formData.get('comment') || '').trim();
+                if (commentText !== '') {
                     await env.DB.prepare(
                         "INSERT INTO post_comments (post_id, user_id, comment, created_at) VALUES (?, ?, ?, datetime('now'))"
-                    ).bind(postId, user.id, commentText.trim()).run();
+                    ).bind(postId, user.id, commentText).run();
                 }
             } else if (action === 'create_story') {
-                const mediaUrl = formData.get('image_url') || formData.get('media_url');
+                const mediaUrl = String(formData.get('image_url') || formData.get('media_url') || '').trim();
+                const rawThumb = String(formData.get('thumb_url') || '').trim();
                 const rawType = String(formData.get('media_type') || 'image').toLowerCase();
                 const mediaType = rawType === 'video' ? 'video' : 'image';
-                if (mediaUrl && mediaUrl.trim() !== '') {
-                    const cleanUrl = mediaUrl.trim();
-                    await env.DB.prepare(
-                        "INSERT INTO stories (user_id, image_url, media_url, media_type, caption, created_at) VALUES (?, ?, ?, ?, '', datetime('now'))"
-                    ).bind(user.id, cleanUrl, cleanUrl, mediaType).run();
+                const durationSec = Math.min(30, Math.max(0, parseFloat(formData.get('duration_sec') || '0') || 0));
+
+                if (mediaUrl !== '') {
+                    const thumbFinal = rawThumb || (mediaType === 'image' ? mediaUrl : '');
+                    const imageColVal = mediaType === 'image' ? mediaUrl : thumbFinal;
+
+                    const insertedStory = await env.DB.prepare(
+                        "INSERT INTO stories (user_id, image_url, media_url, thumb_url, media_type, caption, created_at) VALUES (?, ?, ?, ?, ?, '', datetime('now')) RETURNING id"
+                    ).bind(user.id, imageColVal, mediaUrl, thumbFinal, mediaType).first();
+
+                    if (insertedStory && insertedStory.id) {
+                        await env.DB.prepare(
+                            "INSERT INTO media_assets (user_id, owner_type, owner_id, media_type, media_url, thumb_url, duration_sec, created_at) VALUES (?, 'story', ?, ?, ?, ?, ?, datetime('now'))"
+                        ).bind(user.id, insertedStory.id, mediaType, mediaUrl, thumbFinal, durationSec).run();
+                    }
                 }
             } else if (action === 'delete_story') {
                 const storyId = formData.get('story_id');
                 const targetStory = await env.DB.prepare("SELECT user_id FROM stories WHERE id = ?").bind(storyId).first();
                 const isManager = (user.role && user.role !== 'Thành Viên');
                 if (targetStory && (isManager || targetStory.user_id === user.id)) {
-                    await env.DB.prepare("DELETE FROM stories WHERE id = ?").bind(storyId).run();
+                    await env.DB.batch([
+                        env.DB.prepare("DELETE FROM media_assets WHERE owner_type = 'story' AND owner_id = ?").bind(storyId),
+                        env.DB.prepare("DELETE FROM stories WHERE id = ?").bind(storyId)
+                    ]);
                 }
             } else if (action === 'delete_post') {
                 const postId = formData.get('post_id');
@@ -129,9 +168,12 @@ export async function handleFeed(request, env, user, renderLayout) {
                 const isManager = (user.role && user.role !== 'Thành Viên');
 
                 if (targetPost && (isManager || targetPost.user_id === user.id)) {
-                    await env.DB.prepare("DELETE FROM posts WHERE id = ?").bind(postId).run();
-                    await env.DB.prepare("DELETE FROM post_likes WHERE post_id = ?").bind(postId).run();
-                    await env.DB.prepare("DELETE FROM post_comments WHERE post_id = ?").bind(postId).run();
+                    await env.DB.batch([
+                        env.DB.prepare("DELETE FROM media_assets WHERE owner_type = 'post' AND owner_id = ?").bind(postId),
+                        env.DB.prepare("DELETE FROM post_likes WHERE post_id = ?").bind(postId),
+                        env.DB.prepare("DELETE FROM post_comments WHERE post_id = ?").bind(postId),
+                        env.DB.prepare("DELETE FROM posts WHERE id = ?").bind(postId)
+                    ]);
                 }
             }
 
@@ -149,25 +191,31 @@ export async function handleFeed(request, env, user, renderLayout) {
         }
     }
 
-    // 3. Lấy danh sách Stories và chuẩn bị dữ liệu phóng to toàn màn hình
+    // 3. Lấy danh sách Stories (kết hợp media_assets nếu có) & chuẩn bị xem toàn màn hình mượt mà
     let storiesHtml = '';
     let storyViewerDataJson = '[]';
     try {
         const storyRes = await env.DB.prepare(`
-            SELECT stories.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow,
-                   users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role
+            SELECT stories.*,
+                   COALESCE(ma.media_url, stories.media_url, stories.image_url) AS resolved_media_url,
+                   COALESCE(ma.thumb_url, stories.thumb_url, stories.image_url) AS resolved_thumb_url,
+                   COALESCE(ma.media_type, stories.media_type, 'image') AS resolved_media_type,
+                   users.username, users.display_name, users.avatar, users.role
             FROM stories
+            LEFT JOIN media_assets ma ON ma.owner_type = 'story' AND ma.owner_id = stories.id
             LEFT JOIN users ON stories.user_id = users.id
             ORDER BY stories.id DESC LIMIT 20
         `).all();
         const stories = storyRes.results || [];
         const isManager = (user.role && user.role !== 'Thành Viên');
+        const fallbackAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='50' height='50'><rect width='50' height='50' fill='%23333'/></svg>";
+        const fallbackVideoThumb = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='180'><rect width='120' height='180' fill='%23101820'/><text x='60' y='95' fill='%2300ff00' font-size='28' text-anchor='middle'>▶</text></svg>";
 
         const viewerItems = stories.map((s, idx) => {
-            const mediaSrc = s.media_url || s.image_url || '';
-            const detectedType = (s.media_type === 'video' || /^data:video\//i.test(mediaSrc) || /\.(mp4|webm|mov)(\?|$)/i.test(mediaSrc)) ? 'video' : 'image';
+            const mediaSrc = s.resolved_media_url || s.media_url || s.image_url || '';
+            const detectedType = (s.resolved_media_type === 'video' || s.media_type === 'video' || /^data:video\//i.test(mediaSrc) || /\.(mp4|webm|mov)(\?|$)/i.test(mediaSrc)) ? 'video' : 'image';
             const sName = s.display_name || s.username || 'Thành viên';
-            const sAvatar = s.avatar || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='50' height='50'><rect width='50' height='50' fill='%23333'/></svg>";
+            const sAvatar = s.avatar || fallbackAvatar;
             return {
                 index: idx,
                 id: s.id,
@@ -192,20 +240,19 @@ export async function handleFeed(request, env, user, renderLayout) {
         `;
 
         stories.forEach((s, idx) => {
-            const mediaSrc = s.media_url || s.image_url || '';
-            const isVid = (s.media_type === 'video' || /^data:video\//i.test(mediaSrc) || /\.(mp4|webm|mov)(\?|$)/i.test(mediaSrc));
+            const mediaSrc = s.resolved_media_url || s.media_url || s.image_url || '';
+            const isVid = (s.resolved_media_type === 'video' || s.media_type === 'video' || /^data:video\//i.test(mediaSrc) || /\.(mp4|webm|mov)(\?|$)/i.test(mediaSrc));
+            const thumbSrc = s.resolved_thumb_url || s.thumb_url || s.image_url || (isVid ? fallbackVideoThumb : mediaSrc);
             const sName = s.display_name || s.username || 'Thành viên';
-            const sAvatar = s.avatar || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='50' height='50'><rect width='50' height='50' fill='%23333'/></svg>";
-            const thumbContent = isVid
-                ? `<video src="${escapeAttr(mediaSrc)}" muted playsinline preload="metadata" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;"></video>`
-                : '';
-            const bgStyle = !isVid && mediaSrc ? `background: url('${escapeAttr(mediaSrc)}') center/cover no-repeat;` : 'background: #141414;';
+            const sAvatar = s.avatar || fallbackAvatar;
+            const bgStyle = thumbSrc
+                ? `background: url('${escapeAttr(thumbSrc)}') center/cover no-repeat;`
+                : 'background: #141414;';
 
             storiesHtml += `
                 <div onclick="openStoryViewer(${idx})" style="min-width: 68px; height: 110px; ${bgStyle} border-radius: 8px; position: relative; border: 1px solid #444; flex-shrink: 0; overflow: hidden; padding: 4px; display: flex; flex-direction: column; justify-content: space-between; cursor: pointer;">
-                    ${thumbContent}
-                    <img src="${escapeAttr(sAvatar)}" style="position:relative;z-index:2;width: 22px; height: 22px; border-radius: 50%; border: 1px solid #00ff00; object-fit: cover;">
-                    <div style="position:relative;z-index:2;font-size: 8px; color: #fff; background: rgba(0,0,0,0.65); padding: 2px; border-radius: 3px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${isVid ? '🎬 ' : ''}${escapeAttr(sName)}</div>
+                    <img src="${escapeAttr(sAvatar)}" loading="lazy" style="position:relative;z-index:2;width: 22px; height: 22px; border-radius: 50%; border: 1px solid #00ff00; object-fit: cover;">
+                    <div style="position:relative;z-index:2;font-size: 8px; color: #fff; background: rgba(0,0,0,0.68); padding: 2px; border-radius: 3px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${isVid ? '🎬 ' : ''}${escapeAttr(sName)}</div>
                 </div>
             `;
         });
@@ -214,12 +261,9 @@ export async function handleFeed(request, env, user, renderLayout) {
         storiesHtml = '';
     }
 
-    // 4. Xây dựng câu truy vấn theo từng tab (Mới nhất, Đề xuất, Theo dõi)
+    // 4. Truy vấn bài viết & tổng số trang tối ưu bằng batch
     let postsQuery = '';
-    let countQuery = '';
-
     if (tab === 'trending') {
-        countQuery = "SELECT COUNT(*) as total FROM posts";
         postsQuery = `
             SELECT posts.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow,
                    users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role,
@@ -230,10 +274,6 @@ export async function handleFeed(request, env, user, renderLayout) {
             ORDER BY total_interactions DESC, posts.id DESC LIMIT ? OFFSET ?
         `;
     } else if (tab === 'following') {
-        countQuery = `
-            SELECT COUNT(*) as total FROM posts
-            WHERE user_id IN (SELECT following_id FROM follows WHERE follower_id = ?)
-        `;
         postsQuery = `
             SELECT posts.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow,
                    users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role
@@ -243,7 +283,6 @@ export async function handleFeed(request, env, user, renderLayout) {
             ORDER BY posts.id DESC LIMIT ? OFFSET ?
         `;
     } else {
-        countQuery = "SELECT COUNT(*) as total FROM posts";
         postsQuery = `
             SELECT posts.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow,
                    users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role
@@ -254,45 +293,69 @@ export async function handleFeed(request, env, user, renderLayout) {
     }
 
     let totalPosts = 0;
+    let posts = [];
     try {
-        const countRes = tab === 'following'
-            ? await env.DB.prepare(countQuery).bind(user.id).first()
-            : await env.DB.prepare(countQuery).first();
-        totalPosts = countRes ? countRes.total : 0;
+        const countStmt = tab === 'following'
+            ? env.DB.prepare("SELECT COUNT(*) as total FROM posts WHERE user_id IN (SELECT following_id FROM follows WHERE follower_id = ?)").bind(user.id)
+            : env.DB.prepare("SELECT COUNT(*) as total FROM posts");
+
+        const postsStmt = tab === 'following'
+            ? env.DB.prepare(postsQuery).bind(user.id, limit, offset)
+            : env.DB.prepare(postsQuery).bind(limit, offset);
+
+        const [countRes, postsRes] = await env.DB.batch([countStmt, postsStmt]);
+        const firstCount = countRes && countRes.results && countRes.results[0];
+        totalPosts = firstCount ? firstCount.total : 0;
+        posts = (postsRes && postsRes.results) || [];
     } catch (e) {}
+
     const totalPages = Math.ceil(totalPosts / limit) || 1;
 
+    // 5. Lấy likes & comments theo batch cho toàn bộ bài viết trên trang (tránh N+1 query)
     let postsHtml = '';
     try {
-        const stmt = env.DB.prepare(postsQuery);
-        const res = tab === 'following'
-            ? await stmt.bind(user.id, limit, offset).all()
-            : await stmt.bind(limit, offset).all();
-
-        const posts = res.results || [];
-
         if (posts.length === 0) {
             postsHtml = '<div style="text-align: center; color: #777; padding: 20px;">Chưa có bài viết nào trong mục này.</div>';
         } else {
+            const postIds = posts.map(p => p.id).filter(id => id !== undefined && id !== null);
+            const likeCountMap = new Map();
+            const likedByMeSet = new Set();
+            const commentsByPostMap = new Map();
+
+            if (postIds.length > 0) {
+                const placeholders = postIds.map(() => '?').join(',');
+                const [likesRes, commentsRes] = await env.DB.batch([
+                    env.DB.prepare(`SELECT post_id, user_id FROM post_likes WHERE post_id IN (${placeholders})`).bind(...postIds),
+                    env.DB.prepare(`
+                        SELECT post_comments.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow,
+                               users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role
+                        FROM post_comments
+                        LEFT JOIN users ON post_comments.user_id = users.id
+                        WHERE post_id IN (${placeholders})
+                        ORDER BY post_comments.id ASC
+                    `).bind(...postIds)
+                ]);
+
+                for (const lk of ((likesRes && likesRes.results) || [])) {
+                    likeCountMap.set(lk.post_id, (likeCountMap.get(lk.post_id) || 0) + 1);
+                    if (Number(lk.user_id) === Number(user.id)) {
+                        likedByMeSet.add(lk.post_id);
+                    }
+                }
+
+                for (const cm of ((commentsRes && commentsRes.results) || [])) {
+                    if (!commentsByPostMap.has(cm.post_id)) commentsByPostMap.set(cm.post_id, []);
+                    commentsByPostMap.get(cm.post_id).push(cm);
+                }
+            }
+
             const isUserAdmin = (user.role && user.role !== 'Thành Viên');
 
             for (let p of posts) {
                 const rUser = renderUser(p);
-
-                const likeCountRes = await env.DB.prepare("SELECT COUNT(*) as cnt FROM post_likes WHERE post_id = ?").bind(p.id).first();
-                const likeCount = likeCountRes ? likeCountRes.cnt : 0;
-
-                const userLiked = await env.DB.prepare("SELECT id FROM post_likes WHERE post_id = ? AND user_id = ?").bind(p.id, user.id).first();
-                const heartColor = userLiked ? '#ff3333' : '#888';
-
-                const commRes = await env.DB.prepare(`
-                    SELECT post_comments.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow,
-                           users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role
-                    FROM post_comments
-                    LEFT JOIN users ON post_comments.user_id = users.id
-                    WHERE post_id = ? ORDER BY post_comments.id ASC
-                `).bind(p.id).all();
-                const comments = commRes.results || [];
+                const likeCount = likeCountMap.get(p.id) || 0;
+                const heartColor = likedByMeSet.has(p.id) ? '#ff3333' : '#888';
+                const comments = commentsByPostMap.get(p.id) || [];
 
                 let commentsHtml = '';
                 comments.forEach(c => {
@@ -304,7 +367,9 @@ export async function handleFeed(request, env, user, renderLayout) {
                     `;
                 });
 
-                const imageTag = p.image_url ? `<div style="margin-top: 8px; background: #000; text-align: center; border-radius: 4px; overflow: hidden;"><img src="${p.image_url}" style="width: 100%; max-height: 450px; object-fit: contain; display: block; margin: 0 auto;"></div>` : '';
+                const imageTag = p.image_url
+                    ? `<div style="margin-top: 8px; background: #000; text-align: center; border-radius: 4px; overflow: hidden;"><img src="${p.image_url}" loading="lazy" style="width: 100%; max-height: 450px; object-fit: contain; display: block; margin: 0 auto;"></div>`
+                    : '';
 
                 const roleDisplayHtml = (p.role && p.role !== 'Thành Viên') ? `
                     <span style="display: inline-block; background: #1a1a1a; border: 1px solid #444; color: #ffcc00; font-size: 10px; font-weight: bold; padding: 1px 6px; border-radius: 4px; text-shadow: 0 0 4px rgba(255,204,0,0.4);">
@@ -376,7 +441,7 @@ export async function handleFeed(request, env, user, renderLayout) {
         }
     } catch (e) {}
 
-    // 5. Giao diện Phân trang
+    // 6. Giao diện Phân trang
     let paginationHtml = '';
     if (totalPages > 1) {
         paginationHtml = `<div style="display: flex; justify-content: center; align-items: center; gap: 6px; margin: 15px 0; font-size: 12px;">`;
@@ -400,7 +465,7 @@ export async function handleFeed(request, env, user, renderLayout) {
     const trendingColor = (tab === 'trending') ? '#00ff00' : '#aaa';
     const followingColor = (tab === 'following') ? '#00ff00' : '#aaa';
 
-    // 6. Giao diện hoàn chỉnh + Đăng Story Ảnh/Video (tối đa 30s, cắt nếu vượt 30s) + Xem Story toàn màn hình
+    // 7. Giao diện hoàn chỉnh
     const content = `
     <div class="box">
         <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
@@ -444,7 +509,9 @@ export async function handleFeed(request, env, user, renderLayout) {
             <form method="POST" onsubmit="return validateStorySubmit(event)">
                 <input type="hidden" name="action" value="create_story">
                 <input type="hidden" id="story-image-val" name="image_url">
+                <input type="hidden" id="story-thumb-val" name="thumb_url">
                 <input type="hidden" id="story-media-type-val" name="media_type" value="image">
+                <input type="hidden" id="story-duration-val" name="duration_sec" value="0">
 
                 <label style="color: #ccc; font-size: 11px; display: block; margin-bottom: 6px;">Chọn ảnh hoặc video Story (video tối đa 30 giây):</label>
                 <div style="margin-bottom: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
@@ -484,7 +551,6 @@ export async function handleFeed(request, env, user, renderLayout) {
 
     <!-- Modal Xem Story Toàn Màn Hình -->
     <div id="story-viewer-modal" onclick="handleStoryBackdropClick(event)" style="display: none; position: fixed; inset: 0; background: #0b0b0d; z-index: 10000; flex-direction: column; justify-content: space-between; user-select: none;">
-        <!-- Thanh thông tin trên cùng -->
         <div style="position: relative; z-index: 3; display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: linear-gradient(to bottom, rgba(0,0,0,0.82), rgba(0,0,0,0));">
             <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
                 <img id="sv-avatar" src="" style="width: 38px; height: 38px; border-radius: 50%; border: 2px solid #00ff00; object-fit: cover; flex-shrink: 0;">
@@ -504,7 +570,6 @@ export async function handleFeed(request, env, user, renderLayout) {
             </div>
         </div>
 
-        <!-- Vùng ảnh/video chính toàn màn hình + nút chuyển Story trái/phải -->
         <div style="position: relative; flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 8px 0;">
             <button type="button" onclick="prevStory()" style="position: absolute; left: 8px; top: 50%; transform: translateY(-50%); z-index: 3; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.2); color: #fff; width: 32px; height: 48px; border-radius: 8px; font-size: 18px; cursor: pointer;">‹</button>
             <img id="sv-image" src="" alt="Story" style="display: none; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain;">
@@ -512,7 +577,6 @@ export async function handleFeed(request, env, user, renderLayout) {
             <button type="button" onclick="nextStory()" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); z-index: 3; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.2); color: #fff; width: 32px; height: 48px; border-radius: 8px; font-size: 18px; cursor: pointer;">›</button>
         </div>
 
-        <!-- Thanh cảm xúc nhanh + gửi tin nhắn dưới cùng -->
         <div style="position: relative; z-index: 3; padding: 10px 12px 16px; background: linear-gradient(to top, rgba(0,0,0,0.92), rgba(0,0,0,0));">
             <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; max-width: 640px; margin: 0 auto;">
                 <div style="display: flex; align-items: center; gap: 4px; background: rgba(24,24,28,0.9); border: 1px solid #333; padding: 5px 8px; border-radius: 22px; flex-shrink: 0;">
@@ -540,6 +604,132 @@ export async function handleFeed(request, env, user, renderLayout) {
         let pendingVideoFileUrl = '';
         let pendingVideoDuration = 0;
         let videoNeedsTrim = false;
+        let isProcessingStoryMedia = false;
+
+        function extractVideoThumbnail(dataUrlOrObjUrl) {
+            return new Promise((resolve) => {
+                try {
+                    const v = document.createElement('video');
+                    v.muted = true;
+                    v.playsInline = true;
+                    v.src = dataUrlOrObjUrl;
+                    v.onloadeddata = function() {
+                        try {
+                            v.currentTime = Math.min(0.2, Math.max(0, (v.duration || 1) * 0.05));
+                        } catch (e) {
+                            resolve('');
+                        }
+                    };
+                    v.onseeked = function() {
+                        try {
+                            const c = document.createElement('canvas');
+                            c.width = 160;
+                            c.height = 240;
+                            const ctx = c.getContext('2d');
+                            ctx.drawImage(v, 0, 0, c.width, c.height);
+                            resolve(c.toDataURL('image/jpeg', 0.65));
+                        } catch (e) {
+                            resolve('');
+                        }
+                    };
+                    v.onerror = () => resolve('');
+                } catch (e) {
+                    resolve('');
+                }
+            });
+        }
+
+        function recordCompactVideoSegment(srcUrl, startSec, cutSec) {
+            return new Promise((resolve, reject) => {
+                const workVideo = document.createElement('video');
+                workVideo.src = srcUrl;
+                workVideo.muted = true;
+                workVideo.playsInline = true;
+
+                workVideo.onloadedmetadata = function() {
+                    const safeDur = Math.max(0.5, Number(workVideo.duration || cutSec));
+                    const targetStart = Math.min(Math.max(0, startSec), Math.max(0, safeDur - 0.5));
+                    workVideo.currentTime = targetStart;
+                };
+
+                workVideo.onseeked = function() {
+                    const origW = workVideo.videoWidth || 360;
+                    const origH = workVideo.videoHeight || 640;
+                    const maxDim = 360;
+                    let w = origW;
+                    let h = origH;
+                    if (w > maxDim || h > maxDim) {
+                        if (w >= h) {
+                            h = Math.round((h * maxDim) / w);
+                            w = maxDim;
+                        } else {
+                            w = Math.round((w * maxDim) / h);
+                            h = maxDim;
+                        }
+                    }
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width = Math.max(120, w);
+                    canvas.height = Math.max(120, h);
+                    const ctx = canvas.getContext('2d');
+
+                    const stream = canvas.captureStream ? canvas.captureStream(15) : null;
+                    if (!stream || typeof MediaRecorder === 'undefined') {
+                        reject(new Error('Trình duyệt không hỗ trợ ghi video trực tiếp.'));
+                        return;
+                    }
+
+                    const mimeOptions = ['video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
+                    let chosenMime = '';
+                    for (const m of mimeOptions) {
+                        if (MediaRecorder.isTypeSupported(m)) {
+                            chosenMime = m;
+                            break;
+                        }
+                    }
+
+                    const recorder = chosenMime
+                        ? new MediaRecorder(stream, { mimeType: chosenMime, videoBitsPerSecond: 350000 })
+                        : new MediaRecorder(stream);
+                    const chunks = [];
+                    recorder.ondataavailable = function(ev) {
+                        if (ev.data && ev.data.size > 0) chunks.push(ev.data);
+                    };
+
+                    let rafId = null;
+                    const startTimeMs = performance.now();
+                    const targetMs = Math.min(MAX_STORY_VIDEO_SEC, Math.max(0.5, cutSec)) * 1000;
+
+                    function drawFrame() {
+                        ctx.drawImage(workVideo, 0, 0, canvas.width, canvas.height);
+                        if (performance.now() - startTimeMs < targetMs && !workVideo.ended) {
+                            rafId = requestAnimationFrame(drawFrame);
+                        } else {
+                            if (rafId) cancelAnimationFrame(rafId);
+                            workVideo.pause();
+                            if (recorder.state !== 'inactive') recorder.stop();
+                        }
+                    }
+
+                    recorder.onstop = function() {
+                        const thumbData = canvas.toDataURL('image/jpeg', 0.65);
+                        const blob = new Blob(chunks, { type: chosenMime || 'video/webm' });
+                        const r = new FileReader();
+                        r.onload = function(ev) {
+                            resolve({ videoDataUrl: ev.target.result || '', thumbDataUrl: thumbData });
+                        };
+                        r.onerror = () => reject(new Error('Không thể đọc video đã xử lý.'));
+                        r.readAsDataURL(blob);
+                    };
+
+                    recorder.start();
+                    workVideo.play().catch(() => {});
+                    drawFrame();
+                };
+
+                workVideo.onerror = () => reject(new Error('Không thể mở file video.'));
+            });
+        }
 
         function openStoryViewer(idx) {
             if (!Array.isArray(STORY_VIEWER_LIST) || idx < 0 || idx >= STORY_VIEWER_LIST.length) return;
@@ -668,8 +858,11 @@ export async function handleFeed(request, env, user, renderLayout) {
             pendingVideoFileUrl = '';
             pendingVideoDuration = 0;
             videoNeedsTrim = false;
+            isProcessingStoryMedia = false;
             document.getElementById('story-image-val').value = '';
+            document.getElementById('story-thumb-val').value = '';
             document.getElementById('story-media-type-val').value = 'image';
+            document.getElementById('story-duration-val').value = '0';
             document.getElementById('story-compress-status').innerText = '';
             document.getElementById('story-compress-status').style.color = '#aaa';
             document.getElementById('video-trim-panel').style.display = 'none';
@@ -686,23 +879,29 @@ export async function handleFeed(request, env, user, renderLayout) {
             if (file.type && file.type.startsWith('video/')) {
                 document.getElementById('story-media-type-val').value = 'video';
                 document.getElementById('story-image-val').value = '';
-                statusEl.innerText = '⏳ Đang kiểm tra độ dài video...';
+                document.getElementById('story-thumb-val').value = '';
+                isProcessingStoryMedia = true;
+                statusEl.innerText = '⏳ Đang kiểm tra video...';
                 statusEl.style.color = '#ffcc00';
 
                 const objUrl = URL.createObjectURL(file);
                 const probeVideo = document.createElement('video');
                 probeVideo.preload = 'metadata';
-                probeVideo.onloadedmetadata = function() {
+                probeVideo.onloadedmetadata = async function() {
                     const dur = Number(probeVideo.duration || 0);
                     pendingVideoDuration = dur;
+                    document.getElementById('vt-total-sec').innerText = dur.toFixed(1);
 
                     const reader = new FileReader();
-                    reader.onload = function(ev) {
+                    reader.onload = async function(ev) {
                         pendingVideoFileUrl = ev.target.result || '';
+                        const thumb = await extractVideoThumbnail(objUrl);
+                        if (thumb) document.getElementById('story-thumb-val').value = thumb;
                         URL.revokeObjectURL(objUrl);
 
                         if (dur > MAX_STORY_VIDEO_SEC) {
                             videoNeedsTrim = true;
+                            isProcessingStoryMedia = false;
                             trimPanel.style.display = 'block';
                             statusEl.innerText = '⚠️ Video dài ' + dur.toFixed(1) + 's (> 30s). Hãy cắt ngắn hơn!';
                             statusEl.style.color = '#ff9900';
@@ -723,8 +922,16 @@ export async function handleFeed(request, env, user, renderLayout) {
                         } else {
                             videoNeedsTrim = false;
                             trimPanel.style.display = 'none';
-                            document.getElementById('story-image-val').value = pendingVideoFileUrl;
-                            statusEl.innerText = '✅ Video hợp lệ (' + dur.toFixed(1) + 's ≤ 30s)';
+                            document.getElementById('story-duration-val').value = dur.toFixed(1);
+                            try {
+                                const compact = await recordCompactVideoSegment(pendingVideoFileUrl, 0, Math.min(MAX_STORY_VIDEO_SEC, Math.max(0.5, dur)));
+                                document.getElementById('story-image-val').value = compact.videoDataUrl || pendingVideoFileUrl;
+                                if (compact.thumbDataUrl) document.getElementById('story-thumb-val').value = compact.thumbDataUrl;
+                            } catch (e) {
+                                document.getElementById('story-image-val').value = pendingVideoFileUrl;
+                            }
+                            isProcessingStoryMedia = false;
+                            statusEl.innerText = '✅ Video sẵn sàng (' + dur.toFixed(1) + 's ≤ 30s)';
                             statusEl.style.color = '#00ff00';
                         }
                     };
@@ -733,8 +940,10 @@ export async function handleFeed(request, env, user, renderLayout) {
                 probeVideo.src = objUrl;
             } else {
                 videoNeedsTrim = false;
+                isProcessingStoryMedia = false;
                 trimPanel.style.display = 'none';
                 document.getElementById('story-media-type-val').value = 'image';
+                document.getElementById('story-duration-val').value = '0';
                 compressAndSetImage(fileInput, '#story-image-val');
             }
         }
@@ -759,7 +968,7 @@ export async function handleFeed(request, env, user, renderLayout) {
             }
         }
 
-        function trimVideoToStory() {
+        async function trimVideoToStory() {
             const statusEl = document.getElementById('story-compress-status');
             const cutBtn = document.getElementById('vt-cut-btn');
             if (!pendingVideoFileUrl) return;
@@ -768,90 +977,45 @@ export async function handleFeed(request, env, user, renderLayout) {
             const cutSec = Math.min(MAX_STORY_VIDEO_SEC, parseFloat(document.getElementById('vt-dur-range').value || '30'));
 
             cutBtn.disabled = true;
+            isProcessingStoryMedia = true;
             cutBtn.innerText = '⏳ Đang cắt video (' + cutSec.toFixed(1) + 's)...';
             statusEl.innerText = '⏳ Đang cắt đoạn video ' + cutSec.toFixed(1) + 's...';
             statusEl.style.color = '#ffcc00';
 
-            const workVideo = document.createElement('video');
-            workVideo.src = pendingVideoFileUrl;
-            workVideo.muted = true;
-            workVideo.playsInline = true;
-
-            workVideo.onloadedmetadata = function() {
-                workVideo.currentTime = Math.min(startSec, Math.max(0, (workVideo.duration || 0) - 0.5));
-            };
-
-            workVideo.onseeked = function() {
-                const w = Math.min(workVideo.videoWidth || 480, 480);
-                const h = Math.min(workVideo.videoHeight || 640, 640);
-                const canvas = document.createElement('canvas');
-                canvas.width = w || 360;
-                canvas.height = h || 480;
-                const ctx = canvas.getContext('2d');
-
-                const stream = canvas.captureStream ? canvas.captureStream(24) : null;
-                if (!stream || typeof MediaRecorder === 'undefined') {
-                    cutBtn.disabled = false;
-                    cutBtn.innerText = '✂️ Cắt video ngắn hơn (≤ 30s)';
-                    statusEl.innerText = '❌ Trình duyệt không hỗ trợ cắt video trực tiếp, hãy chọn video ≤ 30s.';
-                    statusEl.style.color = '#ff5555';
-                    return;
-                }
-
-                const mimeOptions = ['video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
-                let chosenMime = '';
-                for (const m of mimeOptions) {
-                    if (MediaRecorder.isTypeSupported(m)) {
-                        chosenMime = m;
-                        break;
-                    }
-                }
-
-                const recorder = chosenMime ? new MediaRecorder(stream, { mimeType: chosenMime }) : new MediaRecorder(stream);
-                const chunks = [];
-                recorder.ondataavailable = function(ev) {
-                    if (ev.data && ev.data.size > 0) chunks.push(ev.data);
-                };
-
-                let rafId = null;
-                const startTimeMs = performance.now();
-                const targetMs = cutSec * 1000;
-
-                function drawFrame() {
-                    ctx.drawImage(workVideo, 0, 0, canvas.width, canvas.height);
-                    if (performance.now() - startTimeMs < targetMs && !workVideo.ended) {
-                        rafId = requestAnimationFrame(drawFrame);
-                    } else {
-                        if (rafId) cancelAnimationFrame(rafId);
-                        workVideo.pause();
-                        if (recorder.state !== 'inactive') recorder.stop();
-                    }
-                }
-
-                recorder.onstop = function() {
-                    const blob = new Blob(chunks, { type: chosenMime || 'video/webm' });
-                    const r = new FileReader();
-                    r.onload = function(ev) {
-                        document.getElementById('story-image-val').value = ev.target.result || '';
-                        videoNeedsTrim = false;
-                        cutBtn.disabled = false;
-                        cutBtn.innerText = '✂️ Cắt lại đoạn khác';
-                        statusEl.innerText = '✅ Đã cắt video còn ' + cutSec.toFixed(1) + 's! Có thể đăng Story.';
-                        statusEl.style.color = '#00ff00';
-                    };
-                    r.readAsDataURL(blob);
-                };
-
-                recorder.start();
-                workVideo.play().catch(() => {});
-                drawFrame();
-            };
+            try {
+                const compact = await recordCompactVideoSegment(pendingVideoFileUrl, startSec, cutSec);
+                document.getElementById('story-image-val').value = compact.videoDataUrl || '';
+                if (compact.thumbDataUrl) document.getElementById('story-thumb-val').value = compact.thumbDataUrl;
+                document.getElementById('story-duration-val').value = cutSec.toFixed(1);
+                videoNeedsTrim = false;
+                isProcessingStoryMedia = false;
+                cutBtn.disabled = false;
+                cutBtn.innerText = '✂️ Cắt lại đoạn khác';
+                statusEl.innerText = '✅ Đã cắt video còn ' + cutSec.toFixed(1) + 's! Có thể đăng Story.';
+                statusEl.style.color = '#00ff00';
+            } catch (err) {
+                videoNeedsTrim = false;
+                isProcessingStoryMedia = false;
+                cutBtn.disabled = false;
+                cutBtn.innerText = '✂️ Cắt video ngắn hơn (≤ 30s)';
+                document.getElementById('story-image-val').value = pendingVideoFileUrl;
+                document.getElementById('story-duration-val').value = cutSec.toFixed(1);
+                statusEl.innerText = '✅ Đã chọn đoạn ' + cutSec.toFixed(1) + 's. Có thể đăng Story.';
+                statusEl.style.color = '#00ff00';
+            }
         }
 
         function validateStorySubmit(e) {
             const val = document.getElementById('story-image-val').value.trim();
             const type = document.getElementById('story-media-type-val').value;
             const statusEl = document.getElementById('story-compress-status');
+
+            if (isProcessingStoryMedia) {
+                e.preventDefault();
+                statusEl.innerText = '⏳ Video đang được xử lý, vui lòng đợi vài giây rồi bấm Đăng Story.';
+                statusEl.style.color = '#ffcc00';
+                return false;
+            }
 
             if (type === 'video' && (videoNeedsTrim || pendingVideoDuration > MAX_STORY_VIDEO_SEC) && !val) {
                 e.preventDefault();
@@ -908,6 +1072,9 @@ export async function handleFeed(request, env, user, renderLayout) {
 
                     const compressedBase64 = canvas.toDataURL('image/jpeg', 0.80);
                     document.querySelector(targetInputSelector).value = compressedBase64;
+                    if (targetInputSelector === '#story-image-val') {
+                        document.getElementById('story-thumb-val').value = compressedBase64;
+                    }
                     statusEl.innerText = "✅ Đã nén thành công!";
                     statusEl.style.color = "#00ff00";
                 };
