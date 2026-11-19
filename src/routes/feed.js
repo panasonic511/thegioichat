@@ -1,5 +1,15 @@
 import { renderUser } from '../worker.js';
 
+function escapeAttr(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
 export async function handleFeed(request, env, user, renderLayout) {
     // 1. Tự động khởi tạo và kiểm tra cấu trúc bảng dữ liệu an toàn
     try {
@@ -38,6 +48,7 @@ export async function handleFeed(request, env, user, renderLayout) {
             CREATE TABLE IF NOT EXISTS stories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
+                image_url TEXT,
                 media_url TEXT,
                 media_type TEXT DEFAULT 'image',
                 caption TEXT,
@@ -45,7 +56,9 @@ export async function handleFeed(request, env, user, renderLayout) {
             )
         `).run();
 
-        // Bảng lưu thông tin Theo dõi (Follows) để phục vụ tab Theo dõi
+        try { await env.DB.prepare("ALTER TABLE stories ADD COLUMN image_url TEXT").run(); } catch (e) {}
+        try { await env.DB.prepare("ALTER TABLE stories ADD COLUMN media_url TEXT").run(); } catch (e) {}
+
         await env.DB.prepare(`
             CREATE TABLE IF NOT EXISTS follows (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,12 +70,12 @@ export async function handleFeed(request, env, user, renderLayout) {
 
     // Lấy thông tin tab và số trang từ URL
     const urlObj = new URL(request.url);
-    const tab = urlObj.searchParams.get('tab') || 'new'; // Mặc định là 'new' (Mới nhất)
+    const tab = urlObj.searchParams.get('tab') || 'new';
     const page = parseInt(urlObj.searchParams.get('page')) || 1;
-    const limit = 10; // Giới hạn 10 bài viết mỗi trang
+    const limit = 10;
     const offset = (page - 1) * limit;
 
-    // 2. Xử lý các yêu cầu POST siêu tốc
+    // 2. Xử lý các yêu cầu POST
     if (request.method === 'POST') {
         try {
             const formData = await request.formData();
@@ -96,15 +109,23 @@ export async function handleFeed(request, env, user, renderLayout) {
                 const imageUrl = formData.get('image_url');
                 const caption = formData.get('caption');
                 if (imageUrl && imageUrl.trim() !== '') {
+                    const cleanUrl = imageUrl.trim();
                     await env.DB.prepare(
-                        "INSERT INTO stories (user_id, image_url, caption, created_at) VALUES (?, ?, ?, datetime('now'))"
-                    ).bind(user.id, imageUrl.trim(), caption || '').run();
+                        "INSERT INTO stories (user_id, image_url, media_url, caption, created_at) VALUES (?, ?, ?, ?, datetime('now'))"
+                    ).bind(user.id, cleanUrl, cleanUrl, caption || '').run();
+                }
+            } else if (action === 'delete_story') {
+                const storyId = formData.get('story_id');
+                const targetStory = await env.DB.prepare("SELECT user_id FROM stories WHERE id = ?").bind(storyId).first();
+                const isManager = (user.role && user.role !== 'Thành Viên');
+                if (targetStory && (isManager || targetStory.user_id === user.id)) {
+                    await env.DB.prepare("DELETE FROM stories WHERE id = ?").bind(storyId).run();
                 }
             } else if (action === 'delete_post') {
                 const postId = formData.get('post_id');
                 const targetPost = await env.DB.prepare("SELECT user_id FROM posts WHERE id = ?").bind(postId).first();
                 const isManager = (user.role && user.role !== 'Thành Viên');
-                
+
                 if (targetPost && (isManager || targetPost.user_id === user.id)) {
                     await env.DB.prepare("DELETE FROM posts WHERE id = ?").bind(postId).run();
                     await env.DB.prepare("DELETE FROM post_likes WHERE post_id = ?").bind(postId).run();
@@ -126,16 +147,38 @@ export async function handleFeed(request, env, user, renderLayout) {
         }
     }
 
-    // 3. Lấy danh sách Stories
+    // 3. Lấy danh sách Stories và chuẩn bị dữ liệu phóng to toàn màn hình
     let storiesHtml = '';
+    let storyViewerDataJson = '[]';
     try {
         const storyRes = await env.DB.prepare(`
-            SELECT stories.*, users.username, users.display_name, users.avatar 
-            FROM stories 
-            LEFT JOIN users ON stories.user_id = users.id 
-            ORDER BY stories.id DESC LIMIT 10
+            SELECT stories.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow,
+                   users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role
+            FROM stories
+            LEFT JOIN users ON stories.user_id = users.id
+            ORDER BY stories.id DESC LIMIT 20
         `).all();
         const stories = storyRes.results || [];
+        const isManager = (user.role && user.role !== 'Thành Viên');
+
+        const viewerItems = stories.map((s, idx) => {
+            const mediaSrc = s.image_url || s.media_url || '';
+            const sName = s.display_name || s.username || 'Thành viên';
+            const sAvatar = s.avatar || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='50' height='50'><rect width='50' height='50' fill='%23333'/></svg>";
+            return {
+                index: idx,
+                id: s.id,
+                userId: s.user_id || 0,
+                name: sName,
+                avatar: sAvatar,
+                imageUrl: mediaSrc,
+                caption: s.caption || '',
+                createdAt: s.created_at || 'Vừa xong',
+                role: s.role || 'Thành Viên',
+                canDelete: Boolean(isManager || (s.user_id && s.user_id === user.id))
+            };
+        });
+        storyViewerDataJson = JSON.stringify(viewerItems).replace(/</g, '\\u003c');
 
         storiesHtml = `
             <div style="display: flex; gap: 8px; overflow-x: auto; padding: 6px 0; margin-bottom: 10px; scrollbar-width: none;">
@@ -145,13 +188,14 @@ export async function handleFeed(request, env, user, renderLayout) {
                 </div>
         `;
 
-        stories.forEach(s => {
+        stories.forEach((s, idx) => {
+            const mediaSrc = s.image_url || s.media_url || '';
             const sName = s.display_name || s.username || 'Thành viên';
-            const sAvatar = s.avatar || 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'50\' height=\'50\'><rect width=\'50\' height=\'50\' fill=\'%23333\'/></svg>';
+            const sAvatar = s.avatar || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='50' height='50'><rect width='50' height='50' fill='%23333'/></svg>";
             storiesHtml += `
-                <div style="min-width: 68px; height: 110px; background: url('${s.image_url}') center/cover no-repeat; border-radius: 8px; position: relative; border: 1px solid #444; flex-shrink: 0; overflow: hidden; padding: 4px; display: flex; flex-direction: column; justify-content: space-between;">
-                    <img src="${sAvatar}" style="width: 22px; height: 22px; border-radius: 50%; border: 1px solid #00ff00; object-fit: cover;">
-                    <div style="font-size: 8px; color: #fff; background: rgba(0,0,0,0.6); padding: 2px; border-radius: 3px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${sName}</div>
+                <div onclick="openStoryViewer(${idx})" style="min-width: 68px; height: 110px; background: url('${escapeAttr(mediaSrc)}') center/cover no-repeat; border-radius: 8px; position: relative; border: 1px solid #444; flex-shrink: 0; overflow: hidden; padding: 4px; display: flex; flex-direction: column; justify-content: space-between; cursor: pointer;">
+                    <img src="${escapeAttr(sAvatar)}" style="width: 22px; height: 22px; border-radius: 50%; border: 1px solid #00ff00; object-fit: cover;">
+                    <div style="font-size: 8px; color: #fff; background: rgba(0,0,0,0.65); padding: 2px; border-radius: 3px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeAttr(sName)}</div>
                 </div>
             `;
         });
@@ -163,70 +207,58 @@ export async function handleFeed(request, env, user, renderLayout) {
     // 4. Xây dựng câu truy vấn theo từng tab (Mới nhất, Đề xuất, Theo dõi)
     let postsQuery = '';
     let countQuery = '';
-    let queryParams = [];
 
     if (tab === 'trending') {
-        // Tab Đề xuất: Sắp xếp theo số lượng tương tác (Like + Comment) nhiều nhất
         countQuery = "SELECT COUNT(*) as total FROM posts";
         postsQuery = `
-            SELECT posts.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow, 
+            SELECT posts.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow,
                    users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role,
-                   (SELECT COUNT(*) FROM post_likes WHERE post_id = posts.id) + 
+                   (SELECT COUNT(*) FROM post_likes WHERE post_id = posts.id) +
                    (SELECT COUNT(*) FROM post_comments WHERE post_id = posts.id) as total_interactions
-            FROM posts 
-            JOIN users ON posts.user_id = users.id 
+            FROM posts
+            JOIN users ON posts.user_id = users.id
             ORDER BY total_interactions DESC, posts.id DESC LIMIT ? OFFSET ?
         `;
-        queryParams = [limit, offset];
     } else if (tab === 'following') {
-        // Tab Theo dõi: Chỉ lấy bài viết của những người mà user hiện tại đang follow
         countQuery = `
-            SELECT COUNT(*) as total FROM posts 
+            SELECT COUNT(*) as total FROM posts
             WHERE user_id IN (SELECT following_id FROM follows WHERE follower_id = ?)
         `;
         postsQuery = `
-            SELECT posts.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow, 
+            SELECT posts.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow,
                    users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role
-            FROM posts 
-            JOIN users ON posts.user_id = users.id 
+            FROM posts
+            JOIN users ON posts.user_id = users.id
             WHERE posts.user_id IN (SELECT following_id FROM follows WHERE follower_id = ?)
             ORDER BY posts.id DESC LIMIT ? OFFSET ?
         `;
-        queryParams = [user.id, limit, offset];
     } else {
-        // Tab Mới nhất (Mặc định)
         countQuery = "SELECT COUNT(*) as total FROM posts";
         postsQuery = `
-            SELECT posts.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow, 
+            SELECT posts.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow,
                    users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role
-            FROM posts 
-            JOIN users ON posts.user_id = users.id 
+            FROM posts
+            JOIN users ON posts.user_id = users.id
             ORDER BY posts.id DESC LIMIT ? OFFSET ?
         `;
-        queryParams = [limit, offset];
     }
 
-    // Tính tổng số bài viết của tab hiện tại để làm phân trang
     let totalPosts = 0;
     try {
-        let countRes;
-        if (tab === 'following') {
-            countRes = await env.DB.prepare(countQuery).bind(user.id).first();
-        } else {
-            countRes = await env.DB.prepare(countQuery).first();
-        }
+        const countRes = tab === 'following'
+            ? await env.DB.prepare(countQuery).bind(user.id).first()
+            : await env.DB.prepare(countQuery).first();
         totalPosts = countRes ? countRes.total : 0;
     } catch (e) {}
     const totalPages = Math.ceil(totalPosts / limit) || 1;
 
-    // Lấy danh sách bài viết
     let postsHtml = '';
     try {
-        let stmt = env.DB.prepare(postsQuery);
-        const res = tab === 'following' 
-            ? await stmt.bind(user.id, limit, offset).all() 
+        const stmt = env.DB.prepare(postsQuery);
+        const res = tab === 'following'
+            ? await stmt.bind(user.id, limit, offset).all()
             : await stmt.bind(limit, offset).all();
-        
+
         const posts = res.results || [];
 
         if (posts.length === 0) {
@@ -244,10 +276,10 @@ export async function handleFeed(request, env, user, renderLayout) {
                 const heartColor = userLiked ? '#ff3333' : '#888';
 
                 const commRes = await env.DB.prepare(`
-                    SELECT post_comments.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow, 
-                           users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role 
-                    FROM post_comments 
-                    LEFT JOIN users ON post_comments.user_id = users.id 
+                    SELECT post_comments.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow,
+                           users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role
+                    FROM post_comments
+                    LEFT JOIN users ON post_comments.user_id = users.id
                     WHERE post_id = ? ORDER BY post_comments.id ASC
                 `).bind(p.id).all();
                 const comments = commRes.results || [];
@@ -309,7 +341,7 @@ export async function handleFeed(request, env, user, renderLayout) {
                                     ❤️ <span style="font-size: 11px; color: #ccc;" id="like-count-${p.id}">${likeCount}</span>
                                 </button>
                             </form>
-                            
+
                             <button type="button" onclick="toggleCommentBox(${p.id})" style="background: none; border: none; color: #aaa; cursor: pointer; font-size: 13px; padding: 0; display: flex; align-items: center; gap: 4px;">
                                 💬 <span style="font-size: 11px;" id="comm-count-${p.id}">${comments.length}</span> bình luận
                             </button>
@@ -334,7 +366,7 @@ export async function handleFeed(request, env, user, renderLayout) {
         }
     } catch (e) {}
 
-    // 5. Giao diện Phân trang (Giữ lại tab đang chọn)
+    // 5. Giao diện Phân trang
     let paginationHtml = '';
     if (totalPages > 1) {
         paginationHtml = `<div style="display: flex; justify-content: center; align-items: center; gap: 6px; margin: 15px 0; font-size: 12px;">`;
@@ -354,12 +386,11 @@ export async function handleFeed(request, env, user, renderLayout) {
         paginationHtml += `</div>`;
     }
 
-    // Định nghĩa màu sắc làm nổi bật tab đang được chọn
     const newColor = (tab === 'new') ? '#00ff00' : '#aaa';
     const trendingColor = (tab === 'trending') ? '#00ff00' : '#aaa';
     const followingColor = (tab === 'following') ? '#00ff00' : '#aaa';
 
-    // 6. Giao diện hoàn chỉnh
+    // 6. Giao diện hoàn chỉnh + Trình xem Story toàn màn hình
     const content = `
     <div class="box">
         <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
@@ -375,7 +406,7 @@ export async function handleFeed(request, env, user, renderLayout) {
             <form onsubmit="submitPostAjax(event, this)">
                 <input type="hidden" name="action" value="create_post">
                 <textarea name="content" rows="2" placeholder="Bạn đang nghĩ gì thế..." style="width: 100%; background: #141414; color: #00ff00; border: 1px solid #444; padding: 8px; border-radius: 4px; box-sizing: border-box; font-size: 13px; resize: vertical;"></textarea>
-                
+
                 <div style="margin-top: 6px; display: flex; align-items: center; gap: 8px;">
                     <label style="display: inline-flex; align-items: center; gap: 6px; background: #1a1a1a; border: 1px solid #444; color: #00ff00; padding: 5px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">
                         📷 Thêm ảnh
@@ -395,14 +426,14 @@ export async function handleFeed(request, env, user, renderLayout) {
 
     <!-- Popup Modal Đăng Story -->
     <div id="story-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.88); z-index: 999; justify-content: center; align-items: center; padding: 10px; box-sizing: border-box;">
-        <div style="background: #111; border: 1px solid #444; width: 100%; max-width: 350px; padding: 12px; box-sizing: border-box;">
+        <div style="background: #111; border: 1px solid #444; width: 100%; max-width: 350px; padding: 12px; box-sizing: border-box; border-radius: 6px;">
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 6px; margin-bottom: 8px;">
                 <b style="color: #00ff00; font-size: 12px;">📸 Đăng Story mới</b>
                 <button type="button" onclick="closeStoryModal()" style="background:none; border:none; color:#ff5555; font-weight:bold; cursor:pointer;">✕</button>
             </div>
             <form method="POST">
                 <input type="hidden" name="action" value="create_story">
-                
+
                 <label style="color: #ccc; font-size: 10px; display: block; margin-bottom: 2px;">Chọn hình ảnh Story:</label>
                 <div style="margin-bottom: 6px; display: flex; align-items: center; gap: 8px;">
                     <label style="display: inline-flex; align-items: center; gap: 6px; background: #1a1a1a; border: 1px solid #444; color: #00ff00; padding: 5px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">
@@ -420,7 +451,162 @@ export async function handleFeed(request, env, user, renderLayout) {
         </div>
     </div>
 
+    <!-- Modal Xem Story Toàn Màn Hình -->
+    <div id="story-viewer-modal" onclick="handleStoryBackdropClick(event)" style="display: none; position: fixed; inset: 0; background: #0b0b0d; z-index: 10000; flex-direction: column; justify-content: space-between; user-select: none;">
+        <!-- Thanh thông tin trên cùng -->
+        <div style="position: relative; z-index: 3; display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: linear-gradient(to bottom, rgba(0,0,0,0.82), rgba(0,0,0,0));">
+            <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
+                <img id="sv-avatar" src="" style="width: 38px; height: 38px; border-radius: 50%; border: 2px solid #00ff00; object-fit: cover; flex-shrink: 0;">
+                <div style="min-width: 0;">
+                    <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                        <span id="sv-name" style="color: #fff; font-weight: bold; font-size: 14px; text-shadow: 0 1px 4px #000;"></span>
+                        <span id="sv-role-badge" style="display: none; background: rgba(255,204,0,0.18); border: 1px solid #ffcc00; color: #ffcc00; font-size: 10px; font-weight: bold; padding: 1px 6px; border-radius: 4px;"></span>
+                    </div>
+                    <div style="font-size: 11px; color: #ccc; text-shadow: 0 1px 3px #000;">
+                        <span id="sv-time"></span> · 🌍 Công khai
+                    </div>
+                </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                <button type="button" id="sv-delete-btn" onclick="deleteCurrentStory()" style="display: none; background: rgba(255, 68, 68, 0.22); border: 1px solid #ff5555; color: #ff8888; border-radius: 50%; width: 32px; height: 32px; font-size: 13px; cursor: pointer; align-items: center; justify-content: center;" title="Xóa Story">🗑</button>
+                <button type="button" onclick="closeStoryViewer()" style="background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.25); color: #fff; border-radius: 50%; width: 32px; height: 32px; font-size: 16px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center;" title="Đóng">✕</button>
+            </div>
+        </div>
+
+        <!-- Vùng ảnh chính toàn màn hình + nút chuyển Story trái/phải -->
+        <div style="position: relative; flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 8px 0;">
+            <button type="button" onclick="prevStory()" style="position: absolute; left: 8px; top: 50%; transform: translateY(-50%); z-index: 3; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.2); color: #fff; width: 32px; height: 48px; border-radius: 8px; font-size: 18px; cursor: pointer;">‹</button>
+            <img id="sv-image" src="" alt="Story" style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; display: block;">
+            <button type="button" onclick="nextStory()" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); z-index: 3; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.2); color: #fff; width: 32px; height: 48px; border-radius: 8px; font-size: 18px; cursor: pointer;">›</button>
+
+            <div id="sv-caption" style="display: none; position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); max-width: 90%; background: rgba(0,0,0,0.72); color: #fff; padding: 6px 12px; border-radius: 12px; font-size: 12px; text-align: center; z-index: 3;"></div>
+        </div>
+
+        <!-- Thanh cảm xúc nhanh + gửi tin nhắn dưới cùng -->
+        <div style="position: relative; z-index: 3; padding: 10px 12px 16px; background: linear-gradient(to top, rgba(0,0,0,0.92), rgba(0,0,0,0));">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; max-width: 640px; margin: 0 auto;">
+                <div style="display: flex; align-items: center; gap: 4px; background: rgba(24,24,28,0.9); border: 1px solid #333; padding: 5px 8px; border-radius: 22px; flex-shrink: 0;">
+                    <button type="button" onclick="sendStoryReaction('👍')" style="background:none;border:none;font-size:17px;cursor:pointer;padding:0 2px;">👍</button>
+                    <button type="button" onclick="sendStoryReaction('❤️')" style="background:none;border:none;font-size:17px;cursor:pointer;padding:0 2px;">❤️</button>
+                    <button type="button" onclick="sendStoryReaction('😂')" style="background:none;border:none;font-size:17px;cursor:pointer;padding:0 2px;">😂</button>
+                    <button type="button" onclick="sendStoryReaction('😮')" style="background:none;border:none;font-size:17px;cursor:pointer;padding:0 2px;">😮</button>
+                    <button type="button" onclick="sendStoryReaction('😢')" style="background:none;border:none;font-size:17px;cursor:pointer;padding:0 2px;">😢</button>
+                    <button type="button" onclick="sendStoryReaction('😡')" style="background:none;border:none;font-size:17px;cursor:pointer;padding:0 2px;">😡</button>
+                </div>
+
+                <form onsubmit="sendStoryMessage(event)" style="display: flex; align-items: center; flex: 1; background: rgba(32,34,42,0.92); border: 1px solid #3a3d4a; border-radius: 22px; padding: 3px 6px 3px 12px; min-width: 0;">
+                    <input type="text" id="sv-msg-input" placeholder="Gửi tin nhắn..." style="flex: 1; min-width: 0; background: transparent; border: none; color: #fff; font-size: 13px; outline: none; padding: 6px 4px;">
+                    <button type="submit" style="background: rgba(255,255,255,0.12); border: none; color: #7aa2ff; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;" title="Gửi tin nhắn">➤</button>
+                </form>
+            </div>
+            <div id="sv-feedback" style="text-align: center; font-size: 11px; color: #00ff00; margin-top: 6px; min-height: 14px;"></div>
+        </div>
+    </div>
+
     <script>
+        const STORY_VIEWER_LIST = ${storyViewerDataJson};
+        let currentStoryIndex = -1;
+
+        function openStoryViewer(idx) {
+            if (!Array.isArray(STORY_VIEWER_LIST) || idx < 0 || idx >= STORY_VIEWER_LIST.length) return;
+            currentStoryIndex = idx;
+            const item = STORY_VIEWER_LIST[idx];
+
+            document.getElementById('sv-avatar').src = item.avatar || '';
+            document.getElementById('sv-name').innerText = item.name || 'Thành viên';
+            document.getElementById('sv-time').innerText = item.createdAt || 'Vừa xong';
+            document.getElementById('sv-image').src = item.imageUrl || '';
+            document.getElementById('sv-feedback').innerText = '';
+            document.getElementById('sv-msg-input').value = '';
+
+            const roleBadge = document.getElementById('sv-role-badge');
+            if (item.role && item.role !== 'Thành Viên') {
+                roleBadge.innerText = item.role;
+                roleBadge.style.display = 'inline-block';
+            } else {
+                roleBadge.style.display = 'none';
+            }
+
+            const capEl = document.getElementById('sv-caption');
+            if (item.caption && item.caption.trim() !== '') {
+                capEl.innerText = item.caption;
+                capEl.style.display = 'block';
+            } else {
+                capEl.style.display = 'none';
+            }
+
+            const delBtn = document.getElementById('sv-delete-btn');
+            delBtn.style.display = item.canDelete ? 'flex' : 'none';
+
+            document.getElementById('story-viewer-modal').style.display = 'flex';
+        }
+
+        function closeStoryViewer() {
+            document.getElementById('story-viewer-modal').style.display = 'none';
+            currentStoryIndex = -1;
+        }
+
+        function handleStoryBackdropClick(e) {
+            if (e.target && e.target.id === 'story-viewer-modal') {
+                closeStoryViewer();
+            }
+        }
+
+        function prevStory() {
+            if (!STORY_VIEWER_LIST.length) return;
+            const nextIdx = currentStoryIndex > 0 ? currentStoryIndex - 1 : STORY_VIEWER_LIST.length - 1;
+            openStoryViewer(nextIdx);
+        }
+
+        function nextStory() {
+            if (!STORY_VIEWER_LIST.length) return;
+            const nextIdx = currentStoryIndex < STORY_VIEWER_LIST.length - 1 ? currentStoryIndex + 1 : 0;
+            openStoryViewer(nextIdx);
+        }
+
+        function sendStoryReaction(emoji) {
+            const item = STORY_VIEWER_LIST[currentStoryIndex];
+            if (!item) return;
+            const fb = document.getElementById('sv-feedback');
+            fb.innerText = 'Đã thả ' + emoji + ' cho Story của ' + item.name;
+        }
+
+        function sendStoryMessage(e) {
+            e.preventDefault();
+            const item = STORY_VIEWER_LIST[currentStoryIndex];
+            const input = document.getElementById('sv-msg-input');
+            const text = (input.value || '').trim();
+            if (!item || !text) return;
+
+            if (item.userId) {
+                window.location.href = '/mail/chat?user=' + encodeURIComponent(item.userId) + '&msg=' + encodeURIComponent('[Story] ' + text);
+            } else {
+                document.getElementById('sv-feedback').innerText = 'Đã chuẩn bị tin nhắn: ' + text;
+                input.value = '';
+            }
+        }
+
+        async function deleteCurrentStory() {
+            const item = STORY_VIEWER_LIST[currentStoryIndex];
+            if (!item || !item.id) return;
+            if (!confirm('Xóa Story này?')) return;
+
+            const formData = new FormData();
+            formData.append('action', 'delete_story');
+            formData.append('story_id', item.id);
+
+            try {
+                await fetch(window.location.href, {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    body: formData
+                });
+                window.location.reload();
+            } catch (e) {
+                window.location.reload();
+            }
+        }
+
         function openStoryModal() { document.getElementById('story-modal').style.display = 'flex'; }
         function closeStoryModal() { document.getElementById('story-modal').style.display = 'none'; }
 
@@ -438,7 +624,7 @@ export async function handleFeed(request, env, user, renderLayout) {
             const file = fileInput.files[0];
             const statusId = targetInputSelector.includes('post') ? 'post-compress-status' : 'story-compress-status';
             const statusEl = document.getElementById(statusId);
-            
+
             if (!file) return;
             statusEl.innerText = "⏳ Đang nén: " + file.name;
 
