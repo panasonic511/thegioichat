@@ -1,4 +1,4 @@
-Export async function handleAdminDashboard(request, env, user, renderLayout) {
+export async function handleAdminDashboard(request, env, user, renderLayout) {
     if (!user || (user.role !== 'Chủ Wap' && user.role !== 'Admin' && user.role !== 'Mod')) {
         return new Response("Truy cập bị từ chối! Bạn không có quyền quản trị viên.", { status: 403 });
     }
