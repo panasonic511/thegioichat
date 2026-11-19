@@ -1,5 +1,14 @@
 import { handleLogin } from './auth.js';
 
+async function safeCount(db, sql, params = []) {
+    try {
+        const row = await db.prepare(sql).bind(...params).first();
+        return { ok: true, count: Number(row?.total ?? 0) };
+    } catch (e) {
+        return { ok: false, count: 0 };
+    }
+}
+
 export async function handleIndex(request, env, user, renderLayout) {
     if (!user) {
         if (request.method === 'POST') return await handleLogin(request, env);
@@ -46,6 +55,36 @@ export async function handleIndex(request, env, user, renderLayout) {
         const rUsers = await env.DB.prepare("SELECT id, display_name, role, level, name_color, name_glow, name_border, name_border_glow, border_color, avatar_glow, avatar FROM users ORDER BY id DESC LIMIT 5").all();
         recentUsers = rUsers.results || [];
     } catch (e) {}
+
+    // Đếm số Bữa tiệc thật từ D1 (ưu tiên bảng `parties`, fallback sang `feeds` nếu chưa có bảng `parties`)
+    const nowSec = Math.floor(Date.now() / 1000);
+    let partyCount = 0;
+    const partyTable = await safeCount(
+        env.DB,
+        "SELECT COUNT(*) as total FROM parties WHERE (status IS NULL OR status IN ('active', 'open', 'live')) AND (expires_at IS NULL OR expires_at > ?)",
+        [nowSec]
+    );
+    if (partyTable.ok) {
+        partyCount = partyTable.count;
+    } else {
+        partyCount = totalFeeds;
+    }
+
+    // Đếm số Khu giải trí thật từ D1 (ưu tiên bảng `entertainment_zones`, sau đó `games`)
+    let entertainmentCount = 0;
+    const zoneTable = await safeCount(
+        env.DB,
+        "SELECT COUNT(*) as total FROM entertainment_zones WHERE (is_active IS NULL OR is_active = 1)"
+    );
+    if (zoneTable.ok) {
+        entertainmentCount = zoneTable.count;
+    } else {
+        const gameTable = await safeCount(
+            env.DB,
+            "SELECT COUNT(*) as total FROM games WHERE (is_active IS NULL OR is_active = 1)"
+        );
+        entertainmentCount = gameTable.ok ? gameTable.count : 0;
+    }
 
     function safeRenderUser(u) {
         const safe = new Proxy(u || {}, {
@@ -130,7 +169,7 @@ export async function handleIndex(request, env, user, renderLayout) {
         <div class="box-title">🟢 Phòng chát</div>
         <div class="box-content" style="padding: 10px;">
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                <a href="/users/feed" class="btn" style="text-align: left; padding: 10px; background: #141414; border: 1px solid #333; font-size: 14px;">🎉 Bữa tiệc (1)</a>
+                <a href="/users/feed" class="btn" style="text-align: left; padding: 10px; background: #141414; border: 1px solid #333; font-size: 14px;">🎉 Bữa tiệc (${partyCount})</a>
                 <a href="/game" class="btn" style="text-align: left; padding: 10px; background: #141414; border: 1px solid #333; font-size: 14px;">🎮 Trò chơi (0)</a>
             </div>
         </div>
@@ -184,7 +223,7 @@ export async function handleIndex(request, env, user, renderLayout) {
                         <span>⚙️</span> Cài đặt
                     </a>
                     <a href="/game" style="background: #121212; border: 1px solid #333; padding: 8px 10px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff66cc; text-decoration: none;">
-                        <span>🎮</span> Khu giải trí [29]
+                        <span>🎮</span> Khu giải trí [${entertainmentCount}]
                     </a>
                 </div>
             </div>
