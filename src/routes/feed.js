@@ -58,6 +58,7 @@ export async function handleFeed(request, env, user, renderLayout) {
 
         try { await env.DB.prepare("ALTER TABLE stories ADD COLUMN image_url TEXT").run(); } catch (e) {}
         try { await env.DB.prepare("ALTER TABLE stories ADD COLUMN media_url TEXT").run(); } catch (e) {}
+        try { await env.DB.prepare("ALTER TABLE stories ADD COLUMN media_type TEXT DEFAULT 'image'").run(); } catch (e) {}
 
         await env.DB.prepare(`
             CREATE TABLE IF NOT EXISTS follows (
@@ -106,13 +107,14 @@ export async function handleFeed(request, env, user, renderLayout) {
                     ).bind(postId, user.id, commentText.trim()).run();
                 }
             } else if (action === 'create_story') {
-                const imageUrl = formData.get('image_url');
-                const caption = formData.get('caption');
-                if (imageUrl && imageUrl.trim() !== '') {
-                    const cleanUrl = imageUrl.trim();
+                const mediaUrl = formData.get('image_url') || formData.get('media_url');
+                const rawType = String(formData.get('media_type') || 'image').toLowerCase();
+                const mediaType = rawType === 'video' ? 'video' : 'image';
+                if (mediaUrl && mediaUrl.trim() !== '') {
+                    const cleanUrl = mediaUrl.trim();
                     await env.DB.prepare(
-                        "INSERT INTO stories (user_id, image_url, media_url, caption, created_at) VALUES (?, ?, ?, ?, datetime('now'))"
-                    ).bind(user.id, cleanUrl, cleanUrl, caption || '').run();
+                        "INSERT INTO stories (user_id, image_url, media_url, media_type, caption, created_at) VALUES (?, ?, ?, ?, '', datetime('now'))"
+                    ).bind(user.id, cleanUrl, cleanUrl, mediaType).run();
                 }
             } else if (action === 'delete_story') {
                 const storyId = formData.get('story_id');
@@ -162,7 +164,8 @@ export async function handleFeed(request, env, user, renderLayout) {
         const isManager = (user.role && user.role !== 'Thành Viên');
 
         const viewerItems = stories.map((s, idx) => {
-            const mediaSrc = s.image_url || s.media_url || '';
+            const mediaSrc = s.media_url || s.image_url || '';
+            const detectedType = (s.media_type === 'video' || /^data:video\//i.test(mediaSrc) || /\.(mp4|webm|mov)(\?|$)/i.test(mediaSrc)) ? 'video' : 'image';
             const sName = s.display_name || s.username || 'Thành viên';
             const sAvatar = s.avatar || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='50' height='50'><rect width='50' height='50' fill='%23333'/></svg>";
             return {
@@ -171,8 +174,8 @@ export async function handleFeed(request, env, user, renderLayout) {
                 userId: s.user_id || 0,
                 name: sName,
                 avatar: sAvatar,
-                imageUrl: mediaSrc,
-                caption: s.caption || '',
+                mediaUrl: mediaSrc,
+                mediaType: detectedType,
                 createdAt: s.created_at || 'Vừa xong',
                 role: s.role || 'Thành Viên',
                 canDelete: Boolean(isManager || (s.user_id && s.user_id === user.id))
@@ -189,13 +192,20 @@ export async function handleFeed(request, env, user, renderLayout) {
         `;
 
         stories.forEach((s, idx) => {
-            const mediaSrc = s.image_url || s.media_url || '';
+            const mediaSrc = s.media_url || s.image_url || '';
+            const isVid = (s.media_type === 'video' || /^data:video\//i.test(mediaSrc) || /\.(mp4|webm|mov)(\?|$)/i.test(mediaSrc));
             const sName = s.display_name || s.username || 'Thành viên';
             const sAvatar = s.avatar || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='50' height='50'><rect width='50' height='50' fill='%23333'/></svg>";
+            const thumbContent = isVid
+                ? `<video src="${escapeAttr(mediaSrc)}" muted playsinline preload="metadata" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;"></video>`
+                : '';
+            const bgStyle = !isVid && mediaSrc ? `background: url('${escapeAttr(mediaSrc)}') center/cover no-repeat;` : 'background: #141414;';
+
             storiesHtml += `
-                <div onclick="openStoryViewer(${idx})" style="min-width: 68px; height: 110px; background: url('${escapeAttr(mediaSrc)}') center/cover no-repeat; border-radius: 8px; position: relative; border: 1px solid #444; flex-shrink: 0; overflow: hidden; padding: 4px; display: flex; flex-direction: column; justify-content: space-between; cursor: pointer;">
-                    <img src="${escapeAttr(sAvatar)}" style="width: 22px; height: 22px; border-radius: 50%; border: 1px solid #00ff00; object-fit: cover;">
-                    <div style="font-size: 8px; color: #fff; background: rgba(0,0,0,0.65); padding: 2px; border-radius: 3px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeAttr(sName)}</div>
+                <div onclick="openStoryViewer(${idx})" style="min-width: 68px; height: 110px; ${bgStyle} border-radius: 8px; position: relative; border: 1px solid #444; flex-shrink: 0; overflow: hidden; padding: 4px; display: flex; flex-direction: column; justify-content: space-between; cursor: pointer;">
+                    ${thumbContent}
+                    <img src="${escapeAttr(sAvatar)}" style="position:relative;z-index:2;width: 22px; height: 22px; border-radius: 50%; border: 1px solid #00ff00; object-fit: cover;">
+                    <div style="position:relative;z-index:2;font-size: 8px; color: #fff; background: rgba(0,0,0,0.65); padding: 2px; border-radius: 3px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${isVid ? '🎬 ' : ''}${escapeAttr(sName)}</div>
                 </div>
             `;
         });
@@ -390,7 +400,7 @@ export async function handleFeed(request, env, user, renderLayout) {
     const trendingColor = (tab === 'trending') ? '#00ff00' : '#aaa';
     const followingColor = (tab === 'following') ? '#00ff00' : '#aaa';
 
-    // 6. Giao diện hoàn chỉnh + Trình xem Story toàn màn hình
+    // 6. Giao diện hoàn chỉnh + Đăng Story Ảnh/Video (tối đa 30s, cắt nếu vượt 30s) + Xem Story toàn màn hình
     const content = `
     <div class="box">
         <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
@@ -424,29 +434,50 @@ export async function handleFeed(request, env, user, renderLayout) {
         </div>
     </div>
 
-    <!-- Popup Modal Đăng Story -->
+    <!-- Popup Modal Đăng Story (Ảnh hoặc Video tối đa 30s) -->
     <div id="story-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.88); z-index: 999; justify-content: center; align-items: center; padding: 10px; box-sizing: border-box;">
-        <div style="background: #111; border: 1px solid #444; width: 100%; max-width: 350px; padding: 12px; box-sizing: border-box; border-radius: 6px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 6px; margin-bottom: 8px;">
-                <b style="color: #00ff00; font-size: 12px;">📸 Đăng Story mới</b>
+        <div style="background: #111; border: 1px solid #444; width: 100%; max-width: 360px; padding: 12px; box-sizing: border-box; border-radius: 6px; max-height: 92vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 6px; margin-bottom: 10px;">
+                <b style="color: #00ff00; font-size: 12px;">📸 Đăng Story mới (Ảnh / Video ≤ 30s)</b>
                 <button type="button" onclick="closeStoryModal()" style="background:none; border:none; color:#ff5555; font-weight:bold; cursor:pointer;">✕</button>
             </div>
-            <form method="POST">
+            <form method="POST" onsubmit="return validateStorySubmit(event)">
                 <input type="hidden" name="action" value="create_story">
+                <input type="hidden" id="story-image-val" name="image_url">
+                <input type="hidden" id="story-media-type-val" name="media_type" value="image">
 
-                <label style="color: #ccc; font-size: 10px; display: block; margin-bottom: 2px;">Chọn hình ảnh Story:</label>
-                <div style="margin-bottom: 6px; display: flex; align-items: center; gap: 8px;">
-                    <label style="display: inline-flex; align-items: center; gap: 6px; background: #1a1a1a; border: 1px solid #444; color: #00ff00; padding: 5px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">
-                        📷 Chọn ảnh Story
-                        <input type="file" accept="image/*" onchange="compressAndSetImage(this, '#story-image-val')" style="display: none;">
+                <label style="color: #ccc; font-size: 11px; display: block; margin-bottom: 6px;">Chọn ảnh hoặc video Story (video tối đa 30 giây):</label>
+                <div style="margin-bottom: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <label style="display: inline-flex; align-items: center; gap: 6px; background: #1a1a1a; border: 1px solid #444; color: #00ff00; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">
+                        🎬 Chọn ảnh hoặc video
+                        <input type="file" id="story-file-input" accept="image/*,video/*" onchange="handleStoryMediaSelect(this)" style="display: none;">
                     </label>
-                    <input type="hidden" id="story-image-val" name="image_url" required>
                     <div id="story-compress-status" style="font-size: 10px; color: #aaa;"></div>
                 </div>
 
-                <label style="color: #ccc; font-size: 10px; display: block; margin-bottom: 2px;">Chú thích (Caption):</label>
-                <input type="text" name="caption" placeholder="Khoảnh khắc hôm nay..." style="width: 100%; background: #000; color: #fff; border: 1px solid #444; padding: 6px; box-sizing: border-box; margin-bottom: 8px; font-size: 11px;">
-                <button type="submit" class="btn" style="width: 100%; background: #0055ff; color: #fff; padding: 6px; font-size: 11px; border: none; border-radius: 3px; cursor: pointer;">Đăng Story</button>
+                <!-- Khung cắt video khi video dài hơn 30 giây -->
+                <div id="video-trim-panel" style="display: none; background: #161006; border: 1px solid #ff9900; border-radius: 5px; padding: 8px; margin-bottom: 10px; font-size: 11px;">
+                    <div style="color: #ffcc00; font-weight: bold; margin-bottom: 6px;">
+                        ✂️ Video dài hơn 30 giây (<span id="vt-total-sec">0</span>s) — hãy cắt còn tối đa 30s:
+                    </div>
+                    <video id="vt-preview-video" controls playsinline style="width: 100%; max-height: 180px; background: #000; border-radius: 4px; margin-bottom: 8px; display: block;"></video>
+
+                    <div style="margin-bottom: 6px; color: #ddd;">
+                        Bắt đầu từ giây thứ: <b id="vt-start-label" style="color:#00ff00;">0.0s</b>
+                        <input type="range" id="vt-start-range" min="0" max="0" step="0.5" value="0" oninput="updateTrimRange()" style="width: 100%; margin-top: 4px;">
+                    </div>
+
+                    <div style="margin-bottom: 8px; color: #ddd;">
+                        Độ dài đoạn cắt (tối đa 30s): <b id="vt-dur-label" style="color:#00ff00;">30.0s</b>
+                        <input type="range" id="vt-dur-range" min="1" max="30" step="0.5" value="30" oninput="updateTrimRange()" style="width: 100%; margin-top: 4px;">
+                    </div>
+
+                    <button type="button" id="vt-cut-btn" onclick="trimVideoToStory()" style="width: 100%; background: #ff8800; color: #000; font-weight: bold; border: none; padding: 7px 10px; border-radius: 4px; font-size: 11px; cursor: pointer;">
+                        ✂️ Cắt video ngắn hơn (≤ 30s)
+                    </button>
+                </div>
+
+                <button type="submit" id="story-submit-btn" class="btn" style="width: 100%; background: #0055ff; color: #fff; padding: 8px; font-size: 12px; border: none; border-radius: 4px; cursor: pointer;">Đăng Story</button>
             </form>
         </div>
     </div>
@@ -473,13 +504,12 @@ export async function handleFeed(request, env, user, renderLayout) {
             </div>
         </div>
 
-        <!-- Vùng ảnh chính toàn màn hình + nút chuyển Story trái/phải -->
+        <!-- Vùng ảnh/video chính toàn màn hình + nút chuyển Story trái/phải -->
         <div style="position: relative; flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 8px 0;">
             <button type="button" onclick="prevStory()" style="position: absolute; left: 8px; top: 50%; transform: translateY(-50%); z-index: 3; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.2); color: #fff; width: 32px; height: 48px; border-radius: 8px; font-size: 18px; cursor: pointer;">‹</button>
-            <img id="sv-image" src="" alt="Story" style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; display: block;">
+            <img id="sv-image" src="" alt="Story" style="display: none; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain;">
+            <video id="sv-video" controls autoplay playsinline loop style="display: none; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain;"></video>
             <button type="button" onclick="nextStory()" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); z-index: 3; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.2); color: #fff; width: 32px; height: 48px; border-radius: 8px; font-size: 18px; cursor: pointer;">›</button>
-
-            <div id="sv-caption" style="display: none; position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); max-width: 90%; background: rgba(0,0,0,0.72); color: #fff; padding: 6px 12px; border-radius: 12px; font-size: 12px; text-align: center; z-index: 3;"></div>
         </div>
 
         <!-- Thanh cảm xúc nhanh + gửi tin nhắn dưới cùng -->
@@ -505,7 +535,11 @@ export async function handleFeed(request, env, user, renderLayout) {
 
     <script>
         const STORY_VIEWER_LIST = ${storyViewerDataJson};
+        const MAX_STORY_VIDEO_SEC = 30;
         let currentStoryIndex = -1;
+        let pendingVideoFileUrl = '';
+        let pendingVideoDuration = 0;
+        let videoNeedsTrim = false;
 
         function openStoryViewer(idx) {
             if (!Array.isArray(STORY_VIEWER_LIST) || idx < 0 || idx >= STORY_VIEWER_LIST.length) return;
@@ -515,7 +549,6 @@ export async function handleFeed(request, env, user, renderLayout) {
             document.getElementById('sv-avatar').src = item.avatar || '';
             document.getElementById('sv-name').innerText = item.name || 'Thành viên';
             document.getElementById('sv-time').innerText = item.createdAt || 'Vừa xong';
-            document.getElementById('sv-image').src = item.imageUrl || '';
             document.getElementById('sv-feedback').innerText = '';
             document.getElementById('sv-msg-input').value = '';
 
@@ -527,12 +560,20 @@ export async function handleFeed(request, env, user, renderLayout) {
                 roleBadge.style.display = 'none';
             }
 
-            const capEl = document.getElementById('sv-caption');
-            if (item.caption && item.caption.trim() !== '') {
-                capEl.innerText = item.caption;
-                capEl.style.display = 'block';
+            const imgEl = document.getElementById('sv-image');
+            const vidEl = document.getElementById('sv-video');
+            if (item.mediaType === 'video') {
+                imgEl.style.display = 'none';
+                imgEl.src = '';
+                vidEl.src = item.mediaUrl || '';
+                vidEl.style.display = 'block';
+                vidEl.play().catch(() => {});
             } else {
-                capEl.style.display = 'none';
+                vidEl.pause();
+                vidEl.style.display = 'none';
+                vidEl.src = '';
+                imgEl.src = item.mediaUrl || '';
+                imgEl.style.display = 'block';
             }
 
             const delBtn = document.getElementById('sv-delete-btn');
@@ -542,6 +583,11 @@ export async function handleFeed(request, env, user, renderLayout) {
         }
 
         function closeStoryViewer() {
+            const vidEl = document.getElementById('sv-video');
+            if (vidEl) {
+                vidEl.pause();
+                vidEl.src = '';
+            }
             document.getElementById('story-viewer-modal').style.display = 'none';
             currentStoryIndex = -1;
         }
@@ -607,8 +653,221 @@ export async function handleFeed(request, env, user, renderLayout) {
             }
         }
 
-        function openStoryModal() { document.getElementById('story-modal').style.display = 'flex'; }
-        function closeStoryModal() { document.getElementById('story-modal').style.display = 'none'; }
+        function openStoryModal() {
+            resetStoryForm();
+            document.getElementById('story-modal').style.display = 'flex';
+        }
+
+        function closeStoryModal() {
+            const pv = document.getElementById('vt-preview-video');
+            if (pv) pv.pause();
+            document.getElementById('story-modal').style.display = 'none';
+        }
+
+        function resetStoryForm() {
+            pendingVideoFileUrl = '';
+            pendingVideoDuration = 0;
+            videoNeedsTrim = false;
+            document.getElementById('story-image-val').value = '';
+            document.getElementById('story-media-type-val').value = 'image';
+            document.getElementById('story-compress-status').innerText = '';
+            document.getElementById('story-compress-status').style.color = '#aaa';
+            document.getElementById('video-trim-panel').style.display = 'none';
+            const fi = document.getElementById('story-file-input');
+            if (fi) fi.value = '';
+        }
+
+        function handleStoryMediaSelect(fileInput) {
+            const file = fileInput.files && fileInput.files[0];
+            const statusEl = document.getElementById('story-compress-status');
+            const trimPanel = document.getElementById('video-trim-panel');
+            if (!file) return;
+
+            if (file.type && file.type.startsWith('video/')) {
+                document.getElementById('story-media-type-val').value = 'video';
+                document.getElementById('story-image-val').value = '';
+                statusEl.innerText = '⏳ Đang kiểm tra độ dài video...';
+                statusEl.style.color = '#ffcc00';
+
+                const objUrl = URL.createObjectURL(file);
+                const probeVideo = document.createElement('video');
+                probeVideo.preload = 'metadata';
+                probeVideo.onloadedmetadata = function() {
+                    const dur = Number(probeVideo.duration || 0);
+                    pendingVideoDuration = dur;
+
+                    const reader = new FileReader();
+                    reader.onload = function(ev) {
+                        pendingVideoFileUrl = ev.target.result || '';
+                        URL.revokeObjectURL(objUrl);
+
+                        if (dur > MAX_STORY_VIDEO_SEC) {
+                            videoNeedsTrim = true;
+                            trimPanel.style.display = 'block';
+                            statusEl.innerText = '⚠️ Video dài ' + dur.toFixed(1) + 's (> 30s). Hãy cắt ngắn hơn!';
+                            statusEl.style.color = '#ff9900';
+
+                            const pv = document.getElementById('vt-preview-video');
+                            pv.src = pendingVideoFileUrl;
+
+                            const maxStart = Math.max(0, dur - 1);
+                            const startRange = document.getElementById('vt-start-range');
+                            startRange.max = maxStart.toFixed(1);
+                            startRange.value = '0';
+
+                            const durRange = document.getElementById('vt-dur-range');
+                            const initDur = Math.min(MAX_STORY_VIDEO_SEC, Math.max(1, dur));
+                            durRange.max = Math.min(MAX_STORY_VIDEO_SEC, Math.max(1, dur)).toFixed(1);
+                            durRange.value = initDur.toFixed(1);
+                            updateTrimRange();
+                        } else {
+                            videoNeedsTrim = false;
+                            trimPanel.style.display = 'none';
+                            document.getElementById('story-image-val').value = pendingVideoFileUrl;
+                            statusEl.innerText = '✅ Video hợp lệ (' + dur.toFixed(1) + 's ≤ 30s)';
+                            statusEl.style.color = '#00ff00';
+                        }
+                    };
+                    reader.readAsDataURL(file);
+                };
+                probeVideo.src = objUrl;
+            } else {
+                videoNeedsTrim = false;
+                trimPanel.style.display = 'none';
+                document.getElementById('story-media-type-val').value = 'image';
+                compressAndSetImage(fileInput, '#story-image-val');
+            }
+        }
+
+        function updateTrimRange() {
+            const startVal = parseFloat(document.getElementById('vt-start-range').value || '0');
+            const maxAllowedDur = Math.min(MAX_STORY_VIDEO_SEC, Math.max(1, pendingVideoDuration - startVal));
+            const durRange = document.getElementById('vt-dur-range');
+            durRange.max = maxAllowedDur.toFixed(1);
+            let durVal = parseFloat(durRange.value || String(maxAllowedDur));
+            if (durVal > maxAllowedDur) {
+                durVal = maxAllowedDur;
+                durRange.value = durVal.toFixed(1);
+            }
+
+            document.getElementById('vt-start-label').innerText = startVal.toFixed(1) + 's';
+            document.getElementById('vt-dur-label').innerText = durVal.toFixed(1) + 's';
+
+            const pv = document.getElementById('vt-preview-video');
+            if (pv && !isNaN(startVal)) {
+                pv.currentTime = startVal;
+            }
+        }
+
+        function trimVideoToStory() {
+            const statusEl = document.getElementById('story-compress-status');
+            const cutBtn = document.getElementById('vt-cut-btn');
+            if (!pendingVideoFileUrl) return;
+
+            const startSec = parseFloat(document.getElementById('vt-start-range').value || '0');
+            const cutSec = Math.min(MAX_STORY_VIDEO_SEC, parseFloat(document.getElementById('vt-dur-range').value || '30'));
+
+            cutBtn.disabled = true;
+            cutBtn.innerText = '⏳ Đang cắt video (' + cutSec.toFixed(1) + 's)...';
+            statusEl.innerText = '⏳ Đang cắt đoạn video ' + cutSec.toFixed(1) + 's...';
+            statusEl.style.color = '#ffcc00';
+
+            const workVideo = document.createElement('video');
+            workVideo.src = pendingVideoFileUrl;
+            workVideo.muted = true;
+            workVideo.playsInline = true;
+
+            workVideo.onloadedmetadata = function() {
+                workVideo.currentTime = Math.min(startSec, Math.max(0, (workVideo.duration || 0) - 0.5));
+            };
+
+            workVideo.onseeked = function() {
+                const w = Math.min(workVideo.videoWidth || 480, 480);
+                const h = Math.min(workVideo.videoHeight || 640, 640);
+                const canvas = document.createElement('canvas');
+                canvas.width = w || 360;
+                canvas.height = h || 480;
+                const ctx = canvas.getContext('2d');
+
+                const stream = canvas.captureStream ? canvas.captureStream(24) : null;
+                if (!stream || typeof MediaRecorder === 'undefined') {
+                    cutBtn.disabled = false;
+                    cutBtn.innerText = '✂️ Cắt video ngắn hơn (≤ 30s)';
+                    statusEl.innerText = '❌ Trình duyệt không hỗ trợ cắt video trực tiếp, hãy chọn video ≤ 30s.';
+                    statusEl.style.color = '#ff5555';
+                    return;
+                }
+
+                const mimeOptions = ['video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
+                let chosenMime = '';
+                for (const m of mimeOptions) {
+                    if (MediaRecorder.isTypeSupported(m)) {
+                        chosenMime = m;
+                        break;
+                    }
+                }
+
+                const recorder = chosenMime ? new MediaRecorder(stream, { mimeType: chosenMime }) : new MediaRecorder(stream);
+                const chunks = [];
+                recorder.ondataavailable = function(ev) {
+                    if (ev.data && ev.data.size > 0) chunks.push(ev.data);
+                };
+
+                let rafId = null;
+                const startTimeMs = performance.now();
+                const targetMs = cutSec * 1000;
+
+                function drawFrame() {
+                    ctx.drawImage(workVideo, 0, 0, canvas.width, canvas.height);
+                    if (performance.now() - startTimeMs < targetMs && !workVideo.ended) {
+                        rafId = requestAnimationFrame(drawFrame);
+                    } else {
+                        if (rafId) cancelAnimationFrame(rafId);
+                        workVideo.pause();
+                        if (recorder.state !== 'inactive') recorder.stop();
+                    }
+                }
+
+                recorder.onstop = function() {
+                    const blob = new Blob(chunks, { type: chosenMime || 'video/webm' });
+                    const r = new FileReader();
+                    r.onload = function(ev) {
+                        document.getElementById('story-image-val').value = ev.target.result || '';
+                        videoNeedsTrim = false;
+                        cutBtn.disabled = false;
+                        cutBtn.innerText = '✂️ Cắt lại đoạn khác';
+                        statusEl.innerText = '✅ Đã cắt video còn ' + cutSec.toFixed(1) + 's! Có thể đăng Story.';
+                        statusEl.style.color = '#00ff00';
+                    };
+                    r.readAsDataURL(blob);
+                };
+
+                recorder.start();
+                workVideo.play().catch(() => {});
+                drawFrame();
+            };
+        }
+
+        function validateStorySubmit(e) {
+            const val = document.getElementById('story-image-val').value.trim();
+            const type = document.getElementById('story-media-type-val').value;
+            const statusEl = document.getElementById('story-compress-status');
+
+            if (type === 'video' && (videoNeedsTrim || pendingVideoDuration > MAX_STORY_VIDEO_SEC) && !val) {
+                e.preventDefault();
+                statusEl.innerText = '⚠️ Video dài hơn 30 giây! Vui lòng bấm "Cắt video ngắn hơn" trước khi đăng.';
+                statusEl.style.color = '#ff5555';
+                return false;
+            }
+
+            if (!val) {
+                e.preventDefault();
+                statusEl.innerText = '⚠️ Vui lòng chọn ảnh hoặc video trước khi đăng!';
+                statusEl.style.color = '#ff5555';
+                return false;
+            }
+            return true;
+        }
 
         function toggleCommentBox(postId) {
             const box = document.getElementById('comment-box-' + postId);
