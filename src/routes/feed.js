@@ -780,7 +780,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 <input type="hidden" id="story-media-type-val" name="media_type" value="image">
                 <input type="hidden" id="story-duration-val" name="duration_sec" value="0">
 
-                <label style="color: #ccc; font-size: 11px; display: block; margin-bottom: 6px;">Tự ép video ~2MB & giữ tiếng để đăng nhanh:</label>
+                <label style="color: #ccc; font-size: 11px; display: block; margin-bottom: 6px;">Giữ nguyên âm thanh gốc của video khi đăng Story:</label>
                 <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;">
                     <label style="display: inline-flex; align-items: center; gap: 6px; background: #1a1a1a; border: 1px solid #444; color: #00ff00; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; flex-shrink: 0;">
                         🎬 Chọn ảnh hoặc video
@@ -847,7 +847,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
         const STORY_MEDIA_CACHE = {};
         const CHUNK_SIZE_BYTES = 2097152;
         const MERGE_BATCH_SIZE = 6;
-        const TARGET_VIDEO_BYTES = 2 * 1024 * 1024; // Mục tiêu ~2MB
         let currentStoryIndex = -1;
         let isSubmittingStory = false;
         let preparedStoryBlob = null;
@@ -859,11 +858,11 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 : Math.max(1, Math.round(bytes / 1024)) + 'KB';
         }
 
-        function setStoryReadyText(blobOrFile, isCompressed) {
+        function setStoryReadyText(blobOrFile) {
             const statusEl = document.getElementById('story-compress-status');
             if (statusEl) {
                 const sz = blobOrFile && blobOrFile.size ? ' (' + formatKb(blobOrFile.size) + ')' : '';
-                statusEl.innerText = (isCompressed ? 'Sẵn sàng · ≤2MB · tiếng' : 'Sẵn sàng · có tiếng') + sz;
+                statusEl.innerText = 'Sẵn sàng · giữ nguyên tiếng' + sz;
                 statusEl.style.color = '#00ff00';
             }
         }
@@ -913,190 +912,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     resolve('');
                 }
             });
-        }
-
-        /**
-         * Nén video hướng về ~2MB + giữ tiếng (mono bitrate thấp).
-         * Tính bitrate tự động theo thời lượng để dung lượng nằm quanh ngưỡng 2MB.
-         */
-        async function compressVideoTo2MBWithAudio(file, statusEl) {
-            if (!file) return null;
-
-            // Nếu file đã <= 2MB thì giữ nguyên để không mất chất lượng & giữ nguyên tiếng gốc
-            if (file.size <= TARGET_VIDEO_BYTES) {
-                return null;
-            }
-
-            if (typeof MediaRecorder === 'undefined' || typeof document.createElement('canvas').captureStream !== 'function') {
-                return null;
-            }
-
-            const AudioCtx = window.AudioContext || window.webkitAudioContext;
-            if (!AudioCtx) return null;
-
-            const candidateMimes = [
-                'video/webm;codecs=vp8,opus',
-                'video/webm;codecs=vp9,opus',
-                'video/mp4;codecs=avc1,mp4a.40.2',
-                'video/webm'
-            ];
-            const supportedMime = candidateMimes.find(m => {
-                try { return MediaRecorder.isTypeSupported(m); } catch (e) { return false; }
-            });
-            if (!supportedMime) return null;
-
-            let objUrl = '';
-            let audioCtx = null;
-            try {
-                objUrl = URL.createObjectURL(file);
-                const video = document.createElement('video');
-                video.muted = false;
-                video.volume = 1;
-                video.playsInline = true;
-                video.preload = 'auto';
-                video.src = objUrl;
-
-                await new Promise((resolve, reject) => {
-                    const t = setTimeout(() => reject(new Error('timeout')), 3500);
-                    video.onloadedmetadata = () => { clearTimeout(t); resolve(); };
-                    video.onerror = () => { clearTimeout(t); reject(new Error('load error')); };
-                });
-
-                const durationSec = (video.duration && isFinite(video.duration) && video.duration > 0)
-                    ? video.duration
-                    : Math.max(3, (file.size * 8) / 1500000);
-
-                // Ngân sách ~1.88MB (chừa ~120KB biên an toàn cho container/header để không lố 2MB)
-                const safeBudgetBytes = Math.floor(TARGET_VIDEO_BYTES * 0.94);
-                const totalBitsPerSec = Math.floor((safeBudgetBytes * 8) / durationSec);
-
-                // Audio mono bitrate thấp (24kbps - 48kbps) để chừa dung lượng cho hình
-                const audioBps = Math.max(24000, Math.min(48000, Math.floor(totalBitsPerSec * 0.14)));
-                const videoBps = Math.max(90000, Math.min(1400000, totalBitsPerSec - audioBps));
-
-                audioCtx = new AudioCtx();
-                if (audioCtx.state === 'suspended') {
-                    await audioCtx.resume().catch(() => {});
-                }
-                const sourceNode = audioCtx.createMediaElementSource(video);
-                const destNode = audioCtx.createMediaStreamDestination();
-                try {
-                    destNode.channelCount = 1;
-                    destNode.channelCountMode = 'explicit';
-                } catch (e) {}
-                const monoMerger = audioCtx.createChannelMerger(1);
-                sourceNode.connect(monoMerger);
-                monoMerger.connect(destNode);
-
-                // Tự hạ độ phân giải khi bitrate thấp hoặc video dài để đỡ vỡ hạt/nặng file
-                const maxDim = videoBps < 260000 ? 360 : (videoBps < 550000 ? 420 : 480);
-                const fps = videoBps < 260000 ? 15 : 18;
-
-                let w = video.videoWidth || 360;
-                let h = video.videoHeight || 640;
-                if (w > maxDim || h > maxDim) {
-                    if (w >= h) {
-                        h = Math.max(96, Math.round((h * maxDim) / w));
-                        w = maxDim;
-                    } else {
-                        w = Math.max(96, Math.round((w * maxDim) / h));
-                        h = maxDim;
-                    }
-                }
-                if (w % 2 !== 0) w -= 1;
-                if (h % 2 !== 0) h -= 1;
-
-                const canvas = document.createElement('canvas');
-                canvas.width = w;
-                canvas.height = h;
-                const ctx = canvas.getContext('2d');
-                const canvasStream = canvas.captureStream(fps);
-
-                const combinedTracks = [
-                    ...canvasStream.getVideoTracks(),
-                    ...destNode.stream.getAudioTracks()
-                ];
-                if (combinedTracks.length < 2) {
-                    try { await audioCtx.close(); } catch (e) {}
-                    try { URL.revokeObjectURL(objUrl); } catch (e) {}
-                    return null;
-                }
-
-                const combinedStream = new MediaStream(combinedTracks);
-                const chunks = [];
-                let recorder;
-                try {
-                    recorder = new MediaRecorder(combinedStream, {
-                        mimeType: supportedMime,
-                        videoBitsPerSecond: videoBps,
-                        audioBitsPerSecond: audioBps
-                    });
-                } catch (e) {
-                    recorder = new MediaRecorder(combinedStream, { mimeType: supportedMime });
-                }
-
-                recorder.ondataavailable = (ev) => {
-                    if (ev.data && ev.data.size > 0) chunks.push(ev.data);
-                };
-
-                let stopped = false;
-                let rafId = null;
-
-                const stopRecording = () => {
-                    if (stopped) return;
-                    stopped = true;
-                    if (rafId) cancelAnimationFrame(rafId);
-                    try { if (recorder.state !== 'inactive') recorder.stop(); } catch (e) {}
-                    try { video.pause(); } catch (e) {}
-                };
-
-                const maxDurationMs = Math.min(35000, durationSec * 1000 + 800);
-                const hardTimeout = setTimeout(stopRecording, maxDurationMs);
-
-                const donePromise = new Promise((resolve) => {
-                    recorder.onstop = () => {
-                        clearTimeout(hardTimeout);
-                        const outBlob = new Blob(chunks, { type: supportedMime });
-                        resolve(outBlob);
-                    };
-                });
-
-                recorder.start(300);
-                video.currentTime = 0;
-                await video.play().catch(() => {});
-
-                const drawFrame = () => {
-                    if (stopped || video.ended || video.paused) {
-                        stopRecording();
-                        return;
-                    }
-                    try {
-                        ctx.drawImage(video, 0, 0, w, h);
-                        if (statusEl && durationSec > 0) {
-                            const p = Math.min(99, Math.round((video.currentTime / durationSec) * 100));
-                            statusEl.innerText = 'Đang ép ≤2MB + tiếng ' + p + '%';
-                            statusEl.style.color = '#ffcc00';
-                        }
-                    } catch (e) {}
-                    rafId = requestAnimationFrame(drawFrame);
-                };
-
-                video.onended = stopRecording;
-                rafId = requestAnimationFrame(drawFrame);
-
-                const compressedBlob = await donePromise;
-                try { if (audioCtx) await audioCtx.close(); } catch (e) {}
-                try { URL.revokeObjectURL(objUrl); } catch (e) {}
-
-                if (compressedBlob && compressedBlob.size > 1024 && compressedBlob.size < file.size) {
-                    return compressedBlob;
-                }
-                return null;
-            } catch (e) {
-                try { if (audioCtx) await audioCtx.close(); } catch (err) {}
-                if (objUrl) { try { URL.revokeObjectURL(objUrl); } catch (err) {} }
-                return null;
-            }
         }
 
         async function fetchWithRetry(url, options, maxRetries = 5) {
@@ -1373,7 +1188,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
 
         async function handleStoryMediaSelect(fileInput) {
             const file = fileInput.files && fileInput.files[0];
-            const statusEl = document.getElementById('story-compress-status');
             if (!file) return;
 
             preparedStoryBlob = null;
@@ -1391,19 +1205,8 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     }
                 });
 
-                if (statusEl) {
-                    statusEl.innerText = 'Đang ép ≤2MB + giữ tiếng...';
-                    statusEl.style.color = '#ffcc00';
-                }
-
-                const shrunk = await compressVideoTo2MBWithAudio(file, statusEl);
-                if (shrunk) {
-                    preparedStoryBlob = shrunk;
-                    setStoryReadyText(preparedStoryBlob, true);
-                } else {
-                    preparedStoryBlob = file;
-                    setStoryReadyText(preparedStoryBlob, false);
-                }
+                preparedStoryBlob = file;
+                setStoryReadyText(preparedStoryBlob);
             } else {
                 document.getElementById('story-media-type-val').value = 'image';
                 document.getElementById('story-duration-val').value = '0';
@@ -1523,7 +1326,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     if (targetInputSelector === '#story-image-val') {
                         document.getElementById('story-thumb-val').value = compressedBase64;
                         const approxBytes = Math.round((compressedBase64.length * 3) / 4);
-                        setStoryReadyText({ size: approxBytes }, false);
+                        setStoryReadyText({ size: approxBytes });
                     } else {
                         statusEl.innerText = "✅ Đã giảm dung lượng (" + width + "x" + height + ")";
                         statusEl.style.color = "#00ff00";
