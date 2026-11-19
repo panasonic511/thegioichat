@@ -761,7 +761,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 </div>
 
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
-                    <span style="font-size: 10px; color: #888;">✨ Tự ép video <= 3MB + giữ tiếng</span>
                     <button type="submit" class="btn" style="background: #00aa00; color: #fff; padding: 6px 16px; border-radius: 4px; cursor: pointer;">Đăng bài</button>
                 </div>
             </form>
@@ -818,7 +817,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 </div>
             </div>
             <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                <button type="button" id="sv-sound-btn" onclick="toggleStorySound()" style="display: none; background: rgba(0, 255, 0, 0.16); border: 1px solid #00ff00; color: #00ff00; border-radius: 16px; padding: 0 10px; height: 32px; font-size: 11px; font-weight: bold; cursor: pointer; align-items: center; gap: 4px;">🔊 Tiếng</button>
                 <button type="button" id="sv-delete-btn" onclick="deleteCurrentStory()" style="display: none; background: rgba(255, 68, 68, 0.22); border: 1px solid #ff5555; color: #ff8888; border-radius: 50%; width: 32px; height: 32px; font-size: 13px; cursor: pointer; align-items: center; justify-content: center;" title="Xóa Story">🗑</button>
                 <button type="button" onclick="closeStoryViewer()" style="background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.25); color: #fff; border-radius: 50%; width: 32px; height: 32px; font-size: 16px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center;" title="Đóng">✕</button>
             </div>
@@ -1249,16 +1247,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 if (soundBtn) soundBtn.style.display = 'none';
                 return;
             }
-            soundBtn.style.display = 'inline-flex';
-            if (vidEl.muted) {
-                soundBtn.innerText = '🔇 Bật tiếng';
-                soundBtn.style.borderColor = '#ffcc00';
-                soundBtn.style.color = '#ffcc00';
-            } else {
-                soundBtn.innerText = '🔊 Đang bật tiếng';
-                soundBtn.style.borderColor = '#00ff00';
-                soundBtn.style.color = '#00ff00';
-            }
+          
         }
 
         function toggleStorySound() {
@@ -1493,7 +1482,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 if (isVideoFile && !val) {
                     if (!preparedStoryBlob || payloadBlob.size > MAX_STORY_BYTES) {
                         payloadBlob = await enforceUnder3MBVideo(payloadBlob || file, (ratio) => {
-                            setStoryProgress(5 + Math.round(ratio * 30), 'Đang ép video <= 3MB');
+                            setStoryProgress(5 + Math.round(ratio * 30), );
                         });
                         preparedStoryBlob = payloadBlob;
                     } else {
