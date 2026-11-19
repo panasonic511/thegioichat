@@ -69,6 +69,9 @@ export async function handleFeed(request, env, user, renderLayout) {
                 CREATE INDEX IF NOT EXISTS idx_media_assets_owner ON media_assets(owner_type, owner_id)
             `),
             env.DB.prepare(`
+                CREATE INDEX IF NOT EXISTS idx_stories_id_desc ON stories(id DESC)
+            `),
+            env.DB.prepare(`
                 CREATE TABLE IF NOT EXISTS follows (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     follower_id INTEGER,
@@ -89,6 +92,43 @@ export async function handleFeed(request, env, user, renderLayout) {
     const page = parseInt(urlObj.searchParams.get('page')) || 1;
     const limit = 10;
     const offset = (page - 1) * limit;
+
+    // Endpoint nhẹ lấy media đầy đủ của 1 Story khi người dùng mở xem toàn màn hình (giảm nặng khi load trang)
+    if (request.method === 'GET' && urlObj.searchParams.get('story_media_id')) {
+        const storyMediaId = parseInt(urlObj.searchParams.get('story_media_id'), 10);
+        if (!isNaN(storyMediaId) && storyMediaId > 0) {
+            try {
+                const row = await env.DB.prepare(`
+                    SELECT stories.id,
+                           COALESCE(ma.media_url, stories.media_url, stories.image_url) AS media_url,
+                           COALESCE(ma.thumb_url, stories.thumb_url, stories.image_url) AS thumb_url,
+                           COALESCE(ma.media_type, stories.media_type, 'image') AS media_type
+                    FROM stories
+                    LEFT JOIN media_assets ma ON ma.owner_type = 'story' AND ma.owner_id = stories.id
+                    WHERE stories.id = ?
+                    LIMIT 1
+                `).bind(storyMediaId).first();
+
+                return new Response(JSON.stringify({
+                    success: Boolean(row),
+                    id: storyMediaId,
+                    mediaUrl: row ? (row.media_url || '') : '',
+                    thumbUrl: row ? (row.thumb_url || '') : '',
+                    mediaType: row ? (row.media_type || 'image') : 'image'
+                }), {
+                    headers: {
+                        'Content-Type': 'application/json;charset=UTF-8',
+                        'Cache-Control': 'private, max-age=120'
+                    }
+                });
+            } catch (e) {
+                return new Response(JSON.stringify({ success: false, error: e.message }), {
+                    status: 500,
+                    headers: { 'Content-Type': 'application/json;charset=UTF-8' }
+                });
+            }
+        }
+    }
 
     // 2. Xử lý các yêu cầu POST
     if (request.method === 'POST') {
@@ -191,20 +231,23 @@ export async function handleFeed(request, env, user, renderLayout) {
         }
     }
 
-    // 3. Lấy danh sách Stories (kết hợp media_assets nếu có) & chuẩn bị xem toàn màn hình mượt mà
+    // 3. Lấy danh sách Stories nhẹ (chỉ lấy thumb_url cho danh sách ngang; video tải khi mở toàn màn hình)
     let storiesHtml = '';
     let storyViewerDataJson = '[]';
     try {
         const storyRes = await env.DB.prepare(`
-            SELECT stories.*,
-                   COALESCE(ma.media_url, stories.media_url, stories.image_url) AS resolved_media_url,
+            SELECT stories.id, stories.user_id, stories.created_at,
                    COALESCE(ma.thumb_url, stories.thumb_url, stories.image_url) AS resolved_thumb_url,
                    COALESCE(ma.media_type, stories.media_type, 'image') AS resolved_media_type,
+                   CASE WHEN COALESCE(ma.media_type, stories.media_type, 'image') = 'image'
+                        THEN COALESCE(ma.media_url, stories.media_url, stories.image_url)
+                        ELSE ''
+                   END AS inline_image_url,
                    users.username, users.display_name, users.avatar, users.role
             FROM stories
             LEFT JOIN media_assets ma ON ma.owner_type = 'story' AND ma.owner_id = stories.id
             LEFT JOIN users ON stories.user_id = users.id
-            ORDER BY stories.id DESC LIMIT 20
+            ORDER BY stories.id DESC LIMIT 15
         `).all();
         const stories = storyRes.results || [];
         const isManager = (user.role && user.role !== 'Thành Viên');
@@ -212,8 +255,7 @@ export async function handleFeed(request, env, user, renderLayout) {
         const fallbackVideoThumb = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='180'><rect width='120' height='180' fill='%23101820'/><text x='60' y='95' fill='%2300ff00' font-size='28' text-anchor='middle'>▶</text></svg>";
 
         const viewerItems = stories.map((s, idx) => {
-            const mediaSrc = s.resolved_media_url || s.media_url || s.image_url || '';
-            const detectedType = (s.resolved_media_type === 'video' || s.media_type === 'video' || /^data:video\//i.test(mediaSrc) || /\.(mp4|webm|mov)(\?|$)/i.test(mediaSrc)) ? 'video' : 'image';
+            const detectedType = s.resolved_media_type === 'video' ? 'video' : 'image';
             const sName = s.display_name || s.username || 'Thành viên';
             const sAvatar = s.avatar || fallbackAvatar;
             return {
@@ -222,7 +264,7 @@ export async function handleFeed(request, env, user, renderLayout) {
                 userId: s.user_id || 0,
                 name: sName,
                 avatar: sAvatar,
-                mediaUrl: mediaSrc,
+                mediaUrl: detectedType === 'image' ? (s.inline_image_url || '') : '',
                 mediaType: detectedType,
                 createdAt: s.created_at || 'Vừa xong',
                 role: s.role || 'Thành Viên',
@@ -240,9 +282,8 @@ export async function handleFeed(request, env, user, renderLayout) {
         `;
 
         stories.forEach((s, idx) => {
-            const mediaSrc = s.resolved_media_url || s.media_url || s.image_url || '';
-            const isVid = (s.resolved_media_type === 'video' || s.media_type === 'video' || /^data:video\//i.test(mediaSrc) || /\.(mp4|webm|mov)(\?|$)/i.test(mediaSrc));
-            const thumbSrc = s.resolved_thumb_url || s.thumb_url || s.image_url || (isVid ? fallbackVideoThumb : mediaSrc);
+            const isVid = s.resolved_media_type === 'video';
+            const thumbSrc = s.resolved_thumb_url || (isVid ? fallbackVideoThumb : '');
             const sName = s.display_name || s.username || 'Thành viên';
             const sAvatar = s.avatar || fallbackAvatar;
             const bgStyle = thumbSrc
@@ -599,83 +640,130 @@ export async function handleFeed(request, env, user, renderLayout) {
 
     <script>
         const STORY_VIEWER_LIST = ${storyViewerDataJson};
+        const STORY_MEDIA_CACHE = {};
         const MAX_STORY_VIDEO_SEC = 30;
+        const MAX_DIRECT_VIDEO_BYTES = 2.5 * 1024 * 1024; // 2.5MB: dùng trực tiếp không cần ghi lại tốn thời gian
         let currentStoryIndex = -1;
-        let pendingVideoFileUrl = '';
+        let pendingVideoFile = null;
+        let pendingVideoObjectUrl = '';
         let pendingVideoDuration = 0;
         let videoNeedsTrim = false;
         let isProcessingStoryMedia = false;
 
-        function extractVideoThumbnail(dataUrlOrObjUrl) {
+        function blobToDataUrl(blob) {
+            return new Promise((resolve, reject) => {
+                const r = new FileReader();
+                r.onload = () => resolve(r.result || '');
+                r.onerror = () => reject(new Error('Không thể đọc dữ liệu media.'));
+                r.readAsDataURL(blob);
+            });
+        }
+
+        function extractVideoThumbnailFromUrl(srcUrl) {
             return new Promise((resolve) => {
                 try {
                     const v = document.createElement('video');
                     v.muted = true;
                     v.playsInline = true;
-                    v.src = dataUrlOrObjUrl;
+                    v.preload = 'auto';
+                    v.src = srcUrl;
+                    let settled = false;
+                    const done = (val) => {
+                        if (!settled) {
+                            settled = true;
+                            resolve(val || '');
+                        }
+                    };
+                    const timer = setTimeout(() => done(''), 1800);
+
                     v.onloadeddata = function() {
                         try {
-                            v.currentTime = Math.min(0.2, Math.max(0, (v.duration || 1) * 0.05));
+                            v.currentTime = Math.min(0.15, Math.max(0, (v.duration || 1) * 0.05));
                         } catch (e) {
-                            resolve('');
+                            clearTimeout(timer);
+                            done('');
                         }
                     };
                     v.onseeked = function() {
+                        clearTimeout(timer);
                         try {
                             const c = document.createElement('canvas');
-                            c.width = 160;
-                            c.height = 240;
+                            c.width = 120;
+                            c.height = 180;
                             const ctx = c.getContext('2d');
                             ctx.drawImage(v, 0, 0, c.width, c.height);
-                            resolve(c.toDataURL('image/jpeg', 0.65));
+                            done(c.toDataURL('image/jpeg', 0.55));
                         } catch (e) {
-                            resolve('');
+                            done('');
                         }
                     };
-                    v.onerror = () => resolve('');
+                    v.onerror = () => {
+                        clearTimeout(timer);
+                        done('');
+                    };
                 } catch (e) {
                     resolve('');
                 }
             });
         }
 
-        function recordCompactVideoSegment(srcUrl, startSec, cutSec) {
+        function recordFastVideoTrim(srcUrl, startSec, cutSec) {
             return new Promise((resolve, reject) => {
                 const workVideo = document.createElement('video');
                 workVideo.src = srcUrl;
                 workVideo.muted = true;
                 workVideo.playsInline = true;
+                workVideo.preload = 'auto';
+
+                const safeCutSec = Math.min(MAX_STORY_VIDEO_SEC, Math.max(0.5, cutSec));
+                const timeoutMs = Math.min(22000, Math.round(safeCutSec * 1000) + 4000);
+                let finished = false;
+                let rafId = null;
+                let recorder = null;
+
+                const cleanupAndFail = (msg) => {
+                    if (finished) return;
+                    finished = true;
+                    if (rafId) cancelAnimationFrame(rafId);
+                    try { workVideo.pause(); } catch (e) {}
+                    try { if (recorder && recorder.state !== 'inactive') recorder.stop(); } catch (e) {}
+                    reject(new Error(msg));
+                };
+
+                const guardTimer = setTimeout(() => cleanupAndFail('Cắt video quá thời gian cho phép.'), timeoutMs);
 
                 workVideo.onloadedmetadata = function() {
-                    const safeDur = Math.max(0.5, Number(workVideo.duration || cutSec));
+                    const safeDur = Math.max(0.5, Number(workVideo.duration || safeCutSec));
                     const targetStart = Math.min(Math.max(0, startSec), Math.max(0, safeDur - 0.5));
                     workVideo.currentTime = targetStart;
                 };
 
                 workVideo.onseeked = function() {
-                    const origW = workVideo.videoWidth || 360;
-                    const origH = workVideo.videoHeight || 640;
-                    const maxDim = 360;
+                    if (finished) return;
+                    const origW = workVideo.videoWidth || 320;
+                    const origH = workVideo.videoHeight || 480;
+                    const maxDim = 320;
                     let w = origW;
                     let h = origH;
                     if (w > maxDim || h > maxDim) {
                         if (w >= h) {
-                            h = Math.round((h * maxDim) / w);
+                            h = Math.max(96, Math.round((h * maxDim) / w));
                             w = maxDim;
                         } else {
-                            w = Math.round((w * maxDim) / h);
+                            w = Math.max(96, Math.round((w * maxDim) / h));
                             h = maxDim;
                         }
                     }
 
                     const canvas = document.createElement('canvas');
-                    canvas.width = Math.max(120, w);
-                    canvas.height = Math.max(120, h);
+                    canvas.width = w;
+                    canvas.height = h;
                     const ctx = canvas.getContext('2d');
 
-                    const stream = canvas.captureStream ? canvas.captureStream(15) : null;
+                    const stream = canvas.captureStream ? canvas.captureStream(18) : null;
                     if (!stream || typeof MediaRecorder === 'undefined') {
-                        reject(new Error('Trình duyệt không hỗ trợ ghi video trực tiếp.'));
+                        clearTimeout(guardTimer);
+                        cleanupAndFail('Trình duyệt không hỗ trợ cắt video trực tiếp.');
                         return;
                     }
 
@@ -688,20 +776,25 @@ export async function handleFeed(request, env, user, renderLayout) {
                         }
                     }
 
-                    const recorder = chosenMime
-                        ? new MediaRecorder(stream, { mimeType: chosenMime, videoBitsPerSecond: 350000 })
+                    recorder = chosenMime
+                        ? new MediaRecorder(stream, { mimeType: chosenMime, videoBitsPerSecond: 420000 })
                         : new MediaRecorder(stream);
+
                     const chunks = [];
                     recorder.ondataavailable = function(ev) {
                         if (ev.data && ev.data.size > 0) chunks.push(ev.data);
                     };
 
-                    let rafId = null;
                     const startTimeMs = performance.now();
-                    const targetMs = Math.min(MAX_STORY_VIDEO_SEC, Math.max(0.5, cutSec)) * 1000;
+                    const targetMs = safeCutSec * 1000;
+                    let thumbData = '';
 
                     function drawFrame() {
+                        if (finished) return;
                         ctx.drawImage(workVideo, 0, 0, canvas.width, canvas.height);
+                        if (!thumbData) {
+                            try { thumbData = canvas.toDataURL('image/jpeg', 0.55); } catch (e) {}
+                        }
                         if (performance.now() - startTimeMs < targetMs && !workVideo.ended) {
                             rafId = requestAnimationFrame(drawFrame);
                         } else {
@@ -711,15 +804,17 @@ export async function handleFeed(request, env, user, renderLayout) {
                         }
                     }
 
-                    recorder.onstop = function() {
-                        const thumbData = canvas.toDataURL('image/jpeg', 0.65);
-                        const blob = new Blob(chunks, { type: chosenMime || 'video/webm' });
-                        const r = new FileReader();
-                        r.onload = function(ev) {
-                            resolve({ videoDataUrl: ev.target.result || '', thumbDataUrl: thumbData });
-                        };
-                        r.onerror = () => reject(new Error('Không thể đọc video đã xử lý.'));
-                        r.readAsDataURL(blob);
+                    recorder.onstop = async function() {
+                        clearTimeout(guardTimer);
+                        if (finished) return;
+                        finished = true;
+                        try {
+                            const blob = new Blob(chunks, { type: chosenMime || 'video/webm' });
+                            const dataUrl = await blobToDataUrl(blob);
+                            resolve({ videoDataUrl: dataUrl, thumbDataUrl: thumbData });
+                        } catch (e) {
+                            reject(e);
+                        }
                     };
 
                     recorder.start();
@@ -727,11 +822,14 @@ export async function handleFeed(request, env, user, renderLayout) {
                     drawFrame();
                 };
 
-                workVideo.onerror = () => reject(new Error('Không thể mở file video.'));
+                workVideo.onerror = () => {
+                    clearTimeout(guardTimer);
+                    cleanupAndFail('Không thể mở file video.');
+                };
             });
         }
 
-        function openStoryViewer(idx) {
+        async function openStoryViewer(idx) {
             if (!Array.isArray(STORY_VIEWER_LIST) || idx < 0 || idx >= STORY_VIEWER_LIST.length) return;
             currentStoryIndex = idx;
             const item = STORY_VIEWER_LIST[idx];
@@ -752,12 +850,36 @@ export async function handleFeed(request, env, user, renderLayout) {
 
             const imgEl = document.getElementById('sv-image');
             const vidEl = document.getElementById('sv-video');
+            const delBtn = document.getElementById('sv-delete-btn');
+            delBtn.style.display = item.canDelete ? 'flex' : 'none';
+
+            document.getElementById('story-viewer-modal').style.display = 'flex';
+
             if (item.mediaType === 'video') {
                 imgEl.style.display = 'none';
                 imgEl.src = '';
-                vidEl.src = item.mediaUrl || '';
                 vidEl.style.display = 'block';
-                vidEl.play().catch(() => {});
+                vidEl.src = '';
+
+                let resolvedUrl = item.mediaUrl || STORY_MEDIA_CACHE[item.id] || '';
+                if (!resolvedUrl && item.id) {
+                    document.getElementById('sv-feedback').innerText = '⏳ Đang tải video...';
+                    try {
+                        const res = await fetch('?story_media_id=' + encodeURIComponent(item.id));
+                        const data = await res.json();
+                        if (data && data.success && data.mediaUrl) {
+                            resolvedUrl = data.mediaUrl;
+                            STORY_MEDIA_CACHE[item.id] = resolvedUrl;
+                            item.mediaUrl = resolvedUrl;
+                        }
+                    } catch (e) {}
+                    document.getElementById('sv-feedback').innerText = '';
+                }
+
+                if (currentStoryIndex === idx && resolvedUrl) {
+                    vidEl.src = resolvedUrl;
+                    vidEl.play().catch(() => {});
+                }
             } else {
                 vidEl.pause();
                 vidEl.style.display = 'none';
@@ -765,11 +887,6 @@ export async function handleFeed(request, env, user, renderLayout) {
                 imgEl.src = item.mediaUrl || '';
                 imgEl.style.display = 'block';
             }
-
-            const delBtn = document.getElementById('sv-delete-btn');
-            delBtn.style.display = item.canDelete ? 'flex' : 'none';
-
-            document.getElementById('story-viewer-modal').style.display = 'flex';
         }
 
         function closeStoryViewer() {
@@ -851,11 +968,19 @@ export async function handleFeed(request, env, user, renderLayout) {
         function closeStoryModal() {
             const pv = document.getElementById('vt-preview-video');
             if (pv) pv.pause();
+            if (pendingVideoObjectUrl) {
+                try { URL.revokeObjectURL(pendingVideoObjectUrl); } catch (e) {}
+                pendingVideoObjectUrl = '';
+            }
             document.getElementById('story-modal').style.display = 'none';
         }
 
         function resetStoryForm() {
-            pendingVideoFileUrl = '';
+            pendingVideoFile = null;
+            if (pendingVideoObjectUrl) {
+                try { URL.revokeObjectURL(pendingVideoObjectUrl); } catch (e) {}
+                pendingVideoObjectUrl = '';
+            }
             pendingVideoDuration = 0;
             videoNeedsTrim = false;
             isProcessingStoryMedia = false;
@@ -876,15 +1001,23 @@ export async function handleFeed(request, env, user, renderLayout) {
             const trimPanel = document.getElementById('video-trim-panel');
             if (!file) return;
 
+            if (pendingVideoObjectUrl) {
+                try { URL.revokeObjectURL(pendingVideoObjectUrl); } catch (e) {}
+                pendingVideoObjectUrl = '';
+            }
+
             if (file.type && file.type.startsWith('video/')) {
+                pendingVideoFile = file;
                 document.getElementById('story-media-type-val').value = 'video';
                 document.getElementById('story-image-val').value = '';
                 document.getElementById('story-thumb-val').value = '';
                 isProcessingStoryMedia = true;
-                statusEl.innerText = '⏳ Đang kiểm tra video...';
+                statusEl.innerText = '⚡ Đang đọc thông tin video...';
                 statusEl.style.color = '#ffcc00';
 
                 const objUrl = URL.createObjectURL(file);
+                pendingVideoObjectUrl = objUrl;
+
                 const probeVideo = document.createElement('video');
                 probeVideo.preload = 'metadata';
                 probeVideo.onloadedmetadata = async function() {
@@ -892,53 +1025,63 @@ export async function handleFeed(request, env, user, renderLayout) {
                     pendingVideoDuration = dur;
                     document.getElementById('vt-total-sec').innerText = dur.toFixed(1);
 
-                    const reader = new FileReader();
-                    reader.onload = async function(ev) {
-                        pendingVideoFileUrl = ev.target.result || '';
-                        const thumb = await extractVideoThumbnail(objUrl);
+                    // Trích thumbnail nhanh song song
+                    const thumbPromise = extractVideoThumbnailFromUrl(objUrl);
+
+                    if (dur > MAX_STORY_VIDEO_SEC) {
+                        const thumb = await thumbPromise;
                         if (thumb) document.getElementById('story-thumb-val').value = thumb;
-                        URL.revokeObjectURL(objUrl);
+                        videoNeedsTrim = true;
+                        isProcessingStoryMedia = false;
+                        trimPanel.style.display = 'block';
+                        statusEl.innerText = '⚠️ Video dài ' + dur.toFixed(1) + 's (> 30s). Hãy cắt ngắn hơn!';
+                        statusEl.style.color = '#ff9900';
 
-                        if (dur > MAX_STORY_VIDEO_SEC) {
-                            videoNeedsTrim = true;
+                        const pv = document.getElementById('vt-preview-video');
+                        pv.src = objUrl;
+
+                        const maxStart = Math.max(0, dur - 1);
+                        const startRange = document.getElementById('vt-start-range');
+                        startRange.max = maxStart.toFixed(1);
+                        startRange.value = '0';
+
+                        const durRange = document.getElementById('vt-dur-range');
+                        const initDur = Math.min(MAX_STORY_VIDEO_SEC, Math.max(1, dur));
+                        durRange.max = Math.min(MAX_STORY_VIDEO_SEC, Math.max(1, dur)).toFixed(1);
+                        durRange.value = initDur.toFixed(1);
+                        updateTrimRange();
+                    } else {
+                        // Video <= 30s: không phát lại 30s để ghi; chuyển trực tiếp Blob/File thành DataURL tức thì
+                        videoNeedsTrim = false;
+                        trimPanel.style.display = 'none';
+                        document.getElementById('story-duration-val').value = dur.toFixed(1);
+
+                        try {
+                            const [thumb, dataUrl] = await Promise.all([thumbPromise, blobToDataUrl(file)]);
+                            if (thumb) document.getElementById('story-thumb-val').value = thumb;
+                            document.getElementById('story-image-val').value = dataUrl || '';
                             isProcessingStoryMedia = false;
-                            trimPanel.style.display = 'block';
-                            statusEl.innerText = '⚠️ Video dài ' + dur.toFixed(1) + 's (> 30s). Hãy cắt ngắn hơn!';
-                            statusEl.style.color = '#ff9900';
-
-                            const pv = document.getElementById('vt-preview-video');
-                            pv.src = pendingVideoFileUrl;
-
-                            const maxStart = Math.max(0, dur - 1);
-                            const startRange = document.getElementById('vt-start-range');
-                            startRange.max = maxStart.toFixed(1);
-                            startRange.value = '0';
-
-                            const durRange = document.getElementById('vt-dur-range');
-                            const initDur = Math.min(MAX_STORY_VIDEO_SEC, Math.max(1, dur));
-                            durRange.max = Math.min(MAX_STORY_VIDEO_SEC, Math.max(1, dur)).toFixed(1);
-                            durRange.value = initDur.toFixed(1);
-                            updateTrimRange();
-                        } else {
-                            videoNeedsTrim = false;
-                            trimPanel.style.display = 'none';
-                            document.getElementById('story-duration-val').value = dur.toFixed(1);
-                            try {
-                                const compact = await recordCompactVideoSegment(pendingVideoFileUrl, 0, Math.min(MAX_STORY_VIDEO_SEC, Math.max(0.5, dur)));
-                                document.getElementById('story-image-val').value = compact.videoDataUrl || pendingVideoFileUrl;
-                                if (compact.thumbDataUrl) document.getElementById('story-thumb-val').value = compact.thumbDataUrl;
-                            } catch (e) {
-                                document.getElementById('story-image-val').value = pendingVideoFileUrl;
+                            if (file.size > MAX_DIRECT_VIDEO_BYTES) {
+                                statusEl.innerText = '✅ Video ' + dur.toFixed(1) + 's sẵn sàng (dung lượng lớn, có thể mất vài giây gửi)';
+                            } else {
+                                statusEl.innerText = '✅ Video ' + dur.toFixed(1) + 's sẵn sàng đăng ngay!';
                             }
-                            isProcessingStoryMedia = false;
-                            statusEl.innerText = '✅ Video sẵn sàng (' + dur.toFixed(1) + 's ≤ 30s)';
                             statusEl.style.color = '#00ff00';
+                        } catch (err) {
+                            isProcessingStoryMedia = false;
+                            statusEl.innerText = '❌ Không thể đọc file video.';
+                            statusEl.style.color = '#ff5555';
                         }
-                    };
-                    reader.readAsDataURL(file);
+                    }
+                };
+                probeVideo.onerror = function() {
+                    isProcessingStoryMedia = false;
+                    statusEl.innerText = '❌ File video không hỗ trợ hoặc bị lỗi.';
+                    statusEl.style.color = '#ff5555';
                 };
                 probeVideo.src = objUrl;
             } else {
+                pendingVideoFile = null;
                 videoNeedsTrim = false;
                 isProcessingStoryMedia = false;
                 trimPanel.style.display = 'none';
@@ -971,19 +1114,20 @@ export async function handleFeed(request, env, user, renderLayout) {
         async function trimVideoToStory() {
             const statusEl = document.getElementById('story-compress-status');
             const cutBtn = document.getElementById('vt-cut-btn');
-            if (!pendingVideoFileUrl) return;
+            if (!pendingVideoObjectUrl && !pendingVideoFile) return;
 
+            const srcUrl = pendingVideoObjectUrl || URL.createObjectURL(pendingVideoFile);
             const startSec = parseFloat(document.getElementById('vt-start-range').value || '0');
             const cutSec = Math.min(MAX_STORY_VIDEO_SEC, parseFloat(document.getElementById('vt-dur-range').value || '30'));
 
             cutBtn.disabled = true;
             isProcessingStoryMedia = true;
-            cutBtn.innerText = '⏳ Đang cắt video (' + cutSec.toFixed(1) + 's)...';
-            statusEl.innerText = '⏳ Đang cắt đoạn video ' + cutSec.toFixed(1) + 's...';
+            cutBtn.innerText = '⚡ Đang cắt video (' + cutSec.toFixed(1) + 's)...';
+            statusEl.innerText = '⚡ Đang cắt đoạn video ' + cutSec.toFixed(1) + 's...';
             statusEl.style.color = '#ffcc00';
 
             try {
-                const compact = await recordCompactVideoSegment(pendingVideoFileUrl, startSec, cutSec);
+                const compact = await recordFastVideoTrim(srcUrl, startSec, cutSec);
                 document.getElementById('story-image-val').value = compact.videoDataUrl || '';
                 if (compact.thumbDataUrl) document.getElementById('story-thumb-val').value = compact.thumbDataUrl;
                 document.getElementById('story-duration-val').value = cutSec.toFixed(1);
@@ -991,17 +1135,15 @@ export async function handleFeed(request, env, user, renderLayout) {
                 isProcessingStoryMedia = false;
                 cutBtn.disabled = false;
                 cutBtn.innerText = '✂️ Cắt lại đoạn khác';
-                statusEl.innerText = '✅ Đã cắt video còn ' + cutSec.toFixed(1) + 's! Có thể đăng Story.';
+                statusEl.innerText = '✅ Đã cắt video còn ' + cutSec.toFixed(1) + 's! Bấm Đăng Story ngay.';
                 statusEl.style.color = '#00ff00';
             } catch (err) {
                 videoNeedsTrim = false;
                 isProcessingStoryMedia = false;
                 cutBtn.disabled = false;
                 cutBtn.innerText = '✂️ Cắt video ngắn hơn (≤ 30s)';
-                document.getElementById('story-image-val').value = pendingVideoFileUrl;
-                document.getElementById('story-duration-val').value = cutSec.toFixed(1);
-                statusEl.innerText = '✅ Đã chọn đoạn ' + cutSec.toFixed(1) + 's. Có thể đăng Story.';
-                statusEl.style.color = '#00ff00';
+                statusEl.innerText = '⚠️ ' + (err && err.message ? err.message : 'Không thể cắt video, hãy chọn video ≤ 30s.');
+                statusEl.style.color = '#ff5555';
             }
         }
 
@@ -1012,7 +1154,7 @@ export async function handleFeed(request, env, user, renderLayout) {
 
             if (isProcessingStoryMedia) {
                 e.preventDefault();
-                statusEl.innerText = '⏳ Video đang được xử lý, vui lòng đợi vài giây rồi bấm Đăng Story.';
+                statusEl.innerText = '⚡ Đang hoàn tất xử lý media, vui lòng đợi 1–2 giây rồi bấm Đăng Story.';
                 statusEl.style.color = '#ffcc00';
                 return false;
             }
@@ -1049,7 +1191,7 @@ export async function handleFeed(request, env, user, renderLayout) {
             const statusEl = document.getElementById(statusId);
 
             if (!file) return;
-            statusEl.innerText = "⏳ Đang nén: " + file.name;
+            statusEl.innerText = "⚡ Đang nén: " + file.name;
 
             const reader = new FileReader();
             reader.onload = function(e) {
