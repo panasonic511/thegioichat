@@ -335,7 +335,6 @@ export async function mergeMediaChunkBatch(request, env, {
     };
 }
 
-// Giữ tương thích nếu có file khác import tên finalizeMediaChunks
 export async function finalizeMediaChunks(request, env, options = {}) {
     const total = parseInt(options.totalChunks || '0', 10);
     let cursor = parseInt(options.startChunk || '0', 10) || 0;
