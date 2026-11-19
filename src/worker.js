@@ -19,6 +19,7 @@ import { handleGame } from './routes/game.js';
 import { handleAdminDashboard } from './routes/admin_dashboard.js';
 import { handleAdminAction } from './routes/admin_action.js';
 import { createSession, destroySession, getSessionUser, readSessionToken, buildSessionCookie, buildLegacyClearCookie, buildClearCookies } from './session.js';
+import { isStaffRole, normalizeRoleKey, syncUserOnlineAndLevel } from './roles_system.js';
 
 function escapeHtmlText(str) {
     return String(str ?? '')
@@ -30,41 +31,24 @@ function escapeHtmlText(str) {
 }
 
 function isStaffOrAdminUser(u) {
-    if (!u) return false;
-    const roleRaw = String(u.role || '').trim().toLowerCase();
-    const staffRoles = [
-        'admin',
-        'smod',
-        'mod',
-        'điều hành viên',
-        'chủ wap',
-        'quản trị',
-        'quản lý',
-        'bqt'
-    ];
-    if (staffRoles.includes(roleRaw)) return true;
-    return Number(u.is_admin || 0) === 1 || Number(u.id || 0) === 1;
+    return isStaffRole(u);
 }
 
 function getStaffAfterNickBadge(safeUser) {
     if (!safeUser) return '';
-    const roleRaw = String(safeUser.role || '').trim().toLowerCase();
+    const roleKey = normalizeRoleKey(safeUser.role, safeUser.is_admin, safeUser.id);
 
-    const isExplicitMod = roleRaw === 'mod' || roleRaw === 'smod' || roleRaw === 'điều hành viên';
-    if (isExplicitMod) {
-        const label = roleRaw === 'smod' ? 'SMOD' : 'MOD';
-        return `<span class="staff-nick-badge staff-badge-mod" title="Điều hành viên"><span class="badge-ico">🛡️</span>${label}</span>`;
+    if (roleKey === 'founder') {
+        return `<span class="staff-nick-badge staff-badge-admin" title="Người Sáng Lập"><span class="badge-ico">👑</span>FOUNDER</span>`;
     }
-
-    const isExplicitAdmin = roleRaw === 'admin'
-        || roleRaw === 'chủ wap'
-        || roleRaw === 'quản trị'
-        || roleRaw === 'quản lý';
-
-    const isFallbackRootAdmin = !roleRaw && (Number(safeUser.is_admin || 0) === 1 || Number(safeUser.id || 0) === 1);
-
-    if (isExplicitAdmin || isFallbackRootAdmin) {
-        return `<span class="staff-nick-badge staff-badge-admin" title="Quản trị viên"><span class="badge-ico">👑</span>ADMIN</span>`;
+    if (roleKey === 'super_admin') {
+        return `<span class="staff-nick-badge staff-badge-admin" title="Super Admin"><span class="badge-ico">⚡</span>S.ADMIN</span>`;
+    }
+    if (roleKey === 'admin') {
+        return `<span class="staff-nick-badge staff-badge-admin" title="Admin"><span class="badge-ico">👑</span>ADMIN</span>`;
+    }
+    if (roleKey === 'mod') {
+        return `<span class="staff-nick-badge staff-badge-mod" title="Mod"><span class="badge-ico">🛡️</span>MOD</span>`;
     }
 
     return '';
@@ -118,7 +102,12 @@ export function renderUser(u) {
 async function checkAuth(request, env) {
     try {
         if (!readSessionToken(request)) return null;
-        return await getSessionUser(request, env);
+        const rawUser = await getSessionUser(request, env);
+        if (!rawUser) return null;
+        if (Number(rawUser.is_banned || 0) === 1) {
+            return { ...rawUser, __banned__: true };
+        }
+        return await syncUserOnlineAndLevel(env, rawUser);
     } catch (e) {
         return null;
     }
@@ -467,8 +456,6 @@ function getSetCookies(headers) {
     return raw ? [raw] : [];
 }
 
-// Loại bỏ mọi cookie user_id / sid do client gửi lên, chỉ chèn user_id đã được xác thực từ session.
-// Nhờ vậy các route cũ vẫn đọc được user_id từ Cookie nhưng không thể bị giả mạo.
 function buildTrustedRequest(request, verifiedUserId) {
     const kept = (request.headers.get('Cookie') || '')
         .split(';')
@@ -482,7 +469,6 @@ function buildTrustedRequest(request, verifiedUserId) {
     return new Request(request, { headers });
 }
 
-// Handler login/register cũ đặt cookie user_id=<số>. Đổi nó thành session token ngẫu nhiên lưu trong D1.
 async function upgradeAuthResponse(response, env) {
     const cookies = getSetCookies(response.headers);
     let userId = null;
@@ -518,13 +504,21 @@ export default {
       const path = url.pathname;
       const user = await checkAuth(request, env);
 
-      // Đăng xuất: huỷ session trong D1 rồi xoá cookie trên trình duyệt
       if (path === '/logout') {
           await destroySession(request, env);
           return withClearedAuthCookies(await handleLogout(buildTrustedRequest(request, null), env));
       }
 
-      // Từ đây mọi handler chỉ nhận cookie user_id do SERVER xác thực (cookie client gửi lên bị loại bỏ)
+      if (user && user.__banned__ && path !== '/login' && path !== '/register') {
+          const reasonText = escapeHtmlText(user.ban_reason || 'Tài khoản của bạn đã bị khóa bởi Ban Quản Trị.');
+          const bannedHtml = renderLayout(
+              'Tài khoản bị khóa',
+              `<div class="box"><div class="box-title">⛔ Tài khoản đã bị Ban ID</div><div class="box-content" style="color:#fca5a5;">Lý do: <b>${reasonText}</b></div></div>`,
+              null
+          );
+          return new Response(bannedHtml, { status: 403, headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
+      }
+
       request = buildTrustedRequest(request, user ? user.id : null);
 
       if (path === '/login' || path === '/register') {
