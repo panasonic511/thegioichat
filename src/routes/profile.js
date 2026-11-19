@@ -42,6 +42,10 @@ function isStaffOrAdmin(u) {
     );
 }
 
+function isSafeColor(val) {
+    return /^#[0-9a-fA-F]{3,8}$/.test(String(val || '').trim());
+}
+
 export async function handleProfile(request, env, user, renderLayout, url) {
     let message = "";
     const targetId = parseInt(url.searchParams.get('user') || user.id);
@@ -105,25 +109,26 @@ export async function handleProfile(request, env, user, renderLayout, url) {
 
         try {
             if (action === 'wall_post') {
-                const postContent = (formData.get('content') || '').trim();
-                const postImage = (formData.get('image_url') || '').trim();
-                if (!postContent && !postImage) throw new Error("Vui lòng nhập nội dung hoặc ảnh trước khi đăng bài!");
+                const rawText = (formData.get('content') || '').trim();
+                const textColor = isSafeColor(formData.get('text_color')) ? String(formData.get('text_color')).trim() : '';
+                const bgColor = isSafeColor(formData.get('bg_color')) ? String(formData.get('bg_color')).trim() : '';
+                const textGlow = isSafeColor(formData.get('text_glow')) ? String(formData.get('text_glow')).trim() : '';
+                if (!rawText) throw new Error("Vui lòng nhập nội dung trước khi đăng bài!");
+
+                const styleMeta = (textColor || bgColor || textGlow)
+                    ? `[style=${encodeURIComponent(JSON.stringify({ c: textColor, b: bgColor, g: textGlow }))}]\n`
+                    : '';
+                const postContent = `${styleMeta}${rawText}`;
 
                 const nowSec = Math.floor(Date.now() / 1000);
                 try {
                     await env.DB.prepare(
-                        `INSERT INTO ${feedTable} (user_id, content, image_url, created_at) VALUES (?, ?, ?, ?)`
-                    ).bind(user.id, postContent, postImage || null, nowSec).run();
+                        `INSERT INTO ${feedTable} (user_id, content, created_at) VALUES (?, ?, ?)`
+                    ).bind(user.id, postContent, nowSec).run();
                 } catch (eInsert) {
-                    try {
-                        await env.DB.prepare(
-                            `INSERT INTO ${feedTable} (user_id, content, created_at) VALUES (?, ?, ?)`
-                        ).bind(user.id, postContent, nowSec).run();
-                    } catch (eInsert2) {
-                        await env.DB.prepare(
-                            `INSERT INTO ${feedTable} (user_id, content) VALUES (?, ?)`
-                        ).bind(user.id, postContent).run();
-                    }
+                    await env.DB.prepare(
+                        `INSERT INTO ${feedTable} (user_id, content) VALUES (?, ?)`
+                    ).bind(user.id, postContent).run();
                 }
                 message = `<div style="color: #00ff00; background: #001a00; border: 1px solid #005500; padding: 6px; text-align: center; margin-bottom: 8px;">✅ Đăng bài lên tường nhà thành công!</div>`;
             } else if (action === 'delete_post') {
@@ -250,7 +255,21 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         ? `<div style="color: #888; text-align: center; padding: 14px; font-size: 12px;">Chưa có bài đăng nào.</div>`
         : userPosts.map((post) => {
             const postId = Number(post.id || 0);
-            const rawText = post.content || post.body || post.caption || '';
+            let rawText = post.content || post.body || post.caption || '';
+            let postStyle = '';
+            const styleMatch = rawText.match(/^\[style=([^\]]+)\]\r?\n/);
+            if (styleMatch) {
+                rawText = rawText.slice(styleMatch[0].length);
+                try {
+                    const st = JSON.parse(decodeURIComponent(styleMatch[1]));
+                    const rules = [];
+                    if (isSafeColor(st.c)) rules.push(`color: ${st.c}`);
+                    if (isSafeColor(st.b)) rules.push(`background: ${st.b}; padding: 6px 8px; border-radius: 4px; display: inline-block`);
+                    if (isSafeColor(st.g)) rules.push(`text-shadow: 0 0 8px ${st.g}`);
+                    if (rules.length) postStyle = rules.join('; ') + ';';
+                } catch (e) {}
+            }
+
             const imgUrl = post.image_url || post.image || post.media_url || '';
             const timeAgo = formatTimeAgo(post.created_at || post.time || post.createdAt);
             const likesCount = Number(post.likes_count ?? post.likes ?? 0);
@@ -279,7 +298,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 </div>
 
                 <!-- Nội dung bài đăng -->
-                ${rawText ? `<div style="font-size: 13px; color: #f2f2f2; line-height: 1.6; white-space: pre-wrap; text-align: center; margin-bottom: ${imgUrl ? '10px' : '6px'};">${escapeHtml(rawText)}</div>` : ''}
+                ${rawText ? `<div style="font-size: 13px; color: #f2f2f2; line-height: 1.6; white-space: pre-wrap; text-align: center; margin-bottom: ${imgUrl ? '10px' : '6px'}; ${escapeHtml(postStyle)}">${escapeHtml(rawText)}</div>` : ''}
 
                 <!-- Ảnh bài đăng -->
                 ${imgUrl ? `
@@ -305,7 +324,6 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                             <span style="color: #ddd; font-size: 12px;">${commentsCount}</span>
                         </a>
                     </div>
-
                 </div>
             </div>`;
         }).join('');
@@ -465,45 +483,56 @@ export async function handleProfile(request, env, user, renderLayout, url) {
 
             <!-- Form đăng bài (ẩn/hiện khi bấm nút Đăng bài) -->
             <div id="wall-post-form" style="display: none; background: #101010; border: 1px solid #333; border-radius: 4px; padding: 8px; margin-top: 8px; position: relative;">
-    <form method="POST" id="wall-post-submit-form">
-        <input type="hidden" name="action" value="wall_post">
-        <input type="hidden" name="text_color" id="wall-text-color" value="">
-        <input type="hidden" name="bg_color" id="wall-bg-color" value="">
-        <input type="hidden" name="text_glow" id="wall-text-glow" value="">
-
-        <textarea id="wall-content-textarea" name="content" rows="3" placeholder="${isOwner ? 'Bạn đang nghĩ gì?' : `Viết gì đó lên tường của ${escapeHtml(profileUser.display_name || profileUser.username || 'thành viên')}...`}" style="width: 100%; background: #000; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 8px; box-sizing: border-box; font-size: 13px; margin-bottom: 8px; resize: vertical;"></textarea>
-
-        <!-- Thanh công cụ: icon biểu tượng & Bb color chỉnh màu -->
-        <div id="wall-post-form" style="display: none; background: #101010; border: 1px solid #333; border-radius: 4px; padding: 8px; margin-top: 8px;">
-                <form method="POST">
+                <form method="POST" id="wall-post-submit-form">
                     <input type="hidden" name="action" value="wall_post">
-                    <textarea name="content" rows="3" placeholder="${isOwner ? 'Bạn đang nghĩ gì?' : `Viết gì đó lên tường của ${escapeHtml(profileUser.display_name || profileUser.username || 'thành viên')}...`}" style="width: 100%; background: #000; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 6px; box-sizing: border-box; font-size: 12px; margin-bottom: 6px; resize: vertical;"></textarea>
-                    <input type="text" name="image_url" placeholder="Link ảnh đính kèm (tùy chọn, https://...)" style="width: 100%; background: #000; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 6px; box-sizing: border-box; font-size: 12px; margin-bottom: 8px;">
-                    <div style="display: flex; gap: 6px; justify-content: flex-end;">
-                        <button type="button" onclick="toggleWallForm()" class="btn" style="background: #2b2b2b; color: #ccc; padding: 4px 10px; font-size: 11px;">Hủy</button>
-                        <button type="submit" class="btn" style="background: #0055ff; color: #fff; padding: 4px 12px; font-size: 11px; font-weight: bold;">Đăng ngay</button>
+                    <input type="hidden" name="text_color" id="wall-text-color" value="">
+                    <input type="hidden" name="bg_color" id="wall-bg-color" value="">
+                    <input type="hidden" name="text_glow" id="wall-text-glow" value="">
+
+                    <textarea id="wall-content-textarea" name="content" rows="3" placeholder="${isOwner ? 'Bạn đang nghĩ gì?' : `Viết gì đó lên tường của ${escapeHtml(profileUser.display_name || profileUser.username || 'thành viên')}...`}" style="width: 100%; background: #000; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 8px; box-sizing: border-box; font-size: 13px; margin-bottom: 8px; resize: vertical;"></textarea>
+
+                    <!-- Thanh công cụ: icon biểu tượng & Bb color chỉnh màu -->
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
+                        <div style="display: flex; align-items: center; gap: 6px; position: relative;">
+                            <button type="button" onclick="toggleWallPicker('emoji')" title="Chèn icon biểu tượng" style="background: #1b1b1b; color: #ffcc00; border: 1px solid #3d3d3d; border-radius: 4px; padding: 4px 8px; font-size: 13px; cursor: pointer; line-height: 1.2;">😀</button>
+                            <button type="button" onclick="toggleWallPicker('color')" title="Chỉnh màu chữ / nền / bóng mờ" style="background: #1b1b1b; color: #fff; border: 1px solid #3d3d3d; border-radius: 4px; padding: 4px 8px; font-size: 12px; font-weight: bold; cursor: pointer; line-height: 1.2; display: inline-flex; align-items: center; gap: 4px;">
+                                <span style="color: #ffcc00;">Bb</span>
+                                <span>🎨</span>
+                            </button>
+                            <span id="wall-color-preview-badge" style="font-size: 11px; color: #999;"></span>
+                        </div>
+
+                        <div style="display: flex; gap: 6px;">
+                            <button type="button" onclick="toggleWallForm()" class="btn" style="background: #2b2b2b; color: #ccc; padding: 5px 10px; font-size: 11px;">Hủy</button>
+                            <button type="submit" class="btn" style="background: #0055ff; color: #fff; padding: 5px 12px; font-size: 11px; font-weight: bold;">Đăng bài</button>
+                        </div>
+                    </div>
+
+                    <!-- Popup Icon biểu tượng -->
+                    <div id="wall-emoji-picker" style="display: none; background: #161616; border: 1px solid #444; border-radius: 4px; padding: 6px; margin-top: 8px;">
+                        <div style="font-size: 11px; color: #ffcc00; margin-bottom: 5px;">Chọn biểu tượng cảm xúc</div>
+                        <div id="wall-emoji-list" style="display: flex; flex-wrap: wrap; gap: 4px;"></div>
+                    </div>
+
+                    <!-- Popup Bb Color (Màu chữ / Màu nền / Bóng mờ) -->
+                    <div id="wall-color-picker" style="display: none; background: #161616; border: 1px solid #444; border-radius: 4px; padding: 6px; margin-top: 8px;">
+                        <div style="display: flex; gap: 4px; margin-bottom: 6px; border-bottom: 1px solid #2b2b2b; padding-bottom: 5px; flex-wrap: wrap;">
+                            <button type="button" id="tab-color-fg" onclick="switchWallColorTab('fg')" style="background: #0055ff; color: #fff; border: 1px solid #3b7bff; border-radius: 3px; padding: 3px 8px; font-size: 11px; cursor: pointer;">Màu chữ</button>
+                            <button type="button" id="tab-color-bg" onclick="switchWallColorTab('bg')" style="background: #222; color: #ccc; border: 1px solid #3a3a3a; border-radius: 3px; padding: 3px 8px; font-size: 11px; cursor: pointer;">Màu nền</button>
+                            <button type="button" id="tab-color-glow" onclick="switchWallColorTab('glow')" style="background: #222; color: #ccc; border: 1px solid #3a3a3a; border-radius: 3px; padding: 3px 8px; font-size: 11px; cursor: pointer;">Bóng mờ</button>
+                            <button type="button" onclick="resetWallColors()" style="margin-left: auto; background: #2a1212; color: #ff7777; border: 1px solid #552222; border-radius: 3px; padding: 3px 7px; font-size: 10px; cursor: pointer;">Mặc định</button>
+                        </div>
+                        <div id="wall-palette-grid" style="display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px;"></div>
                     </div>
                 </form>
             </div>
 
-        <!-- Popup Icon biểu tượng -->
-        <div id="wall-emoji-picker" style="display: none; background: #161616; border: 1px solid #444; border-radius: 4px; padding: 6px; margin-top: 8px;">
-            <div style="font-size: 11px; color: #ffcc00; margin-bottom: 5px;">Chọn biểu tượng cảm xúc</div>
-            <div id="wall-emoji-list" style="display: flex; flex-wrap: wrap; gap: 4px;"></div>
-        </div>
-
-        <!-- Popup Bb Color (Màu chữ / Màu nền / Bóng mờ) -->
-        <div id="wall-color-picker" style="display: none; background: #161616; border: 1px solid #444; border-radius: 4px; padding: 6px; margin-top: 8px;">
-            <div style="display: flex; gap: 4px; margin-bottom: 6px; border-bottom: 1px solid #2b2b2b; padding-bottom: 5px;">
-                <button type="button" id="tab-color-fg" onclick="switchWallColorTab('fg')" style="background: #0055ff; color: #fff; border: 1px solid #3b7bff; border-radius: 3px; padding: 3px 8px; font-size: 11px; cursor: pointer;">Màu chữ</button>
-                <button type="button" id="tab-color-bg" onclick="switchWallColorTab('bg')" style="background: #222; color: #ccc; border: 1px solid #3a3a3a; border-radius: 3px; padding: 3px 8px; font-size: 11px; cursor: pointer;">Màu nền</button>
-                <button type="button" id="tab-color-glow" onclick="switchWallColorTab('glow')" style="background: #222; color: #ccc; border: 1px solid #3a3a3a; border-radius: 3px; padding: 3px 8px; font-size: 11px; cursor: pointer;">Bóng mờ</button>
-                <button type="button" onclick="resetWallColors()" style="margin-left: auto; background: #2a1212; color: #ff7777; border: 1px solid #552222; border-radius: 3px; padding: 3px 7px; font-size: 10px; cursor: pointer;">Mặc định</button>
+            <!-- Danh sách bài đã đăng -->
+            <div style="margin-top: 4px;">
+                ${wallPostsHtml}
             </div>
-            <div id="wall-palette-grid" style="display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px;"></div>
         </div>
-    </form>
-</div>
+    </div>
 
     <!-- Popup Modal Cài đặt thông tin -->
     ${isOwner ? `
@@ -583,12 +612,115 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         </div>
     </div>
 
-    <!-- JavaScript kích hoạt Modal, Tường nhà và Cắt/Kéo ảnh -->
+    <!-- JavaScript kích hoạt Modal, Tường nhà, Icon & Bb Color, Cắt/Kéo ảnh -->
     <script>
         function toggleWallForm() {
             const formBox = document.getElementById('wall-post-form');
             if (!formBox) return;
             formBox.style.display = (formBox.style.display === 'none' || !formBox.style.display) ? 'block' : 'none';
+        }
+
+        const WALL_EMOJIS = ['😀','😁','😂','🤣','😊','😍','😘','😎','🤩','🥳','😭','😡','🥺','🤔','👍','👎','❤️','💖','🔥','✨','🎉','💯','🌸','🌹','🎵','🎶','⭐','👑','💍','🎁'];
+        const WALL_COLORS = [
+            '#ffffff','#ffeb3b','#ffc107','#ff9800','#ff5722','#f44336','#e91e63','#9c27b0',
+            '#673ab7','#3f51b5','#2196f3','#03a9f4','#00bcd4','#009688','#4caf50','#8bc34a',
+            '#cddc39','#ff77aa','#ff99cc','#a3e635','#38bdf8','#c084fc','#fb7185','#111111'
+        ];
+        let wallColorMode = 'fg';
+        let wallSelectedColors = { fg: '', bg: '', glow: '' };
+
+        function toggleWallPicker(type) {
+            const emojiBox = document.getElementById('wall-emoji-picker');
+            const colorBox = document.getElementById('wall-color-picker');
+            if (!emojiBox || !colorBox) return;
+            if (type === 'emoji') {
+                const show = emojiBox.style.display === 'none';
+                emojiBox.style.display = show ? 'block' : 'none';
+                colorBox.style.display = 'none';
+                if (show) renderWallEmojis();
+            } else {
+                const show = colorBox.style.display === 'none';
+                colorBox.style.display = show ? 'block' : 'none';
+                emojiBox.style.display = 'none';
+                if (show) renderWallPalette();
+            }
+        }
+
+        function renderWallEmojis() {
+            const el = document.getElementById('wall-emoji-list');
+            if (!el) return;
+            el.innerHTML = WALL_EMOJIS.map(em =>
+                \`<button type="button" onclick="insertWallEmoji('\${em}')" style="background:#222;border:1px solid #383838;border-radius:3px;padding:3px 6px;font-size:14px;cursor:pointer;">\${em}</button>\`
+            ).join('');
+        }
+
+        function insertWallEmoji(emoji) {
+            const ta = document.getElementById('wall-content-textarea');
+            if (!ta) return;
+            const start = ta.selectionStart ?? ta.value.length;
+            const end = ta.selectionEnd ?? ta.value.length;
+            ta.value = ta.value.slice(0, start) + emoji + ta.value.slice(end);
+            ta.focus();
+            ta.selectionStart = ta.selectionEnd = start + emoji.length;
+        }
+
+        function switchWallColorTab(mode) {
+            wallColorMode = mode;
+            ['fg', 'bg', 'glow'].forEach(m => {
+                const btn = document.getElementById('tab-color-' + m);
+                if (!btn) return;
+                const active = (m === mode);
+                btn.style.background = active ? '#0055ff' : '#222';
+                btn.style.color = active ? '#fff' : '#ccc';
+                btn.style.borderColor = active ? '#3b7bff' : '#3a3a3a';
+            });
+            renderWallPalette();
+        }
+
+        function renderWallPalette() {
+            const grid = document.getElementById('wall-palette-grid');
+            if (!grid) return;
+            grid.innerHTML = WALL_COLORS.map(hex =>
+                \`<button type="button" onclick="applyWallColor('\${hex}')" title="\${hex}" style="height:22px;background:\${hex};border:1px solid #555;border-radius:3px;cursor:pointer;"></button>\`
+            ).join('');
+        }
+
+        function applyWallColor(hex) {
+            if (!hex) return;
+            wallSelectedColors[wallColorMode] = hex;
+            document.getElementById('wall-text-color').value = wallSelectedColors.fg;
+            document.getElementById('wall-bg-color').value = wallSelectedColors.bg;
+            document.getElementById('wall-text-glow').value = wallSelectedColors.glow;
+
+            const ta = document.getElementById('wall-content-textarea');
+            const badge = document.getElementById('wall-color-preview-badge');
+            if (ta) {
+                ta.style.color = wallSelectedColors.fg || '#fff';
+                ta.style.backgroundColor = wallSelectedColors.bg || '#000';
+                ta.style.textShadow = wallSelectedColors.glow ? \`0 0 8px \${wallSelectedColors.glow}\` : 'none';
+            }
+            if (badge) {
+                const parts = [];
+                if (wallSelectedColors.fg) parts.push('Chữ');
+                if (wallSelectedColors.bg) parts.push('Nền');
+                if (wallSelectedColors.glow) parts.push('Bóng');
+                badge.textContent = parts.length ? \`Đã chọn: \${parts.join(' + ')}\` : '';
+            }
+        }
+
+        function resetWallColors() {
+            wallSelectedColors = { fg: '', bg: '', glow: '' };
+            document.getElementById('wall-text-color').value = '';
+            document.getElementById('wall-bg-color').value = '';
+            document.getElementById('wall-text-glow').value = '';
+            const ta = document.getElementById('wall-content-textarea');
+            const badge = document.getElementById('wall-color-preview-badge');
+            if (ta) {
+                ta.style.color = '#fff';
+                ta.style.backgroundColor = '#000';
+                ta.style.textShadow = 'none';
+            }
+            if (badge) badge.textContent = '';
         }
 
         function openSettingsModal() { document.getElementById('settings-modal').style.display = 'flex'; }
