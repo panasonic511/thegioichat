@@ -1,3 +1,4 @@
+import { handleMediaRequest } from './media_store.js';
 import { handleLogin, handleRegister } from './routes/auth.js';
 import { handleLogout } from './routes/logout.js';
 import { handleIndex } from './routes/index.js';
@@ -238,6 +239,8 @@ function withClearedAuthCookies(response) {
 export default {
   async fetch(request, env, ctx) {
     try {
+      const mediaRes = await handleMediaRequest(request, env);
+      if (mediaRes) return mediaRes;
       const url = new URL(request.url);
       const path = url.pathname;
       const user = await checkAuth(request, env);
