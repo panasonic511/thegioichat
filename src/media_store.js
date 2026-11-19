@@ -1,4 +1,5 @@
 const MEDIA_ROUTE_PREFIX = '/media/';
+const CHUNK_STORE_PREFIX = '/__media_chunk__/';
 const DEFAULT_MEDIA_TTL_SEC = 24 * 60 * 60;
 
 function getBucket(env) {
@@ -10,6 +11,10 @@ function sanitizeKey(rawKey) {
     return String(rawKey || '')
         .replace(/^\/+/, '')
         .replace(/[^a-zA-Z0-9._/-]/g, '_');
+}
+
+function sanitizeUploadId(rawId) {
+    return String(rawId || '').replace(/[^a-zA-Z0-9_-]/g, '');
 }
 
 function extensionFromMime(mimeType, fallback = 'bin') {
@@ -71,8 +76,56 @@ export function normalizeMediaUrl(val) {
     return s;
 }
 
+async function writeBytesToStorage(request, env, key, bytes, mimeType, ttlSeconds) {
+    const cleanKey = sanitizeKey(key);
+    const publicUrl = `${MEDIA_ROUTE_PREFIX}${cleanKey}`;
+    const bucket = getBucket(env);
+
+    if (bucket && typeof bucket.put === 'function') {
+        await bucket.put(cleanKey, bytes, {
+            httpMetadata: {
+                contentType: mimeType,
+                cacheControl: `public, max-age=${ttlSeconds}`
+            },
+            customMetadata: {
+                uploadedAt: String(Date.now()),
+                ttlSeconds: String(ttlSeconds)
+            }
+        });
+        return { url: publicUrl, mimeType, size: bytes.byteLength, storage: 'r2' };
+    }
+
+    if (typeof caches !== 'undefined' && caches.default && request) {
+        const origin = new URL(request.url).origin;
+        const cacheReq = new Request(`${origin}${publicUrl}`, { method: 'GET' });
+        const cacheRes = new Response(bytes, {
+            status: 200,
+            headers: {
+                'Content-Type': mimeType,
+                'Content-Length': String(bytes.byteLength),
+                'Cache-Control': `public, max-age=${ttlSeconds}, s-maxage=${ttlSeconds}`,
+                'Accept-Ranges': 'bytes'
+            }
+        });
+        await caches.default.put(cacheReq, cacheRes);
+        return { url: publicUrl, mimeType, size: bytes.byteLength, storage: 'cache' };
+    }
+
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+    }
+    return {
+        url: `data:${mimeType};base64,${btoa(binary)}`,
+        mimeType,
+        size: bytes.byteLength,
+        storage: 'inline'
+    };
+}
+
 /**
- * Lưu file hoặc DataURL ra R2 (nếu có) hoặc Cache API, trả về URL nội bộ (/media/...)
+ * Lưu file hoặc DataURL ra R2 hoặc Cache API, trả về URL nội bộ (/media/...)
  */
 export async function saveMediaAsset(request, env, {
     folder = 'stories',
@@ -109,52 +162,149 @@ export async function saveMediaAsset(request, env, {
     const ext = extensionFromMime(resolvedMime, resolvedMime.startsWith('video/') ? 'mp4' : 'jpg');
     const rand = Math.random().toString(36).slice(2, 10);
     const key = sanitizeKey(`${folder}/${userId || 0}/${Date.now()}_${rand}.${ext}`);
-    const publicUrl = `${MEDIA_ROUTE_PREFIX}${key}`;
 
-    const bucket = getBucket(env);
-    if (bucket && typeof bucket.put === 'function') {
-        await bucket.put(key, bytes, {
-            httpMetadata: {
-                contentType: resolvedMime,
-                cacheControl: `public, max-age=${ttlSeconds}`
-            },
-            customMetadata: {
-                uploadedAt: String(Date.now()),
-                ttlSeconds: String(ttlSeconds)
-            }
-        });
-        return { url: publicUrl, mimeType: resolvedMime, size: bytes.byteLength, storage: 'r2' };
+    return await writeBytesToStorage(request, env, key, bytes, resolvedMime, ttlSeconds);
+}
+
+/**
+ * Lưu từng mảnh (chunk) của video/file
+ */
+export async function saveMediaChunk(request, env, {
+    uploadId,
+    chunkIndex,
+    chunkBlob,
+    ttlSeconds = 3600
+}) {
+    const safeId = sanitizeUploadId(uploadId);
+    const idx = parseInt(chunkIndex, 10);
+    if (!safeId || isNaN(idx) || idx < 0 || !chunkBlob || typeof chunkBlob.arrayBuffer !== 'function') {
+        throw new Error('Dữ liệu mảnh tải lên không hợp lệ.');
     }
 
-    // Dự phòng bằng Cache API của Cloudflare Worker (không lưu nặng vào D1)
+    const buf = await chunkBlob.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    const bucket = getBucket(env);
+
+    if (bucket && typeof bucket.put === 'function') {
+        const chunkKey = sanitizeKey(`_chunks/${safeId}/${String(idx).padStart(6, '0')}.part`);
+        await bucket.put(chunkKey, bytes, {
+            httpMetadata: {
+                contentType: 'application/octet-stream',
+                cacheControl: `public, max-age=${ttlSeconds}`
+            }
+        });
+        return { ok: true, chunkIndex: idx, size: bytes.byteLength, storage: 'r2' };
+    }
+
     if (typeof caches !== 'undefined' && caches.default && request) {
         const origin = new URL(request.url).origin;
-        const cacheReq = new Request(`${origin}${publicUrl}`, { method: 'GET' });
-        const cacheRes = new Response(bytes, {
+        const req = new Request(`${origin}${CHUNK_STORE_PREFIX}${safeId}/${idx}`, { method: 'GET' });
+        const res = new Response(bytes, {
             status: 200,
             headers: {
-                'Content-Type': resolvedMime,
+                'Content-Type': 'application/octet-stream',
                 'Content-Length': String(bytes.byteLength),
-                'Cache-Control': `public, max-age=${ttlSeconds}, s-maxage=${ttlSeconds}`,
-                'Accept-Ranges': 'bytes'
+                'Cache-Control': `public, max-age=${ttlSeconds}`
             }
         });
-        await caches.default.put(cacheReq, cacheRes);
-        return { url: publicUrl, mimeType: resolvedMime, size: bytes.byteLength, storage: 'cache' };
+        await caches.default.put(req, res);
+        return { ok: true, chunkIndex: idx, size: bytes.byteLength, storage: 'cache' };
     }
 
-    // Fallback cuối cùng nếu môi trường local không có R2 lẫn Cache API
-    let binary = '';
-    const chunkSize = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+    throw new Error('Không có bộ nhớ tạm cho chunk upload.');
+}
+
+/**
+ * Ghép toàn bộ các chunk thành file hoàn chỉnh và xóa mảnh tạm
+ */
+export async function finalizeMediaChunks(request, env, {
+    uploadId,
+    totalChunks,
+    folder = 'stories',
+    userId = 0,
+    mimeType = 'video/mp4',
+    ttlSeconds = DEFAULT_MEDIA_TTL_SEC
+}) {
+    const safeId = sanitizeUploadId(uploadId);
+    const count = parseInt(totalChunks, 10);
+    if (!safeId || isNaN(count) || count <= 0) {
+        throw new Error('Thông tin ghép file không hợp lệ.');
     }
-    return {
-        url: `data:${resolvedMime};base64,${btoa(binary)}`,
-        mimeType: resolvedMime,
-        size: bytes.byteLength,
-        storage: 'inline'
-    };
+
+    const bucket = getBucket(env);
+    const parts = [];
+    let totalBytes = 0;
+
+    if (bucket && typeof bucket.get === 'function') {
+        for (let i = 0; i < count; i++) {
+            const chunkKey = sanitizeKey(`_chunks/${safeId}/${String(i).padStart(6, '0')}.part`);
+            const obj = await bucket.get(chunkKey);
+            if (!obj) {
+                throw new Error(`Thiếu mảnh video #${i + 1}/${count}.`);
+            }
+            const arr = new Uint8Array(await obj.arrayBuffer());
+            parts.push(arr);
+            totalBytes += arr.byteLength;
+        }
+
+        const merged = new Uint8Array(totalBytes);
+        let offset = 0;
+        for (const p of parts) {
+            merged.set(p, offset);
+            offset += p.byteLength;
+        }
+
+        const resolvedMime = String(mimeType || 'video/mp4').trim() || 'video/mp4';
+        const ext = extensionFromMime(resolvedMime, resolvedMime.startsWith('video/') ? 'mp4' : 'jpg');
+        const rand = Math.random().toString(36).slice(2, 10);
+        const finalKey = sanitizeKey(`${folder}/${userId || 0}/${Date.now()}_${rand}.${ext}`);
+
+        const saved = await writeBytesToStorage(request, env, finalKey, merged, resolvedMime, ttlSeconds);
+
+        for (let i = 0; i < count; i++) {
+            const chunkKey = sanitizeKey(`_chunks/${safeId}/${String(i).padStart(6, '0')}.part`);
+            try { await bucket.delete(chunkKey); } catch (e) {}
+        }
+
+        return saved;
+    }
+
+    if (typeof caches !== 'undefined' && caches.default && request) {
+        const origin = new URL(request.url).origin;
+        for (let i = 0; i < count; i++) {
+            const req = new Request(`${origin}${CHUNK_STORE_PREFIX}${safeId}/${i}`, { method: 'GET' });
+            const cached = await caches.default.match(req);
+            if (!cached) {
+                throw new Error(`Thiếu mảnh video #${i + 1}/${count} trong Cache.`);
+            }
+            const arr = new Uint8Array(await cached.arrayBuffer());
+            parts.push(arr);
+            totalBytes += arr.byteLength;
+        }
+
+        const merged = new Uint8Array(totalBytes);
+        let offset = 0;
+        for (const p of parts) {
+            merged.set(p, offset);
+            offset += p.byteLength;
+        }
+
+        const resolvedMime = String(mimeType || 'video/mp4').trim() || 'video/mp4';
+        const ext = extensionFromMime(resolvedMime, resolvedMime.startsWith('video/') ? 'mp4' : 'jpg');
+        const rand = Math.random().toString(36).slice(2, 10);
+        const finalKey = sanitizeKey(`${folder}/${userId || 0}/${Date.now()}_${rand}.${ext}`);
+
+        const saved = await writeBytesToStorage(request, env, finalKey, merged, resolvedMime, ttlSeconds);
+
+        for (let i = 0; i < count; i++) {
+            const req = new Request(`${origin}${CHUNK_STORE_PREFIX}${safeId}/${i}`, { method: 'GET' });
+            try { await caches.default.delete(req); } catch (e) {}
+        }
+
+        return saved;
+    }
+
+    throw new Error('Không thể ghép file trên môi trường hiện tại.');
 }
 
 export async function deleteMediaAsset(request, env, mediaUrl) {
