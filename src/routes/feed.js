@@ -1249,16 +1249,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 if (soundBtn) soundBtn.style.display = 'none';
                 return;
             }
-            soundBtn.style.display = 'inline-flex';
-            if (vidEl.muted) {
-                soundBtn.innerText = '🔇 Bật tiếng';
-                soundBtn.style.borderColor = '#ffcc00';
-                soundBtn.style.color = '#ffcc00';
-            } else {
-                soundBtn.innerText = '🔊 Đang bật tiếng';
-                soundBtn.style.borderColor = '#00ff00';
-                soundBtn.style.color = '#00ff00';
-            }
+            
         }
 
         function toggleStorySound() {
