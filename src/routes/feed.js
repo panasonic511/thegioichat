@@ -182,7 +182,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             const formData = await request.formData();
             const action = formData.get('action');
 
-            // Nhánh nhanh cho upload mảnh & ghép từng batch (không gọi schema setup / không tốn subrequest thừa)
             if (action === 'upload_media_chunk') {
                 const uploadId = String(formData.get('upload_id') || '');
                 const chunkIndex = parseInt(formData.get('chunk_index') || '0', 10);
@@ -472,7 +471,8 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                    COALESCE(ma.thumb_url, stories.thumb_url, stories.image_url) AS resolved_thumb_url,
                    COALESCE(ma.media_type, stories.media_type, 'image') AS resolved_media_type,
                    COALESCE(ma.media_url, stories.media_url, stories.image_url) AS resolved_media_url,
-                   users.username, users.display_name, users.avatar, users.role
+                   users.username, users.display_name, users.avatar, users.role, users.is_admin, users.active_icon,
+                   users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.border_color, users.avatar_glow
             FROM stories
             LEFT JOIN media_assets ma ON ma.owner_type = 'story' AND ma.owner_id = stories.id
             LEFT JOIN users ON stories.user_id = users.id
@@ -486,6 +486,21 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
 
         const viewerItems = stories.map((s, idx) => {
             const detectedType = s.resolved_media_type === 'video' ? 'video' : 'image';
+            const rStoryUser = renderUser({
+                id: s.user_id,
+                username: s.username,
+                display_name: s.display_name,
+                avatar: s.avatar,
+                role: s.role,
+                is_admin: s.is_admin,
+                active_icon: s.active_icon,
+                name_color: s.name_color,
+                name_glow: s.name_glow,
+                name_border: s.name_border,
+                name_border_glow: s.name_border_glow,
+                border_color: s.border_color,
+                avatar_glow: s.avatar_glow
+            });
             const sName = s.display_name || s.username || 'Thành viên';
             const sAvatar = s.avatar || fallbackAvatar;
             return {
@@ -493,11 +508,12 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 id: s.id,
                 userId: s.user_id || 0,
                 name: sName,
+                nameHtml: rStoryUser.nameHtml,
                 avatar: sAvatar,
+                avatarStyle: rStoryUser.avatarStyle || 'border-radius: 50%; border: 2px solid #00ff00; object-fit: cover;',
                 mediaUrl: normalizeMediaUrl(s.resolved_media_url || ''),
                 mediaType: detectedType,
                 createdAt: s.created_at || 'Vừa xong',
-                role: s.role || 'Thành Viên',
                 canDelete: Boolean(isManager || (s.user_id && s.user_id === user.id))
             };
         });
@@ -537,7 +553,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
     if (tab === 'trending') {
         postsQuery = `
             SELECT posts.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow,
-                   users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role,
+                   users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role, users.is_admin,
                    (SELECT COUNT(*) FROM post_likes WHERE post_id = posts.id) +
                    (SELECT COUNT(*) FROM post_comments WHERE post_id = posts.id) as total_interactions
             FROM posts
@@ -547,7 +563,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
     } else if (tab === 'following') {
         postsQuery = `
             SELECT posts.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow,
-                   users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role
+                   users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role, users.is_admin
             FROM posts
             JOIN users ON posts.user_id = users.id
             WHERE posts.user_id IN (SELECT following_id FROM follows WHERE follower_id = ?)
@@ -556,7 +572,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
     } else {
         postsQuery = `
             SELECT posts.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow,
-                   users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role
+                   users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role, users.is_admin
             FROM posts
             JOIN users ON posts.user_id = users.id
             ORDER BY posts.id DESC LIMIT ? OFFSET ?
@@ -598,7 +614,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     env.DB.prepare(`SELECT post_id, user_id FROM post_likes WHERE post_id IN (${placeholders})`).bind(...postIds),
                     env.DB.prepare(`
                         SELECT post_comments.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow,
-                               users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role
+                               users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role, users.is_admin
                         FROM post_comments
                         LEFT JOIN users ON post_comments.user_id = users.id
                         WHERE post_id IN (${placeholders})
@@ -642,14 +658,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     ? `<div style="margin-top: 8px; background: #000; text-align: center; border-radius: 4px; overflow: hidden;"><img src="${escapeAttr(imgSrc)}" loading="lazy" style="width: 100%; max-height: 450px; object-fit: contain; display: block; margin: 0 auto;"></div>`
                     : '';
 
-                const roleDisplayHtml = (p.role && p.role !== 'Thành Viên') ? `
-                    <span style="display: inline-block; background: #1a1a1a; border: 1px solid #444; color: #ffcc00; font-size: 10px; font-weight: bold; padding: 1px 6px; border-radius: 4px; text-shadow: 0 0 4px rgba(255,204,0,0.4);">
-                        ${p.role}
-                    </span>
-                ` : `
-                    <span style="color: #888; font-size: 11px;">${p.role || 'Thành viên'}</span>
-                `;
-
                 const canDelete = isUserAdmin || p.user_id === user.id;
                 const deleteBtnHtml = canDelete ? `
                     <form onsubmit="deletePostAjax(event, ${p.id})" style="margin: 0;">
@@ -667,10 +675,8 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                                 ${rUser.avatarHtml.replace(/style="[^"]*"/gi, 'style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;"')}
                             </div>
                             <div>
-                                <div>${rUser.nameHtml} <span style="font-size: 10px; color: #888; margin-left: 6px;">${p.created_at || ''}</span></div>
-                                <div style="font-size: 11px; margin-top: 2px; display: flex; align-items: center; gap: 4px;">
-                                    ${roleDisplayHtml} <span style="color: #666;">•</span> <span style="color: #aaa;">🌍 Công khai</span>
-                                </div>
+                                <div>${rUser.nameHtml}</div>
+                                <div style="font-size: 10px; color: #888; margin-top: 2px;">${p.created_at || ''}</div>
                             </div>
                         </div>
                         ${deleteBtnHtml}
@@ -809,10 +815,9 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 <div style="min-width: 0;">
                     <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                         <span id="sv-name" style="color: #fff; font-weight: bold; font-size: 14px; text-shadow: 0 1px 4px #000;"></span>
-                        <span id="sv-role-badge" style="display: none; background: rgba(255,204,0,0.18); border: 1px solid #ffcc00; color: #ffcc00; font-size: 10px; font-weight: bold; padding: 1px 6px; border-radius: 4px;"></span>
                     </div>
                     <div style="font-size: 11px; color: #ccc; text-shadow: 0 1px 3px #000;">
-                        <span id="sv-time"></span> · 🌍 Công khai (24h)
+                        <span id="sv-time"></span>
                     </div>
                 </div>
             </div>
@@ -852,9 +857,9 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
     <script>
         const STORY_VIEWER_LIST = ${storyViewerDataJson};
         const STORY_MEDIA_CACHE = {};
-        const MAX_STORY_BYTES = 3 * 1024 * 1024; // Mặc định tối đa 3MB cho video Story
-        const CHUNK_SIZE_BYTES = 1048576;      // 1MB mỗi mảnh -> tiến trình % mượt & ổn định
-        const MERGE_BATCH_SIZE = 4;          // Ghép tối đa 4 mảnh mỗi request
+        const MAX_STORY_BYTES = 3 * 1024 * 1024;
+        const CHUNK_SIZE_BYTES = 1048576;
+        const MERGE_BATCH_SIZE = 4;
         let currentStoryIndex = -1;
         let isSubmittingStory = false;
         let preparedStoryBlob = null;
@@ -1017,7 +1022,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     : (maxRecordMs / 1000);
                 const safeDurationSec = Math.max(1.5, rawDurationSec);
 
-                // Tính bitrate mục tiêu để tổng dung lượng <= ~2.75MB (an toàn dưới 3MB)
                 const budgetBytes = MAX_STORY_BYTES * 0.90;
                 const audioBps = opts.audioBps || 32000;
                 const totalBitsBudget = budgetBytes * 8;
@@ -1110,7 +1114,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
         }
 
         async function enforceUnder3MBVideo(file, onProgress) {
-            // Lần 1: ép về <= 3MB với độ phân giải gọn & bitrate tự tính theo thời lượng
             let bestBlob = await recordVideoPass(file, {
                 maxDim: 320,
                 fps: 14,
@@ -1121,7 +1124,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 if (onProgress) onProgress(Math.min(0.75, ratio * 0.75));
             });
 
-            // Nếu sau lần 1 vẫn > 3MB -> chạy lần 2 siêu nhẹ (240px, 10fps, giới hạn 10s)
             if (!bestBlob || bestBlob.size > MAX_STORY_BYTES) {
                 const sourceForPass2 = (bestBlob && bestBlob.size > 256) ? bestBlob : file;
                 const pass2Blob = await recordVideoPass(sourceForPass2, {
@@ -1202,7 +1204,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 }, 5);
             }
 
-            // Ghép cuốn chiếu từng batch nhỏ để không vượt giới hạn subrequest
             let cursor = 0;
             let currentUrl = '';
             while (cursor < totalChunks) {
@@ -1247,7 +1248,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 if (soundBtn) soundBtn.style.display = 'none';
                 return;
             }
-          
         }
 
         function toggleStorySound() {
@@ -1264,19 +1264,20 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             currentStoryIndex = idx;
             const item = STORY_VIEWER_LIST[idx];
 
-            document.getElementById('sv-avatar').src = item.avatar || '';
-            document.getElementById('sv-name').innerText = item.name || 'Thành viên';
+            const avEl = document.getElementById('sv-avatar');
+            avEl.src = item.avatar || '';
+            if (item.avatarStyle) {
+                avEl.setAttribute('style', item.avatarStyle + ' width: 38px; height: 38px; flex-shrink: 0;');
+            }
+            const nameEl = document.getElementById('sv-name');
+            if (item.nameHtml) {
+                nameEl.innerHTML = item.nameHtml;
+            } else {
+                nameEl.innerText = item.name || 'Thành viên';
+            }
             document.getElementById('sv-time').innerText = item.createdAt || 'Vừa xong';
             document.getElementById('sv-feedback').innerText = '';
             document.getElementById('sv-msg-input').value = '';
-
-            const roleBadge = document.getElementById('sv-role-badge');
-            if (item.role && item.role !== 'Thành Viên') {
-                roleBadge.innerText = item.role;
-                roleBadge.style.display = 'inline-block';
-            } else {
-                roleBadge.style.display = 'none';
-            }
 
             const imgEl = document.getElementById('sv-image');
             const vidEl = document.getElementById('sv-video');
@@ -1482,7 +1483,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 if (isVideoFile && !val) {
                     if (!preparedStoryBlob || payloadBlob.size > MAX_STORY_BYTES) {
                         payloadBlob = await enforceUnder3MBVideo(payloadBlob || file, (ratio) => {
-                            setStoryProgress(5 + Math.round(ratio * 30), );
+                            setStoryProgress(5 + Math.round(ratio * 30), '');
                         });
                         preparedStoryBlob = payloadBlob;
                     } else {
