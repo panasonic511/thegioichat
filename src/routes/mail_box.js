@@ -10,6 +10,32 @@ function escapeHtml(str) {
         .replace(/'/g, '&#39;');
 }
 
+function getFallbackAvatar(seed = '#00ff00') {
+    const safeFill = encodeURIComponent(String(seed || '#00ff00'));
+    return `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%23181818'/><circle cx='50' cy='38' r='18' fill='${safeFill}'/><path d='M20 84c4-16 18-24 30-24s26 8 30 24' fill='${safeFill}'/></svg>`;
+}
+
+function buildPartnerVisual(pObj) {
+    const rendered = renderUser(pObj || {});
+    const rawAv = pObj && pObj.avatar ? String(pObj.avatar).trim() : '';
+    const avatarSrc = (rawAv && !rawAv.includes('7gXvS6v'))
+        ? rawAv
+        : getFallbackAvatar(pObj && pObj.name_color ? pObj.name_color : '#00ff00');
+
+    const avatarStyle = rendered.avatarStyle
+        ? `${rendered.avatarStyle}; width: 38px; height: 38px; border-radius: 50%; object-fit: cover; display: block;`
+        : 'width: 38px; height: 38px; border-radius: 50%; object-fit: cover; border: 1px solid #00ff00; display: block;';
+
+    const levelVal = Number(pObj && pObj.level ? pObj.level : 1);
+
+    return {
+        nameHtml: rendered.nameHtml || escapeHtml((pObj && (pObj.display_name || pObj.username)) || 'Thành viên'),
+        avatarSrc,
+        avatarStyle,
+        level: Number.isNaN(levelVal) || levelVal < 1 ? 1 : levelVal
+    };
+}
+
 function formatPreviewMessage(msgRow, currentUserId) {
     if (!msgRow) return 'Nhấn để trò chuyện...';
 
@@ -57,6 +83,16 @@ export async function handleMailBox(request, env, user, renderLayout) {
         try {
             await env.DB.prepare("ALTER TABLE mail_box ADD COLUMN is_read INTEGER DEFAULT 0").run();
         } catch (e) {}
+
+        await env.DB.prepare(`
+            CREATE TABLE IF NOT EXISTS mail_typing_status (
+                user_id INTEGER NOT NULL,
+                target_user_id INTEGER NOT NULL,
+                is_typing INTEGER DEFAULT 0,
+                updated_at INTEGER DEFAULT 0,
+                PRIMARY KEY (user_id, target_user_id)
+            )
+        `).run();
     } catch (e) {}
 
     let useLegacyCols = false;
@@ -105,6 +141,7 @@ export async function handleMailBox(request, env, user, renderLayout) {
         } catch (err) {}
     }
 
+    const nowSec = Math.floor(Date.now() / 1000);
     let listHtml = '';
 
     if (!conversations || conversations.length === 0) {
@@ -120,15 +157,24 @@ export async function handleMailBox(request, env, user, renderLayout) {
             try {
                 partner = await env.DB.prepare(`
                     SELECT id, username, display_name, avatar, border_color, avatar_glow,
-                           name_color, name_glow, name_border, name_border_glow, active_icon, role, is_admin
+                           name_color, name_glow, name_border, name_border_glow, active_icon, role, is_admin, level, coins
                     FROM users WHERE id = ?
                 `).bind(pid).first();
-            } catch (e) {}
+            } catch (e) {
+                try {
+                    partner = await env.DB.prepare(`
+                        SELECT id, username, display_name, avatar, border_color, avatar_glow,
+                               name_color, name_glow, name_border, name_border_glow, active_icon, role, is_admin
+                        FROM users WHERE id = ?
+                    `).bind(pid).first();
+                } catch (e2) {}
+            }
 
             if (!partner) continue;
 
             let lastMsgRow = null;
             let unreadCount = 0;
+            let isTypingToMe = false;
 
             try {
                 if (!useLegacyCols) {
@@ -162,11 +208,23 @@ export async function handleMailBox(request, env, user, renderLayout) {
 
                     unreadCount = unreadRes ? Number(unreadRes.cnt || 0) : 0;
                 }
+
+                const typingRow = await env.DB.prepare(`
+                    SELECT is_typing, updated_at
+                    FROM mail_typing_status
+                    WHERE user_id = ? AND target_user_id = ?
+                    LIMIT 1
+                `).bind(pid, user.id).first();
+
+                if (typingRow && Number(typingRow.is_typing) === 1 && (nowSec - Number(typingRow.updated_at || 0)) <= 6) {
+                    isTypingToMe = true;
+                }
             } catch (err) {}
 
             partnersData.push({
                 partner,
-                lastMsgText: formatPreviewMessage(lastMsgRow, user.id),
+                lastMsgText: isTypingToMe ? 'Đang soạn tin nhắn...' : formatPreviewMessage(lastMsgRow, user.id),
+                isTypingToMe,
                 unreadCount,
                 lastMsgId: Number(c.last_msg_id || 0)
             });
@@ -180,24 +238,29 @@ export async function handleMailBox(request, env, user, renderLayout) {
             listHtml = partnersData.map((item, index) => {
                 const p = item.partner;
                 const pId = Number(p.id);
-                const rUser = renderUser(p);
+                const visual = buildPartnerVisual(p);
 
                 const unreadBadgeHtml = item.unreadCount > 0
                     ? `<span data-partner-badge="${pId}" style="background: #ff0000; color: #fff; font-size: 9px; padding: 1px 6px; border-radius: 10px; font-weight: bold;">Mới (${item.unreadCount})</span>`
                     : '';
 
+                const levelBadgeHtml = `<span style="background: #1b2232; color: #ffd54f; border: 1px solid #394867; border-radius: 4px; padding: 0 5px; font-size: 10px; font-weight: bold;">Lv.${visual.level}</span>`;
+
+                const previewColor = item.isTypingToMe
+                    ? '#00ff88'
+                    : (item.unreadCount > 0 ? '#eee' : '#aaa');
+
                 return `
                 <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px; border-bottom: 1px solid #222; background: ${index % 2 === 0 ? '#080808' : '#030303'};">
                     <div style="display: flex; align-items: center; gap: 10px; overflow: hidden;">
-                        <div style="width: 38px; height: 38px; min-width: 38px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
-                            ${rUser.avatarHtml.replace(/style="[^"]*"/gi, 'style="width: 38px; height: 38px; border-radius: 50%; object-fit: cover;"')}
-                        </div>
+                        <img src="${escapeHtml(visual.avatarSrc)}" alt="${escapeHtml(p.display_name || p.username || '')}" style="${escapeHtml(visual.avatarStyle)}">
                         <div style="overflow: hidden;">
-                            <div style="font-size: 13px; display: flex; align-items: center; gap: 6px;">
-                                <a href="/profile?user=${pId}" style="text-decoration: none;">${rUser.nameHtml}</a>
+                            <div style="font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                <a href="/profile?user=${pId}" style="text-decoration: none;">${visual.nameHtml}</a>
+                                ${levelBadgeHtml}
                                 ${unreadBadgeHtml}
                             </div>
-                            <div style="color: ${item.unreadCount > 0 ? '#eee' : '#aaa'}; font-weight: ${item.unreadCount > 0 ? 'bold' : 'normal'}; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; margin-top: 2px;">
+                            <div style="color: ${previewColor}; font-weight: ${(item.unreadCount > 0 || item.isTypingToMe) ? 'bold' : 'normal'}; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; margin-top: 2px;">
                                 ${escapeHtml(item.lastMsgText)}
                             </div>
                         </div>
