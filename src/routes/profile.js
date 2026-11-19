@@ -82,6 +82,15 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             );
         `).run();
+        await env.DB.prepare(`
+            CREATE TABLE IF NOT EXISTS wall_post_comments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                post_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                created_at INTEGER DEFAULT 0
+            );
+        `).run();
     } catch(e) {}
 
     let profileUser = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(targetId).first();
@@ -140,6 +149,9 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                     throw new Error("Bạn không có quyền quản lý xóa bài viết này!");
                 }
                 await env.DB.prepare(`DELETE FROM ${feedTable} WHERE id = ?`).bind(postId).run();
+                try {
+                    await env.DB.prepare(`DELETE FROM wall_post_comments WHERE post_id = ?`).bind(postId).run();
+                } catch (eDelCmt) {}
                 message = `<div style="color: #ffcc00; background: #1a1500; border: 1px solid #665500; padding: 6px; text-align: center; margin-bottom: 8px;">🗑️ Đã xóa bài viết #${postId}!</div>`;
             } else if (action === 'like_post') {
                 const postId = parseInt(formData.get('post_id') || '0');
@@ -151,6 +163,25 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                         await env.DB.prepare(`UPDATE ${feedTable} SET likes = COALESCE(likes, 0) + 1 WHERE id = ?`).bind(postId).run();
                     } catch (eLike2) {}
                 }
+            } else if (action === 'comment_post') {
+                const postId = parseInt(formData.get('post_id') || '0');
+                const commentText = (formData.get('comment_content') || '').trim();
+                if (!postId) throw new Error("ID bài viết không hợp lệ!");
+                if (!commentText) throw new Error("Vui lòng nhập nội dung bình luận!");
+
+                const nowSec = Math.floor(Date.now() / 1000);
+                await env.DB.prepare(
+                    `INSERT INTO wall_post_comments (post_id, user_id, content, created_at) VALUES (?, ?, ?, ?)`
+                ).bind(postId, user.id, commentText, nowSec).run();
+
+                try {
+                    await env.DB.prepare(`UPDATE ${feedTable} SET comments_count = COALESCE(comments_count, 0) + 1 WHERE id = ?`).bind(postId).run();
+                } catch (eCmtUpd) {
+                    try {
+                        await env.DB.prepare(`UPDATE ${feedTable} SET comments = COALESCE(comments, 0) + 1 WHERE id = ?`).bind(postId).run();
+                    } catch (eCmtUpd2) {}
+                }
+                message = `<div style="color: #00ff00; background: #001a00; border: 1px solid #005500; padding: 6px; text-align: center; margin-bottom: 8px;">💬 Đã gửi bình luận!</div>`;
             } else if (isOwner) {
                 if (action === 'update_cover') {
                     const coverPhoto = formData.get('cover_photo');
@@ -237,12 +268,30 @@ export async function handleProfile(request, env, user, renderLayout, url) {
 
     let postCount = 0;
     let userPosts = [];
+    let commentsByPost = {};
     try {
         const pRow = await env.DB.prepare(`SELECT COUNT(*) as total FROM ${feedTable} WHERE user_id = ?`).bind(targetId).first();
         postCount = pRow?.total || 0;
 
         const pList = await env.DB.prepare(`SELECT * FROM ${feedTable} WHERE user_id = ? ORDER BY id DESC LIMIT 20`).bind(targetId).all();
         userPosts = pList.results || [];
+
+        const postIds = userPosts.map(p => Number(p.id || 0)).filter(id => id > 0);
+        if (postIds.length > 0) {
+            const placeholders = postIds.map(() => '?').join(',');
+            const cRows = await env.DB.prepare(`
+                SELECT c.*, u.username, u.display_name
+                FROM wall_post_comments c
+                LEFT JOIN users u ON u.id = c.user_id
+                WHERE c.post_id IN (${placeholders})
+                ORDER BY c.id ASC
+            `).bind(...postIds).all();
+            for (const c of (cRows.results || [])) {
+                const pid = Number(c.post_id);
+                if (!commentsByPost[pid]) commentsByPost[pid] = [];
+                commentsByPost[pid].push(c);
+            }
+        }
     } catch(e) {}
 
     const hasCover = (profileUser.cover_photo && !profileUser.cover_photo.includes('7gXvS6v'));
@@ -272,9 +321,22 @@ export async function handleProfile(request, env, user, renderLayout, url) {
 
             const imgUrl = post.image_url || post.image || post.media_url || '';
             const timeAgo = formatTimeAgo(post.created_at || post.time || post.createdAt);
+            const postComments = commentsByPost[postId] || [];
             const likesCount = Number(post.likes_count ?? post.likes ?? 0);
-            const commentsCount = Number(post.comments_count ?? post.comments ?? 0);
+            const commentsCount = Math.max(Number(post.comments_count ?? post.comments ?? 0), postComments.length);
             const canDeleteThisPost = canModerate || Number(post.user_id) === Number(user.id);
+
+            const commentsListHtml = postComments.map(c => {
+                const cName = c.display_name || c.username || `ID #${c.user_id}`;
+                return `
+                <div style="background: #0d0d0d; border: 1px solid #222; border-radius: 4px; padding: 6px 8px; margin-bottom: 6px; font-size: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                        <b style="color: #ffcc00;">${escapeHtml(cName)}</b>
+                        <span style="font-size: 10px; color: #777;">${escapeHtml(formatTimeAgo(c.created_at))}</span>
+                    </div>
+                    <div style="color: #e6e6e6; white-space: pre-wrap;">${escapeHtml(c.content)}</div>
+                </div>`;
+            }).join('');
 
             return `
             <div style="background: #141414; border: 1px solid #2b2b2b; border-radius: 4px; padding: 10px; margin-top: 8px;">
@@ -298,7 +360,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 </div>
 
                 <!-- Nội dung bài đăng -->
-                ${rawText ? `<div style="font-size: 13px; color: #f2f2f2; line-height: 1.6; white-space: pre-wrap; text-align: center; margin-bottom: ${imgUrl ? '10px' : '6px'}; ${escapeHtml(postStyle)}">${escapeHtml(rawText)}</div>` : ''}
+                ${rawText ? `<div style="font-size: 13px; color: #f2f2f2; line-height: 1.6; white-space: pre-wrap; text-align: center; margin-bottom: ${imgUrl ? '10px' : '8px'}; ${escapeHtml(postStyle)}">${escapeHtml(rawText)}</div>` : ''}
 
                 <!-- Ảnh bài đăng -->
                 ${imgUrl ? `
@@ -307,23 +369,34 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 </div>
                 ` : ''}
 
-                <!-- Hàng dưới: Icon tim và icon bình luận kế bên nhau -->
-                <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #242424; padding-top: 7px; font-size: 12px;">
-                    <div style="display: flex; align-items: center; gap: 14px;">
-                        <form method="POST" style="margin: 0; display: inline-flex; align-items: center;">
-                            <input type="hidden" name="action" value="like_post">
-                            <input type="hidden" name="post_id" value="${postId}">
-                            <button type="submit" title="Thích bài viết" style="background: none; border: none; color: #ff3b5c; font-size: 13px; font-weight: bold; cursor: pointer; padding: 0; display: inline-flex; align-items: center; gap: 4px;">
-                                <span>❤️</span>
-                                <span style="color: #ddd; font-size: 12px;">${likesCount}</span>
-                            </button>
-                        </form>
+                <!-- Hàng dưới: Ô icon tim và ô icon bình luận lớn hơn, có chức năng trực tiếp -->
+                <div style="display: flex; align-items: center; gap: 10px; border-top: 1px solid #242424; padding-top: 8px; flex-wrap: wrap;">
+                    <form method="POST" style="margin: 0; display: inline-flex; align-items: center;">
+                        <input type="hidden" name="action" value="like_post">
+                        <input type="hidden" name="post_id" value="${postId}">
+                        <button type="submit" title="Thích bài viết" style="background: #1e1014; border: 1px solid #4a1c28; border-radius: 6px; color: #ff4d6d; font-size: 15px; font-weight: bold; cursor: pointer; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px; min-width: 58px; justify-content: center;">
+                            <span style="font-size: 16px; line-height: 1;">❤️</span>
+                            <span style="color: #fff; font-size: 13px;">${likesCount}</span>
+                        </button>
+                    </form>
 
-                        <a href="/users/feed?post=${postId}#comment" title="Bình luận bài viết" style="color: #ccc; text-decoration: none; font-size: 13px; display: inline-flex; align-items: center; gap: 4px;">
-                            <span>💬</span>
-                            <span style="color: #ddd; font-size: 12px;">${commentsCount}</span>
-                        </a>
+                    <button type="button" onclick="togglePostCommentBox(${postId})" title="Bình luận bài viết" style="background: #121824; border: 1px solid #263654; border-radius: 6px; color: #60a5fa; font-size: 15px; font-weight: bold; cursor: pointer; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px; min-width: 58px; justify-content: center;">
+                        <span style="font-size: 16px; line-height: 1;">💬</span>
+                        <span style="color: #fff; font-size: 13px;">${commentsCount}</span>
+                    </button>
+                </div>
+
+                <!-- Khung bình luận ngay trong bài đăng -->
+                <div id="post-comment-box-${postId}" style="display: ${postComments.length > 0 ? 'block' : 'none'}; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #292929;">
+                    <div style="max-height: 180px; overflow-y: auto; margin-bottom: 6px;">
+                        ${commentsListHtml || `<div style="font-size: 11px; color: #777; margin-bottom: 6px;">Chưa có bình luận nào. Hãy là người đầu tiên bình luận!</div>`}
                     </div>
+                    <form method="POST" style="display: flex; gap: 6px; align-items: center; margin: 0;">
+                        <input type="hidden" name="action" value="comment_post">
+                        <input type="hidden" name="post_id" value="${postId}">
+                        <input type="text" name="comment_content" placeholder="Viết bình luận..." required style="flex: 1; background: #080808; color: #fff; border: 1px solid #3c3c3c; border-radius: 5px; padding: 6px 8px; font-size: 12px; box-sizing: border-box;">
+                        <button type="submit" style="background: #0055ff; color: #fff; border: none; border-radius: 5px; padding: 6px 12px; font-size: 12px; font-weight: bold; cursor: pointer;">Gửi</button>
+                    </form>
                 </div>
             </div>`;
         }).join('');
@@ -614,6 +687,17 @@ export async function handleProfile(request, env, user, renderLayout, url) {
 
     <!-- JavaScript kích hoạt Modal, Tường nhà, Icon & Bb Color, Cắt/Kéo ảnh -->
     <script>
+        function togglePostCommentBox(postId) {
+            const box = document.getElementById('post-comment-box-' + postId);
+            if (!box) return;
+            const show = (box.style.display === 'none' || !box.style.display);
+            box.style.display = show ? 'block' : 'none';
+            if (show) {
+                const inp = box.querySelector('input[name="comment_content"]');
+                if (inp) inp.focus();
+            }
+        }
+
         function toggleWallForm() {
             const formBox = document.getElementById('wall-post-form');
             if (!formBox) return;
