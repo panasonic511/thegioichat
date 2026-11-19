@@ -771,7 +771,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
     <div id="story-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.88); z-index: 999; justify-content: center; align-items: center; padding: 10px; box-sizing: border-box;">
         <div style="background: #111; border: 1px solid #444; width: 100%; max-width: 360px; padding: 12px; box-sizing: border-box; border-radius: 6px; max-height: 92vh; overflow-y: auto;">
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 6px; margin-bottom: 10px;">
-                <b style="color: #00ff00; font-size: 12px;">📸 Đăng Story (24h · Tự ép <= 3MB)</b>
+                <b style="color: #00ff00; font-size: 12px;">📸 Đăng Story</b>
                 <button type="button" onclick="closeStoryModal()" style="background:none; border:none; color:#ff5555; font-weight:bold; cursor:pointer;">✕</button>
             </div>
             <form id="story-create-form" method="POST" enctype="multipart/form-data" onsubmit="return handleStoryFormSubmit(event)">
@@ -780,8 +780,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 <input type="hidden" id="story-thumb-val" name="thumb_url">
                 <input type="hidden" id="story-media-type-val" name="media_type" value="image">
                 <input type="hidden" id="story-duration-val" name="duration_sec" value="0">
-
-                <label style="color: #ccc; font-size: 11px; display: block; margin-bottom: 6px;">Tự động đưa video về <= 3MB, giữ tiếng & giảm kích thước:</label>
                 <div style="margin-bottom: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;">
                     <label style="display: inline-flex; align-items: center; gap: 6px; background: #1a1a1a; border: 1px solid #444; color: #00ff00; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; flex-shrink: 0;">
                         🎬 Chọn ảnh hoặc video
