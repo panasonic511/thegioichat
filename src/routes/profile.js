@@ -63,12 +63,11 @@ function formatCommentUserStyle(row) {
         avatar: row.avatar
     };
     const rendered = renderUser(uObj);
-    const iconPrefix = row.active_icon ? `${escapeHtml(row.active_icon)} ` : '';
     const av = (row.avatar && !String(row.avatar).includes('7gXvS6v'))
         ? row.avatar
         : "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/></svg>";
     return {
-        nameHtml: `${iconPrefix}${rendered.nameHtml}`,
+        nameHtml: rendered.nameHtml,
         avatarSrc: av,
         avatarStyle: rendered.avatarStyle || 'border-radius: 50%; object-fit: cover;'
     };
@@ -891,7 +890,6 @@ export async function handleProfile(request, env, user, renderLayout, url) {
 
         async function submitCommentAjax(ev) {
             ev.preventDefault();
-            const form = ev.target;
             const postId = Number(document.getElementById('comment-popup-post-id')?.value || activeCommentPostId || 0);
             const inputEl = document.getElementById('comment-popup-input');
             const btnEl = document.getElementById('comment-popup-submit-btn');
