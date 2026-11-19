@@ -306,7 +306,6 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                         </a>
                     </div>
 
-                    ${canModerate ? `<span style="font-size: 10px; color: #ffcc00;">[Quản lý #${postId}]</span>` : ''}
                 </div>
             </div>`;
         }).join('');
