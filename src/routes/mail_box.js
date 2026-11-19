@@ -37,7 +37,6 @@ function formatPreviewMessage(msgRow, currentUserId) {
 }
 
 export async function handleMailBox(request, env, user, renderLayout) {
-    // Tự động tạo bảng mail_box chuẩn hóa nếu chưa có
     try {
         await env.DB.prepare(`
             CREATE TABLE IF NOT EXISTS mail_box (
@@ -60,7 +59,6 @@ export async function handleMailBox(request, env, user, renderLayout) {
         } catch (e) {}
     } catch (e) {}
 
-    // Xác định schema cột đang dùng trong mail_box
     let useLegacyCols = false;
     let conversations = [];
 
@@ -122,7 +120,7 @@ export async function handleMailBox(request, env, user, renderLayout) {
             try {
                 partner = await env.DB.prepare(`
                     SELECT id, username, display_name, avatar, border_color, avatar_glow,
-                           name_color, name_glow, name_border, name_border_glow, active_icon, role
+                           name_color, name_glow, name_border, name_border_glow, active_icon, role, is_admin
                     FROM users WHERE id = ?
                 `).bind(pid).first();
             } catch (e) {}
@@ -174,7 +172,6 @@ export async function handleMailBox(request, env, user, renderLayout) {
             });
         }
 
-        // Sắp xếp lại lần nữa theo tin nhắn mới nhất lên đầu
         partnersData.sort((a, b) => b.lastMsgId - a.lastMsgId);
 
         if (partnersData.length === 0) {
@@ -184,15 +181,6 @@ export async function handleMailBox(request, env, user, renderLayout) {
                 const p = item.partner;
                 const pId = Number(p.id);
                 const rUser = renderUser(p);
-
-                const roleName = p.role || 'Thành viên';
-                const roleDisplayHtml = (roleName && roleName !== 'Thành Viên' && roleName !== 'Thành viên') ? `
-                    <span style="display: inline-block; background: #1a1a1a; border: 1px solid #444; color: #ffcc00; font-size: 9px; font-weight: bold; padding: 1px 5px; border-radius: 4px; text-shadow: 0 0 4px rgba(255,204,0,0.4); margin-top: 2px;">
-                        ${escapeHtml(roleName)}
-                    </span>
-                ` : `
-                    <span style="color: #888; font-size: 10px; margin-top: 2px;">${escapeHtml(roleName)}</span>
-                `;
 
                 const unreadBadgeHtml = item.unreadCount > 0
                     ? `<span data-partner-badge="${pId}" style="background: #ff0000; color: #fff; font-size: 9px; padding: 1px 6px; border-radius: 10px; font-weight: bold;">Mới (${item.unreadCount})</span>`
@@ -208,9 +196,6 @@ export async function handleMailBox(request, env, user, renderLayout) {
                             <div style="font-size: 13px; display: flex; align-items: center; gap: 6px;">
                                 <a href="/profile?user=${pId}" style="text-decoration: none;">${rUser.nameHtml}</a>
                                 ${unreadBadgeHtml}
-                            </div>
-                            <div>
-                                ${roleDisplayHtml}
                             </div>
                             <div style="color: ${item.unreadCount > 0 ? '#eee' : '#aaa'}; font-weight: ${item.unreadCount > 0 ? 'bold' : 'normal'}; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; margin-top: 2px;">
                                 ${escapeHtml(item.lastMsgText)}
