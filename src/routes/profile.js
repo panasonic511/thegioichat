@@ -91,6 +91,15 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 created_at INTEGER DEFAULT 0
             );
         `).run();
+        await env.DB.prepare(`
+            CREATE TABLE IF NOT EXISTS wall_post_likes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                post_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                created_at INTEGER DEFAULT 0,
+                UNIQUE(post_id, user_id)
+            );
+        `).run();
     } catch(e) {}
 
     let profileUser = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(targetId).first();
@@ -151,17 +160,40 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 await env.DB.prepare(`DELETE FROM ${feedTable} WHERE id = ?`).bind(postId).run();
                 try {
                     await env.DB.prepare(`DELETE FROM wall_post_comments WHERE post_id = ?`).bind(postId).run();
-                } catch (eDelCmt) {}
+                    await env.DB.prepare(`DELETE FROM wall_post_likes WHERE post_id = ?`).bind(postId).run();
+                } catch (eDelMeta) {}
                 message = `<div style="color: #ffcc00; background: #1a1500; border: 1px solid #665500; padding: 6px; text-align: center; margin-bottom: 8px;">🗑️ Đã xóa bài viết #${postId}!</div>`;
             } else if (action === 'like_post') {
                 const postId = parseInt(formData.get('post_id') || '0');
                 if (!postId) throw new Error("ID bài viết không hợp lệ!");
-                try {
-                    await env.DB.prepare(`UPDATE ${feedTable} SET likes_count = COALESCE(likes_count, 0) + 1 WHERE id = ?`).bind(postId).run();
-                } catch (eLike) {
+
+                const existingLike = await env.DB.prepare(
+                    `SELECT id FROM wall_post_likes WHERE post_id = ? AND user_id = ?`
+                ).bind(postId, user.id).first();
+
+                if (existingLike) {
+                    await env.DB.prepare(
+                        `DELETE FROM wall_post_likes WHERE post_id = ? AND user_id = ?`
+                    ).bind(postId, user.id).run();
                     try {
-                        await env.DB.prepare(`UPDATE ${feedTable} SET likes = COALESCE(likes, 0) + 1 WHERE id = ?`).bind(postId).run();
-                    } catch (eLike2) {}
+                        await env.DB.prepare(`UPDATE ${feedTable} SET likes_count = MAX(0, COALESCE(likes_count, 0) - 1) WHERE id = ?`).bind(postId).run();
+                    } catch (eLikeDec) {
+                        try {
+                            await env.DB.prepare(`UPDATE ${feedTable} SET likes = MAX(0, COALESCE(likes, 0) - 1) WHERE id = ?`).bind(postId).run();
+                        } catch (eLikeDec2) {}
+                    }
+                } else {
+                    const nowSec = Math.floor(Date.now() / 1000);
+                    await env.DB.prepare(
+                        `INSERT INTO wall_post_likes (post_id, user_id, created_at) VALUES (?, ?, ?)`
+                    ).bind(postId, user.id, nowSec).run();
+                    try {
+                        await env.DB.prepare(`UPDATE ${feedTable} SET likes_count = COALESCE(likes_count, 0) + 1 WHERE id = ?`).bind(postId).run();
+                    } catch (eLikeInc) {
+                        try {
+                            await env.DB.prepare(`UPDATE ${feedTable} SET likes = COALESCE(likes, 0) + 1 WHERE id = ?`).bind(postId).run();
+                        } catch (eLikeInc2) {}
+                    }
                 }
             } else if (action === 'comment_post') {
                 const postId = parseInt(formData.get('post_id') || '0');
@@ -269,6 +301,8 @@ export async function handleProfile(request, env, user, renderLayout, url) {
     let postCount = 0;
     let userPosts = [];
     let commentsByPost = {};
+    let likesCountByPost = {};
+    let likedByMeSet = new Set();
     try {
         const pRow = await env.DB.prepare(`SELECT COUNT(*) as total FROM ${feedTable} WHERE user_id = ?`).bind(targetId).first();
         postCount = pRow?.total || 0;
@@ -290,6 +324,18 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 const pid = Number(c.post_id);
                 if (!commentsByPost[pid]) commentsByPost[pid] = [];
                 commentsByPost[pid].push(c);
+            }
+
+            const lRows = await env.DB.prepare(`
+                SELECT post_id, COUNT(*) as cnt, SUM(CASE WHEN user_id = ? THEN 1 ELSE 0 END) as mine
+                FROM wall_post_likes
+                WHERE post_id IN (${placeholders})
+                GROUP BY post_id
+            `).bind(user.id, ...postIds).all();
+            for (const l of (lRows.results || [])) {
+                const pid = Number(l.post_id);
+                likesCountByPost[pid] = Number(l.cnt || 0);
+                if (Number(l.mine || 0) > 0) likedByMeSet.add(pid);
             }
         }
     } catch(e) {}
@@ -322,7 +368,10 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             const imgUrl = post.image_url || post.image || post.media_url || '';
             const timeAgo = formatTimeAgo(post.created_at || post.time || post.createdAt);
             const postComments = commentsByPost[postId] || [];
-            const likesCount = Number(post.likes_count ?? post.likes ?? 0);
+            const dbLikes = Number(post.likes_count ?? post.likes ?? 0);
+            const tableLikes = Number(likesCountByPost[postId] ?? 0);
+            const likesCount = Math.max(dbLikes, tableLikes);
+            const isLikedByMe = likedByMeSet.has(postId);
             const commentsCount = Math.max(Number(post.comments_count ?? post.comments ?? 0), postComments.length);
             const canDeleteThisPost = canModerate || Number(post.user_id) === Number(user.id);
 
@@ -374,15 +423,15 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                     <form method="POST" style="margin: 0; display: inline-flex; align-items: center;">
                         <input type="hidden" name="action" value="like_post">
                         <input type="hidden" name="post_id" value="${postId}">
-                        <button type="submit" title="Thích bài viết" style="background: #1e1014; border: 1px solid #4a1c28; border-radius: 6px; color: #ff4d6d; font-size: 15px; font-weight: bold; cursor: pointer; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px; min-width: 58px; justify-content: center;">
+                        <button type="submit" title="${isLikedByMe ? 'Bỏ thích bài viết' : 'Thích bài viết'}" style="background: ${isLikedByMe ? '#33121b' : '#1e1014'}; border: 1px solid ${isLikedByMe ? '#ff4d6d' : '#4a1c28'}; border-radius: 6px; color: #ff4d6d; font-size: 15px; font-weight: bold; cursor: pointer; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px; min-width: 64px; justify-content: center;">
                             <span style="font-size: 16px; line-height: 1;">❤️</span>
-                            <span style="color: #fff; font-size: 13px;">${likesCount}</span>
+                            <span style="color: #fff; font-size: 13px; font-weight: bold;">${likesCount}</span>
                         </button>
                     </form>
 
-                    <button type="button" onclick="togglePostCommentBox(${postId})" title="Bình luận bài viết" style="background: #121824; border: 1px solid #263654; border-radius: 6px; color: #60a5fa; font-size: 15px; font-weight: bold; cursor: pointer; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px; min-width: 58px; justify-content: center;">
+                    <button type="button" onclick="togglePostCommentBox(${postId})" title="Bình luận bài viết" style="background: #121824; border: 1px solid #263654; border-radius: 6px; color: #60a5fa; font-size: 15px; font-weight: bold; cursor: pointer; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px; min-width: 64px; justify-content: center;">
                         <span style="font-size: 16px; line-height: 1;">💬</span>
-                        <span style="color: #fff; font-size: 13px;">${commentsCount}</span>
+                        <span style="color: #fff; font-size: 13px; font-weight: bold;">${commentsCount}</span>
                     </button>
                 </div>
 
