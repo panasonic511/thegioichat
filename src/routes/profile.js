@@ -474,21 +474,17 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         <textarea id="wall-content-textarea" name="content" rows="3" placeholder="${isOwner ? 'Bạn đang nghĩ gì?' : `Viết gì đó lên tường của ${escapeHtml(profileUser.display_name || profileUser.username || 'thành viên')}...`}" style="width: 100%; background: #000; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 8px; box-sizing: border-box; font-size: 13px; margin-bottom: 8px; resize: vertical;"></textarea>
 
         <!-- Thanh công cụ: icon biểu tượng & Bb color chỉnh màu -->
-        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
-            <div style="display: flex; align-items: center; gap: 6px; position: relative;">
-                <button type="button" onclick="toggleWallPicker('emoji')" title="Chèn icon biểu tượng" style="background: #1b1b1b; color: #ffcc00; border: 1px solid #3d3d3d; border-radius: 4px; padding: 4px 8px; font-size: 13px; cursor: pointer; line-height: 1.2;">😀</button>
-                <button type="button" onclick="toggleWallPicker('color')" title="Chỉnh màu chữ / nền / bóng mờ" style="background: #1b1b1b; color: #fff; border: 1px solid #3d3d3d; border-radius: 4px; padding: 4px 8px; font-size: 12px; font-weight: bold; cursor: pointer; line-height: 1.2; display: inline-flex; align-items: center; gap: 4px;">
-                    <span style="color: #ffcc00;">Bb</span>
-                    <span>🎨</span>
-                </button>
-                <span id="wall-color-preview-badge" style="font-size: 11px; color: #999;"></span>
+        <div id="wall-post-form" style="display: none; background: #101010; border: 1px solid #333; border-radius: 4px; padding: 8px; margin-top: 8px;">
+                <form method="POST">
+                    <input type="hidden" name="action" value="wall_post">
+                    <textarea name="content" rows="3" placeholder="${isOwner ? 'Bạn đang nghĩ gì?' : `Viết gì đó lên tường của ${escapeHtml(profileUser.display_name || profileUser.username || 'thành viên')}...`}" style="width: 100%; background: #000; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 6px; box-sizing: border-box; font-size: 12px; margin-bottom: 6px; resize: vertical;"></textarea>
+                    <input type="text" name="image_url" placeholder="Link ảnh đính kèm (tùy chọn, https://...)" style="width: 100%; background: #000; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 6px; box-sizing: border-box; font-size: 12px; margin-bottom: 8px;">
+                    <div style="display: flex; gap: 6px; justify-content: flex-end;">
+                        <button type="button" onclick="toggleWallForm()" class="btn" style="background: #2b2b2b; color: #ccc; padding: 4px 10px; font-size: 11px;">Hủy</button>
+                        <button type="submit" class="btn" style="background: #0055ff; color: #fff; padding: 4px 12px; font-size: 11px; font-weight: bold;">Đăng ngay</button>
+                    </div>
+                </form>
             </div>
-
-            <div style="display: flex; gap: 6px;">
-                <button type="button" onclick="toggleWallForm()" class="btn" style="background: #2b2b2b; color: #ccc; padding: 5px 10px; font-size: 11px;">Hủy</button>
-                <button type="submit" class="btn" style="background: #0055ff; color: #fff; padding: 5px 12px; font-size: 11px; font-weight: bold;">Đăng bài</button>
-            </div>
-        </div>
 
         <!-- Popup Icon biểu tượng -->
         <div id="wall-emoji-picker" style="display: none; background: #161616; border: 1px solid #444; border-radius: 4px; padding: 6px; margin-top: 8px;">
