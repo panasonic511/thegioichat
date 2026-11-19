@@ -206,65 +206,67 @@ function renderLayout(title, content, user) {
         .staff-nick-badge {
             display: inline-flex;
             align-items: center;
-            gap: 3px;
-            margin-left: 5px;
-            padding: 1px 6px;
-            border-radius: 4px;
-            font-size: 10px;
-            font-weight: 800;
-            letter-spacing: 0.4px;
+            gap: 2px;
+            margin-left: 4px;
+            padding: 0.5px 4px;
+            border-radius: 3px;
+            font-size: 8.5px;
+            font-weight: 700;
+            letter-spacing: 0.25px;
             vertical-align: middle;
-            line-height: 1.3;
+            line-height: 1.15;
             text-transform: uppercase;
             user-select: none;
         }
         .staff-nick-badge .badge-ico {
             display: inline-block;
-            animation: staffIconPulse 1.1s infinite ease-in-out;
+            font-size: 9px;
+            line-height: 1;
+            animation: staffIconPulse 1.2s infinite ease-in-out;
         }
         .staff-badge-admin {
             background: linear-gradient(90deg, #3b0000, #8a0000, #3b0000);
             background-size: 200% 100%;
             color: #fff200;
-            border: 1px solid #ff3b30;
-            box-shadow: 0 0 6px rgba(255, 59, 48, 0.8);
-            animation: adminNickBlink 1.25s infinite alternate, staffBadgeSlide 2.4s linear infinite;
+            border: 1px solid rgba(255, 59, 48, 0.85);
+            box-shadow: 0 0 4px rgba(255, 59, 48, 0.65);
+            animation: adminNickBlink 1.3s infinite alternate, staffBadgeSlide 2.6s linear infinite;
         }
         .staff-badge-mod {
             background: linear-gradient(90deg, #002633, #006688, #002633);
             background-size: 200% 100%;
             color: #7ef9ff;
-            border: 1px solid #00e5ff;
-            box-shadow: 0 0 6px rgba(0, 229, 255, 0.75);
-            animation: modNickBlink 1.25s infinite alternate, staffBadgeSlide 2.4s linear infinite;
+            border: 1px solid rgba(0, 229, 255, 0.85);
+            box-shadow: 0 0 4px rgba(0, 229, 255, 0.6);
+            animation: modNickBlink 1.3s infinite alternate, staffBadgeSlide 2.6s linear infinite;
         }
         @keyframes adminNickBlink {
             0% {
-                opacity: 0.75;
-                box-shadow: 0 0 3px rgba(255, 59, 48, 0.4);
-                text-shadow: 0 0 2px #ff3b30;
+                opacity: 0.78;
+                box-shadow: 0 0 2px rgba(255, 59, 48, 0.35);
+                text-shadow: 0 0 1px #ff3b30;
             }
             100% {
                 opacity: 1;
-                box-shadow: 0 0 10px rgba(255, 59, 48, 1), 0 0 16px rgba(255, 230, 0, 0.65);
-                text-shadow: 0 0 6px #fff200;
+                box-shadow: 0 0 7px rgba(255, 59, 48, 0.95), 0 0 11px rgba(255, 230, 0, 0.45);
+                text-shadow: 0 0 4px #fff200;
             }
         }
         @keyframes modNickBlink {
             0% {
-                opacity: 0.75;
-                box-shadow: 0 0 3px rgba(0, 229, 255, 0.4);
-                text-shadow: 0 0 2px #00e5ff;
+                opacity: 0.78;
+                box-shadow: 0 0 2px rgba(0, 229, 255, 0.35);
+                text-shadow: 0 0 1px #00e5ff;
             }
             100% {
                 opacity: 1;
-                box-shadow: 0 0 10px rgba(0, 229, 255, 1), 0 0 16px rgba(0, 255, 170, 0.55);
-                text-shadow: 0 0 6px #7ef9ff;
+                box-shadow: 0 0 7px rgba(0, 229, 255, 0.95), 0 0 11px rgba(0, 255, 170, 0.4);
+                text-shadow: 0 0 4px #7ef9ff;
             }
         }
         @keyframes staffIconPulse {
             0%, 100% { transform: scale(1) rotate(0deg); }
-            50% { transform: scale(1.25) rotate(-7deg); }
+            50% { transform: scale(1.16) rotate(-5deg); }
         }
         @keyframes staffBadgeSlide {
             0% { background-position: 0% 50%; }
