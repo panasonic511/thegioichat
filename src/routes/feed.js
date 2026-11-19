@@ -1438,7 +1438,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 });
 
                 if (statusEl) {
-                    statusEl.innerText = 'Đang xử lý...';
+                    statusEl.innerText = 'Đăng đi nà!';
                     statusEl.style.color = '#ffcc00';
                 }
 
