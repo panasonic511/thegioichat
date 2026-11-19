@@ -26,13 +26,10 @@ function buildPartnerVisual(pObj) {
         ? `${rendered.avatarStyle}; width: 38px; height: 38px; border-radius: 50%; object-fit: cover; display: block;`
         : 'width: 38px; height: 38px; border-radius: 50%; object-fit: cover; border: 1px solid #00ff00; display: block;';
 
-    const levelVal = Number(pObj && pObj.level ? pObj.level : 1);
-
     return {
         nameHtml: rendered.nameHtml || escapeHtml((pObj && (pObj.display_name || pObj.username)) || 'Thành viên'),
         avatarSrc,
-        avatarStyle,
-        level: Number.isNaN(levelVal) || levelVal < 1 ? 1 : levelVal
+        avatarStyle
     };
 }
 
@@ -157,7 +154,7 @@ export async function handleMailBox(request, env, user, renderLayout) {
             try {
                 partner = await env.DB.prepare(`
                     SELECT id, username, display_name, avatar, border_color, avatar_glow,
-                           name_color, name_glow, name_border, name_border_glow, active_icon, role, is_admin, level, coins
+                           name_color, name_glow, name_border, name_border_glow, active_icon, role, is_admin, coins
                     FROM users WHERE id = ?
                 `).bind(pid).first();
             } catch (e) {
@@ -216,7 +213,7 @@ export async function handleMailBox(request, env, user, renderLayout) {
                     LIMIT 1
                 `).bind(pid, user.id).first();
 
-                if (typingRow && Number(typingRow.is_typing) === 1 && (nowSec - Number(typingRow.updated_at || 0)) <= 6) {
+                if (typingRow && Number(typingRow.is_typing) === 1 && (nowSec - Number(typingRow.updated_at || 0)) <= 10) {
                     isTypingToMe = true;
                 }
             } catch (err) {}
@@ -244,8 +241,6 @@ export async function handleMailBox(request, env, user, renderLayout) {
                     ? `<span data-partner-badge="${pId}" style="background: #ff0000; color: #fff; font-size: 9px; padding: 1px 6px; border-radius: 10px; font-weight: bold;">Mới (${item.unreadCount})</span>`
                     : '';
 
-                const levelBadgeHtml = `<span style="background: #1b2232; color: #ffd54f; border: 1px solid #394867; border-radius: 4px; padding: 0 5px; font-size: 10px; font-weight: bold;">Lv.${visual.level}</span>`;
-
                 const previewColor = item.isTypingToMe
                     ? '#00ff88'
                     : (item.unreadCount > 0 ? '#eee' : '#aaa');
@@ -257,7 +252,6 @@ export async function handleMailBox(request, env, user, renderLayout) {
                         <div style="overflow: hidden;">
                             <div style="font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                                 <a href="/profile?user=${pId}" style="text-decoration: none;">${visual.nameHtml}</a>
-                                ${levelBadgeHtml}
                                 ${unreadBadgeHtml}
                             </div>
                             <div style="color: ${previewColor}; font-weight: ${(item.unreadCount > 0 || item.isTypingToMe) ? 'bold' : 'normal'}; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; margin-top: 2px;">
