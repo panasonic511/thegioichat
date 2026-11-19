@@ -16,6 +16,7 @@ import { handleFeed } from './routes/feed.js';
 import { handleGame } from './routes/game.js';
 import { handleAdminDashboard } from './routes/admin_dashboard.js';
 import { handleAdminAction } from './routes/admin_action.js';
+import { getMaintenanceConfig, isWapOwner, renderMaintenancePage, setMaintenanceMode } from './routes/maintenance.js';
 import { createSession, destroySession, getSessionUser, readSessionToken, buildSessionCookie, buildLegacyClearCookie, buildClearCookies } from './session.js';
 
 export function renderUser(u) {
@@ -51,7 +52,7 @@ export function renderUser(u) {
 
     const displayName = safeUser.display_name || safeUser.username || 'Thành viên';
     const userId = safeUser.user_id || safeUser.id || 0;
-    
+
     // Tự động gắn Icon trước tên người dùng trên toàn bộ hệ thống Wap
     const activeIcon = safeUser.active_icon ? `${safeUser.active_icon} ` : '';
 
@@ -67,8 +68,6 @@ async function checkAuth(request, env) {
     try {
         // Chỉ tin session token do server cấp (lưu trong D1), không bao giờ tin cookie user_id từ client
         if (!readSessionToken(request)) return null;
-        
-        // Các cột active_icon, name_color, border_color của bảng users được tạo bằng migration chạy một lần (không chạy mỗi request nữa)
 
         return await getSessionUser(request, env);
     } catch (e) {
@@ -107,7 +106,7 @@ function renderLayout(title, content, user) {
                     const res = await fetch('/api/realtime-check');
                     if (!res.ok) return;
                     const data = await res.json();
-                    
+
                     const msgBadge = document.getElementById('msgBadge');
                     const notiBadge = document.getElementById('notiBadge');
                     const floatBubble = document.getElementById('floatingMsgBubble');
@@ -193,8 +192,6 @@ function getSetCookies(headers) {
     return raw ? [raw] : [];
 }
 
-// Loại bỏ mọi cookie user_id / sid do client gửi lên, chỉ chèn user_id đã được xác thực từ session.
-// Nhờ vậy các route cũ vẫn đọc được user_id từ Cookie nhưng không thể bị giả mạo.
 function buildTrustedRequest(request, verifiedUserId) {
     const kept = (request.headers.get('Cookie') || '')
         .split(';')
@@ -208,17 +205,21 @@ function buildTrustedRequest(request, verifiedUserId) {
     return new Request(request, { headers });
 }
 
-// Handler login/register cũ đặt cookie user_id=<số>. Đổi nó thành session token ngẫu nhiên lưu trong D1.
-async function upgradeAuthResponse(response, env) {
+function extractLoginUserId(response) {
     const cookies = getSetCookies(response.headers);
-    let userId = null;
     for (const c of cookies) {
         const m = c.match(/^\s*user_id=(\d+)/);
-        if (m) userId = Number(m[1]);
+        if (m) return Number(m[1]);
     }
+    return null;
+}
+
+async function upgradeAuthResponse(response, env) {
+    const userId = extractLoginUserId(response);
     if (!userId) return response;
 
     const token = await createSession(env, userId);
+    const cookies = getSetCookies(response.headers);
     const headers = new Headers(response.headers);
     headers.delete('Set-Cookie');
     for (const c of cookies) {
@@ -241,6 +242,8 @@ export default {
       const url = new URL(request.url);
       const path = url.pathname;
       const user = await checkAuth(request, env);
+      const maintConfig = await getMaintenanceConfig(env);
+      const ownerAccess = isWapOwner(user);
 
       // Đăng xuất: huỷ session trong D1 rồi xoá cookie trên trình duyệt
       if (path === '/logout') {
@@ -251,10 +254,57 @@ export default {
       // Từ đây mọi handler chỉ nhận cookie user_id do SERVER xác thực (cookie client gửi lên bị loại bỏ)
       request = buildTrustedRequest(request, user ? user.id : null);
 
+      // Xử lý đăng nhập / đăng ký (khi bật bảo trì chỉ cho Chủ WAP đăng nhập)
       if (path === '/login' || path === '/register') {
-          const authRes = path === '/login' ? await handleLogin(request, env) : await handleRegister(request, env);
+          if (maintConfig.enabled && path === '/register') {
+              return renderMaintenancePage(maintConfig, 'Đang bật chế độ bảo trì, tạm ngừng đăng ký tài khoản mới.');
+          }
+
+          const authRes = path === '/login'
+              ? await handleLogin(request, env)
+              : await handleRegister(request, env);
+
+          if (maintConfig.enabled && path === '/login') {
+              const loginUserId = extractLoginUserId(authRes);
+              if (loginUserId) {
+                  let loginUser = null;
+                  try {
+                      loginUser = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(loginUserId).first();
+                  } catch (e) {}
+
+                  if (!isWapOwner(loginUser)) {
+                      return withClearedAuthCookies(
+                          renderMaintenancePage(maintConfig, 'Chế độ bảo trì đang bật: chỉ tài khoản Chủ WAP mới được phép đăng nhập.')
+                      );
+                  }
+              }
+          }
+
           return await upgradeAuthResponse(authRes, env);
       }
+
+      // Endpoint bật/tắt bảo trì (chỉ Chủ WAP được phép thực hiện)
+      if (path === '/admin/maintenance') {
+          if (!ownerAccess) {
+              return maintConfig.enabled
+                  ? renderMaintenancePage(maintConfig)
+                  : new Response("Không có quyền truy cập", { status: 403 });
+          }
+
+          if (request.method === 'POST') {
+              const formData = await request.formData();
+              const enableVal = formData.get('enable_maintenance') === '1';
+              const msgVal = formData.get('maintenance_message');
+              await setMaintenanceMode(env, enableVal, msgVal);
+          }
+          return Response.redirect(new URL('/admin', request.url), 302);
+      }
+
+      // Nếu đang bật bảo trì và người dùng hiện tại không phải Chủ WAP -> chặn toàn bộ truy cập
+      if (maintConfig.enabled && !ownerAccess) {
+          return renderMaintenancePage(maintConfig);
+      }
+
       if (path === '/api/realtime-check') return await handleRealtimeApi(request, env);
 
       if (!user && path !== '/') {
@@ -279,9 +329,9 @@ export default {
 
       return new Response("Không tìm thấy trang (404)", { status: 404 });
     } catch (err) {
-      return new Response(`Lỗi hệ thống Worker: ${err.message} <br><pre>${err.stack}</pre>`, { 
-        status: 500, 
-        headers: { 'Content-Type': 'text/html;charset=UTF-8' } 
+      return new Response(`Lỗi hệ thống Worker: ${err.message} <br><pre>${err.stack}</pre>`, {
+        status: 500,
+        headers: { 'Content-Type': 'text/html;charset=UTF-8' }
       });
     }
   }
