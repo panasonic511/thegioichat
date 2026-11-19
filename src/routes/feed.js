@@ -790,7 +790,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
 
                 <div id="story-progress-wrap" style="display: none; margin-bottom: 10px; background: #181818; border: 1px solid #333; border-radius: 5px; padding: 6px 8px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: #ccc; margin-bottom: 4px;">
-                        <span id="story-progress-label">Tiến trình</span>
+                        <span id="story-progress-label">Đang đăng tải</span>
                         <span id="story-progress-pct" style="color: #00ff00; font-weight: bold;">0%</span>
                     </div>
                     <div style="width: 100%; height: 7px; background: #090909; border-radius: 4px; overflow: hidden;">
@@ -1111,7 +1111,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             }
         }
 
-        async function enforceUnder3MBVideo(file, statusEl) {
+        async function enforceUnder3MBVideo(file, onProgress) {
             // Lần 1: ép về <= 3MB với độ phân giải gọn & bitrate tự tính theo thời lượng
             let bestBlob = await recordVideoPass(file, {
                 maxDim: 320,
@@ -1120,12 +1120,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 audioBps: 32000,
                 maxRecordMs: 15000
             }, (ratio) => {
-                const pct = Math.min(50, Math.round(ratio * 50));
-                if (statusEl) {
-                    statusEl.innerText = 'Ép <=3MB ' + pct + '%';
-                    statusEl.style.color = '#ffcc00';
-                }
-                setStoryProgress(pct, 'Đang nén video <= 3MB...');
+                if (onProgress) onProgress(Math.min(0.75, ratio * 0.75));
             });
 
             // Nếu sau lần 1 vẫn > 3MB -> chạy lần 2 siêu nhẹ (240px, 10fps, giới hạn 10s)
@@ -1138,12 +1133,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     audioBps: 24000,
                     maxRecordMs: 10000
                 }, (ratio) => {
-                    const pct = 50 + Math.min(20, Math.round(ratio * 20));
-                    if (statusEl) {
-                        statusEl.innerText = 'Ép sâu <=3MB ' + pct + '%';
-                        statusEl.style.color = '#ffcc00';
-                    }
-                    setStoryProgress(pct, 'Đang ép sâu về <= 3MB...');
+                    if (onProgress) onProgress(0.75 + Math.min(0.25, ratio * 0.25));
                 });
 
                 if (pass2Blob && (!bestBlob || pass2Blob.size < bestBlob.size)) {
@@ -1193,13 +1183,13 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 const start = i * CHUNK_SIZE_BYTES;
                 const end = Math.min(blob.size, start + CHUNK_SIZE_BYTES);
                 const chunkBlob = blob.slice(start, end);
-                const pct = 50 + Math.round(((i + 1) / totalChunks) * 35);
+                const pct = 35 + Math.round(((i + 1) / totalChunks) * 50);
 
                 if (statusEl) {
-                    statusEl.innerText = 'Đang tải ' + pct + '% (' + (i + 1) + '/' + totalChunks + ')';
+                    statusEl.innerText = 'Đang tải ' + pct + '%';
                     statusEl.style.color = '#ffcc00';
                 }
-                setStoryProgress(pct, 'Đang tải lên (' + (i + 1) + '/' + totalChunks + ')...');
+                setStoryProgress(pct, 'Đang tải lên (' + (i + 1) + '/' + totalChunks + ')');
 
                 const fd = new FormData();
                 fd.append('action', 'upload_media_chunk');
@@ -1220,10 +1210,10 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             while (cursor < totalChunks) {
                 const mergePct = 85 + Math.round((cursor / totalChunks) * 10);
                 if (statusEl) {
-                    statusEl.innerText = 'Đang ghép ' + mergePct + '%...';
+                    statusEl.innerText = 'Đang ghép ' + mergePct + '%';
                     statusEl.style.color = '#ffcc00';
                 }
-                setStoryProgress(mergePct, 'Đang ghép file...');
+                setStoryProgress(mergePct, 'Đang ghép video');
 
                 const finFd = new FormData();
                 finFd.append('action', 'finalize_media_upload');
@@ -1442,6 +1432,8 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             if (!file) return;
 
             preparedStoryBlob = null;
+            hideStoryProgress();
+
             const isVideoFile = (file.type && file.type.startsWith('video/')) ||
                 /\.(mp4|mov|webm|mkv|avi|m4v|3gp|ogg|ogv|ts|mts)$/i.test(file.name || '');
 
@@ -1457,13 +1449,11 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 });
 
                 if (statusEl) {
-                    statusEl.innerText = 'Đang ép <=3MB...';
+                    statusEl.innerText = 'Đang xử lý...';
                     statusEl.style.color = '#ffcc00';
                 }
-                setStoryProgress(5, 'Đang chuẩn bị ép <= 3MB...');
 
-                preparedStoryBlob = await enforceUnder3MBVideo(file, statusEl);
-                setStoryProgress(50, 'Đã sẵn sàng (' + formatKb(preparedStoryBlob.size) + ')');
+                preparedStoryBlob = await enforceUnder3MBVideo(file);
                 setStoryReadyText(preparedStoryBlob, true);
             } else {
                 document.getElementById('story-media-type-val').value = 'image';
@@ -1493,16 +1483,24 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 submitBtn.disabled = true;
                 submitBtn.innerText = 'Đang đăng...';
             }
+            setStoryProgress(5, 'Đang bắt đầu đăng Story');
 
             try {
                 let payloadBlob = preparedStoryBlob || file;
                 const isVideoFile = (payloadBlob && payloadBlob.type && payloadBlob.type.startsWith('video/')) ||
                     (file && /\.(mp4|mov|webm|mkv|avi|m4v|3gp|ogg|ogv|ts|mts)$/i.test(file.name || ''));
 
-                if (isVideoFile && payloadBlob && payloadBlob.size > MAX_STORY_BYTES && !val) {
-                    setStoryProgress(10, 'Đang ép video <= 3MB...');
-                    payloadBlob = await enforceUnder3MBVideo(payloadBlob, statusEl);
-                    preparedStoryBlob = payloadBlob;
+                if (isVideoFile && !val) {
+                    if (!preparedStoryBlob || payloadBlob.size > MAX_STORY_BYTES) {
+                        payloadBlob = await enforceUnder3MBVideo(payloadBlob || file, (ratio) => {
+                            setStoryProgress(5 + Math.round(ratio * 30), 'Đang ép video <= 3MB');
+                        });
+                        preparedStoryBlob = payloadBlob;
+                    } else {
+                        setStoryProgress(35, 'Đã nén xong (' + formatKb(payloadBlob.size) + ')');
+                    }
+                } else {
+                    setStoryProgress(35, 'Đang chuẩn bị tải lên');
                 }
 
                 if (payloadBlob && !val) {
@@ -1512,10 +1510,10 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 }
 
                 if (statusEl) {
-                    statusEl.innerText = 'Đang lưu 98%...';
+                    statusEl.innerText = 'Đang lưu 98%';
                     statusEl.style.color = '#ffcc00';
                 }
-                setStoryProgress(98, 'Đang lưu Story...');
+                setStoryProgress(98, 'Đang lưu Story');
 
                 const form = document.getElementById('story-create-form');
                 const formData = new FormData(form);
@@ -1529,9 +1527,9 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     body: formData
                 }, 5);
 
-                setStoryProgress(100, 'Hoàn tất 100%!');
+                setStoryProgress(100, 'Hoàn tất 100%');
                 if (statusEl) {
-                    statusEl.innerText = 'Hoàn tất 100%!';
+                    statusEl.innerText = 'Hoàn tất 100%';
                     statusEl.style.color = '#00ff00';
                 }
 
