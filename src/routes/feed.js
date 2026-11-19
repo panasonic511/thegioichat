@@ -780,7 +780,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 <input type="hidden" id="story-media-type-val" name="media_type" value="image">
                 <input type="hidden" id="story-duration-val" name="duration_sec" value="0">
 
-                <label style="color: #ccc; font-size: 11px; display: block; margin-bottom: 6px;">Tự hạ độ phân giải tối đa để giảm dung lượng & đăng nhanh:</label>
+                <label style="color: #ccc; font-size: 11px; display: block; margin-bottom: 6px;">Giữ tiếng + tự hạ chất lượng âm thanh & hình để đăng mượt:</label>
                 <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;">
                     <label style="display: inline-flex; align-items: center; gap: 6px; background: #1a1a1a; border: 1px solid #444; color: #00ff00; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; flex-shrink: 0;">
                         🎬 Chọn ảnh hoặc video
@@ -858,11 +858,11 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 : Math.max(1, Math.round(bytes / 1024)) + 'KB';
         }
 
-        function setStoryReadyText(blobOrFile) {
+        function setStoryReadyText(blobOrFile, isReducedAudio) {
             const statusEl = document.getElementById('story-compress-status');
             if (statusEl) {
                 const sz = blobOrFile && blobOrFile.size ? ' (' + formatKb(blobOrFile.size) + ')' : '';
-                statusEl.innerText = 'Sẵn sàng' + sz;
+                statusEl.innerText = (isReducedAudio ? 'Sẵn sàng · âm thanh nhẹ' : 'Sẵn sàng · có tiếng') + sz;
                 statusEl.style.color = '#00ff00';
             }
         }
@@ -915,8 +915,9 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
         }
 
         /**
-         * Nén giảm độ phân giải video VÀ ghép luôn luồng âm thanh gốc (qua AudioContext)
-         * Nếu thiết bị không hỗ trợ ghép audio khi nén, trả về null để giữ file gốc đầy đủ âm thanh.
+         * Nén video + giữ tiếng + hạ chất lượng âm thanh (mono + bitrate thấp 32kbps)
+         * để giảm dung lượng mà vẫn giữ âm thanh và đăng mượt.
+         * Nếu nén ra nặng hơn file gốc thì trả về null để dùng file gốc.
          */
         async function downscaleVideoWithAudioIfPossible(file, statusEl) {
             if (!file || typeof MediaRecorder === 'undefined' || typeof document.createElement('canvas').captureStream !== 'function') {
@@ -960,9 +961,16 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 }
                 const sourceNode = audioCtx.createMediaElementSource(video);
                 const destNode = audioCtx.createMediaStreamDestination();
-                sourceNode.connect(destNode);
+                // Ép mono (1 kênh) qua ChannelMergerNode để giảm chất lượng/dung lượng âm thanh
+                try {
+                    destNode.channelCount = 1;
+                    destNode.channelCountMode = 'explicit';
+                } catch (e) {}
+                const monoMerger = audioCtx.createChannelMerger(1);
+                sourceNode.connect(monoMerger);
+                monoMerger.connect(destNode);
 
-                const MAX_DIM = 540;
+                const MAX_DIM = 480;
                 let w = video.videoWidth || 360;
                 let h = video.videoHeight || 640;
                 if (w > MAX_DIM || h > MAX_DIM) {
@@ -981,25 +989,31 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 canvas.width = w;
                 canvas.height = h;
                 const ctx = canvas.getContext('2d');
-                const canvasStream = canvas.captureStream(20);
+                const canvasStream = canvas.captureStream(18);
 
                 const combinedTracks = [
                     ...canvasStream.getVideoTracks(),
                     ...destNode.stream.getAudioTracks()
                 ];
                 if (combinedTracks.length < 2) {
-                    try { audioCtx.close(); } catch (e) {}
+                    try { await audioCtx.close(); } catch (e) {}
                     try { URL.revokeObjectURL(objUrl); } catch (e) {}
                     return null;
                 }
 
                 const combinedStream = new MediaStream(combinedTracks);
                 const chunks = [];
-                const recorder = new MediaRecorder(combinedStream, {
+                const recorderOptions = {
                     mimeType: supportedMime,
-                    videoBitsPerSecond: 450000,
-                    audioBitsPerSecond: 96000
-                });
+                    videoBitsPerSecond: 380000,
+                    audioBitsPerSecond: 32000
+                };
+                let recorder;
+                try {
+                    recorder = new MediaRecorder(combinedStream, recorderOptions);
+                } catch (e) {
+                    recorder = new MediaRecorder(combinedStream, { mimeType: supportedMime });
+                }
 
                 recorder.ondataavailable = (ev) => {
                     if (ev.data && ev.data.size > 0) chunks.push(ev.data);
@@ -1040,7 +1054,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                         ctx.drawImage(video, 0, 0, w, h);
                         if (statusEl && video.duration && isFinite(video.duration) && video.duration > 0) {
                             const p = Math.min(99, Math.round((video.currentTime / video.duration) * 100));
-                            statusEl.innerText = 'Đang nén có tiếng ' + p + '%';
+                            statusEl.innerText = 'Đang hạ âm & nén ' + p + '%';
                             statusEl.style.color = '#ffcc00';
                         }
                     } catch (e) {}
@@ -1054,7 +1068,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 try { if (audioCtx) await audioCtx.close(); } catch (e) {}
                 try { URL.revokeObjectURL(objUrl); } catch (e) {}
 
-                if (compressedBlob && compressedBlob.size > 1024 && compressedBlob.size < file.size * 0.95) {
+                if (compressedBlob && compressedBlob.size > 1024 && compressedBlob.size < file.size) {
                     return compressedBlob;
                 }
                 return null;
@@ -1224,7 +1238,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     vidEl.play().then(() => {
                         updateSoundButtonState();
                     }).catch(() => {
-                        // Trình duyệt chặn autoplay có tiếng -> tự mute để vẫn phát hình và hiện nút "🔇 Bật tiếng"
                         vidEl.muted = true;
                         vidEl.play().catch(() => {});
                         updateSoundButtonState();
@@ -1359,13 +1372,18 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 });
 
                 if (statusEl) {
-                    statusEl.innerText = 'Đang chuẩn bị video có tiếng...';
+                    statusEl.innerText = 'Đang hạ âm & giảm dung lượng...';
                     statusEl.style.color = '#ffcc00';
                 }
 
                 const shrunk = await downscaleVideoWithAudioIfPossible(file, statusEl);
-                preparedStoryBlob = shrunk || file;
-                setStoryReadyText(preparedStoryBlob);
+                if (shrunk) {
+                    preparedStoryBlob = shrunk;
+                    setStoryReadyText(preparedStoryBlob, true);
+                } else {
+                    preparedStoryBlob = file;
+                    setStoryReadyText(preparedStoryBlob, false);
+                }
             } else {
                 document.getElementById('story-media-type-val').value = 'image';
                 document.getElementById('story-duration-val').value = '0';
@@ -1485,7 +1503,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     if (targetInputSelector === '#story-image-val') {
                         document.getElementById('story-thumb-val').value = compressedBase64;
                         const approxBytes = Math.round((compressedBase64.length * 3) / 4);
-                        setStoryReadyText({ size: approxBytes });
+                        setStoryReadyText({ size: approxBytes }, false);
                     } else {
                         statusEl.innerText = "✅ Đã giảm dung lượng (" + width + "x" + height + ")";
                         statusEl.style.color = "#00ff00";
