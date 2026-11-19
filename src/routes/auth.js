@@ -1,5 +1,3 @@
-import { getMaintenanceConfig, isWapOwner, renderMaintenancePage } from './maintenance.js';
-
 function escapeHtml(str) {
     if (str === null || str === undefined) return '';
     return String(str)
@@ -10,14 +8,36 @@ function escapeHtml(str) {
         .replace(/'/g, '&#39;');
 }
 
+function isOwnerAccount(u) {
+    if (!u) return false;
+    if (Number(u.is_owner) === 1 || Number(u.id) === 1) return true;
+    const role = String(u.role || '').trim().toLowerCase();
+    return role === 'chủ wap' || role === 'chu wap' || role === 'owner';
+}
+
+async function getMaintStatus(env) {
+    let enabled = false;
+    let message = 'Hệ thống đang bảo trì nâng cấp để phục vụ bạn tốt hơn. Vui lòng quay lại sau!';
+    try {
+        const rows = await env.DB.prepare(
+            "SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ('maintenance_mode', 'maintenance_message')"
+        ).all();
+        for (const r of (rows.results || [])) {
+            if (r.setting_key === 'maintenance_mode') enabled = String(r.setting_value || '0') === '1';
+            if (r.setting_key === 'maintenance_message' && r.setting_value) message = String(r.setting_value);
+        }
+    } catch (e) {}
+    return { enabled, message };
+}
+
 export async function handleLogin(request, env) {
-    const maintConfig = await getMaintenanceConfig(env);
+    const maint = await getMaintStatus(env);
 
     if (request.method === 'GET') {
-        const maintBannerHtml = maintConfig.enabled ? `
+        const maintBannerHtml = maint.enabled ? `
             <div style="background:#261600;border:1px solid #ff9900;color:#ffcc00;padding:10px;border-radius:4px;font-size:12px;margin-bottom:12px;line-height:1.4;">
-                <strong>🛠️ Đang bật chế độ bảo trì:</strong> ${escapeHtml(maintConfig.message)}<br>
-                <span style="color:#ffd699;font-size:11px;">Chỉ tài khoản Chủ WAP mới có thể đăng nhập lúc này.</span>
+                <strong>🛠️ Đang bật chế độ bảo trì:</strong> ${escapeHtml(maint.message)}<br>
+                <span style="color:#ffd699;font-size:11px;">Chỉ tài khoản Chủ Wap mới có thể đăng nhập lúc này.</span>
             </div>
         ` : '';
 
@@ -88,7 +108,6 @@ export async function handleLogin(request, env) {
         const username = String(formData.get('username') || '').trim();
         const password = String(formData.get('password') || '');
 
-        // Truy vấn kiểm tra cơ sở dữ liệu D1 (hỗ trợ cả username, email hoặc id)
         const user = await env.DB.prepare(
             "SELECT * FROM users WHERE (username = ? OR email = ? OR CAST(id AS TEXT) = ?) AND password = ?"
         )
@@ -102,15 +121,23 @@ export async function handleLogin(request, env) {
             });
         }
 
-        // Khi bật chế độ bảo trì, chỉ tài khoản Chủ WAP mới được phép đăng nhập
-        if (maintConfig.enabled && !isWapOwner(user)) {
-            return renderMaintenancePage(
-                maintConfig,
-                'Chế độ bảo trì đang bật: chỉ tài khoản Chủ WAP mới có thể đăng nhập lúc này.'
-            );
+        if (maint.enabled && !isOwnerAccount(user)) {
+            return new Response(`<!DOCTYPE html>
+            <html lang="vi">
+            <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Đang bảo trì</title></head>
+            <body style="background:#000;color:#00ff00;font-family:Arial,sans-serif;text-align:center;padding:40px 16px;">
+                <div style="max-width:420px;margin:0 auto;background:#111;border:1px solid #333;border-radius:8px;padding:20px;">
+                    <h2 style="color:#ffcc00;margin-top:0;">🛠️ CHẾ ĐỘ BẢO TRÌ WAP</h2>
+                    <p style="color:#ddd;">${escapeHtml(maint.message)}</p>
+                    <p style="color:#ff8888;font-size:12px;">Chỉ tài khoản Chủ Wap mới được phép đăng nhập lúc này.</p>
+                    <a href="/login" style="color:#00ff00;">Quay lại trang đăng nhập</a>
+                </div>
+            </body></html>`, {
+                status: 503,
+                headers: { 'Content-Type': 'text/html;charset=UTF-8' }
+            });
         }
 
-        // Đăng nhập thành công, thiết lập Cookie phiên làm việc
         return new Response("Đăng nhập thành công!", {
             status: 302,
             headers: {
