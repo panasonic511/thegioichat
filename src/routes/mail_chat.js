@@ -43,7 +43,6 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         } catch (e) {}
     } catch (e) {}
 
-    // Hàm hỗ trợ đánh dấu toàn bộ tin nhắn từ partnerId gửi tới user là đã đọc
     const markPartnerMessagesRead = async () => {
         try {
             await env.DB.prepare(
@@ -58,7 +57,6 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         }
     };
 
-    // Xử lý yêu cầu POST (Gửi tin nhắn - hỗ trợ cả AJAX lẫn Form truyền thống)
     if (request.method === 'POST') {
         try {
             const formData = await request.formData();
@@ -79,7 +77,6 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                     ).bind(user.id, partnerId, message, imageUrl).run();
                 }
 
-                // Khi đang trong đoạn chat với đối phương, các tin cũ từ đối phương tới mình cũng được xác nhận đã đọc
                 await markPartnerMessagesRead();
             }
 
@@ -98,12 +95,11 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         return Response.redirect(new URL(`/mail/chat?user=${partnerId}`, request.url), 302);
     }
 
-    // Lấy thông tin đối phương kèm đầy đủ style và role
     let partner = null;
     try {
         partner = await env.DB.prepare(`
             SELECT id, username, display_name, avatar, border_color, avatar_glow,
-                   name_color, name_glow, name_border, name_border_glow, active_icon, role
+                   name_color, name_glow, name_border, name_border_glow, active_icon, role, is_admin
             FROM users WHERE id = ?
         `).bind(partnerId).first();
     } catch (e) {}
@@ -112,7 +108,6 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         return new Response("Không tìm thấy thành viên này.", { status: 404 });
     }
 
-    // Đánh dấu toàn bộ tin nhắn từ đối phương này thành đã đọc ngay khi mở phòng chat
     await markPartnerMessagesRead();
 
     let messages = [];
@@ -147,14 +142,6 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         const msgUser = isMe ? currentUserObj : partnerObj;
         const rMsgUser = renderUser(msgUser);
 
-        const roleName = msgUser.role || 'Thành viên';
-        const isManager = roleName !== 'Thành Viên' && roleName !== 'Thành viên';
-        const roleHtml = isManager ? `
-            <span style="display: inline-block; background: #1a1a1a; border: 1px solid #444; color: #ffcc00; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px; text-shadow: 0 0 4px rgba(255,204,0,0.4); margin-left: 6px;">
-                ${escapeHtml(roleName)}
-            </span>
-        ` : '';
-
         const rawMsg = m.message || '';
         const isGifLink = /^https?:\/\//i.test(rawMsg) &&
             (rawMsg.includes('.gif') || rawMsg.includes('giphy') || rawMsg.includes('tenor'));
@@ -178,7 +165,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                     ${rMsgUser.avatarHtml.replace(/style="[^"]*"/gi, 'style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;"')}
                 </div>
                 <div style="font-size: 13px; display: flex; align-items: center; font-weight: bold;">
-                    ${rMsgUser.nameHtml} ${roleHtml}
+                    ${rMsgUser.nameHtml}
                 </div>
             </div>
             <div style="max-width: 80%; background: ${isMe ? '#1a3300' : '#1a1a1a'}; border: 1px solid ${isMe ? '#339900' : '#333'}; padding: 10px 14px; border-radius: 8px; color: #fff; font-size: 15px; word-break: break-word; line-height: 1.4;">
@@ -194,8 +181,15 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         username: user.username,
         display_name: user.display_name,
         avatar: user.avatar,
+        border_color: user.border_color,
+        avatar_glow: user.avatar_glow,
         name_color: user.name_color,
-        role: user.role
+        name_glow: user.name_glow,
+        name_border: user.name_border,
+        name_border_glow: user.name_border_glow,
+        active_icon: user.active_icon,
+        role: user.role,
+        is_admin: user.is_admin
     }).replace(/</g, '\\u003c');
 
     const safePartnerJson = JSON.stringify({
@@ -203,8 +197,15 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         username: partner.username,
         display_name: partner.display_name,
         avatar: partner.avatar,
+        border_color: partner.border_color,
+        avatar_glow: partner.avatar_glow,
         name_color: partner.name_color,
-        role: partner.role
+        name_glow: partner.name_glow,
+        name_border: partner.name_border,
+        name_border_glow: partner.name_border_glow,
+        active_icon: partner.active_icon,
+        role: partner.role,
+        is_admin: partner.is_admin
     }).replace(/</g, '\\u003c');
 
     const content = `
@@ -220,7 +221,6 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                     : messages.map(m => renderMessageHtml(m, user, partner)).join('')}
             </div>
 
-            <!-- Form Gửi tin nhắn qua Ajax không load lại trang -->
             <form id="chatForm" onsubmit="sendChatMessage(event)" style="display: flex; flex-direction: column; gap: 8px; position: relative;">
                 <div style="display: flex; gap: 8px; align-items: center;">
                     <label style="display: inline-flex; align-items: center; justify-content: center; background: #1a1a1a; border: 1px solid #444; color: #00ff00; width: 40px; height: 40px; border-radius: 6px; cursor: pointer; font-size: 20px;" title="Gửi ảnh">
@@ -231,13 +231,11 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
 
                     <input type="text" name="message" id="messageInput" placeholder="Nhập nội dung chát..." autocomplete="off" style="flex: 1; background: #000; color: #fff; border: 1px solid #444; padding: 10px 12px; font-size: 14px; box-sizing: border-box; border-radius: 6px;" required>
 
-                    <!-- Nút mở Popup bộ sưu tập GIF Meme -->
                     <button type="button" onclick="toggleGifPopup()" class="btn" style="background: #333; color: #ffcc00; padding: 10px 12px; font-size: 14px; border-radius: 6px; cursor: pointer; border: 1px solid #551a8b;" title="Kho Sticker GIF Meme">🎁 GIF</button>
 
                     <button type="submit" id="sendBtn" class="btn" style="background: #0055ff; color: #fff; padding: 10px 18px; font-size: 14px; border-radius: 6px; cursor: pointer; font-weight: bold;">Gửi</button>
                 </div>
 
-                <!-- Popup chứa bộ sưu tập Icon GIF Meme hài hước & dễ thương -->
                 <div id="gifPopup" style="display: none; position: absolute; bottom: 55px; right: 0; background: #111; border: 1px solid #444; padding: 10px; border-radius: 8px; width: 300px; max-height: 220px; overflow-y: auto; box-shadow: 0 4px 15px rgba(0,0,0,0.8); z-index: 999; grid-template-columns: repeat(3, 1fr); gap: 8px;">
                     <div style="grid-column: span 3; font-size: 12px; color: #ffcc00; font-weight: bold; border-bottom: 1px solid #333; padding-bottom: 4px; display: flex; justify-content: space-between; align-items: center;">
                         <span>😂 Kho GIF Meme & Đáng Yêu</span>
@@ -298,12 +296,9 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
             }
         }
 
-        // Ẩn thông báo/badge/popup thuộc về cuộc trò chuyện hiện tại (partnerId)
-        // hoặc ẩn toàn bộ badge mail khi đang ở trong đúng phòng chat của partnerId và không có tin từ người khác
         function syncChatNotifications(otherUnreadCount) {
             const safeOtherUnread = typeof otherUnreadCount === 'number' ? otherUnreadCount : 0;
 
-            // 1. Ẩn mọi badge / chấm đỏ gắn với link chứa partnerId
             document.querySelectorAll('a[href*="user=' + partnerId + '"], a[href*="/mail/chat"]').forEach(function(link) {
                 const href = link.getAttribute('href') || '';
                 const isThisPartner = href.indexOf('user=' + partnerId) !== -1;
@@ -318,7 +313,6 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                 });
             });
 
-            // 2. Xử lý badge trên thanh điều hướng "Tin nhắn" và nút popup nổi (nếu không còn tin chưa đọc từ người khác)
             if (safeOtherUnread === 0) {
                 document.querySelectorAll('a[href*="/mail"]').forEach(function(mailLink) {
                     const parent = mailLink.parentElement || mailLink;
@@ -330,7 +324,6 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                     });
                 });
 
-                // Ẩn popup nổi tin nhắn mới nếu nội dung popup chỉ liên quan đến partnerId hiện tại hoặc không còn tin từ người khác
                 document.querySelectorAll('[id*="mail-popup"], [id*="chat-popup"], [class*="mail-popup"], [class*="chat-popup"], [class*="floating-mail"], [class*="toast-mail"]').forEach(function(popup) {
                     const popupText = popup.textContent || '';
                     const partnerName = partnerData.display_name || partnerData.username || '';
@@ -463,15 +456,8 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                         data.chat_messages.forEach(function(m) {
                             const sender = m.sender_id || m.user_id;
                             const isMe = Number(sender) === currentUserId;
-                            // Nếu đang trong đoạn chat với partnerId, tin từ partnerId đã được đánh dấu đọc
                             const isRead = Number(m.is_read || 0) === 1 || (!isMe && Number(sender) === partnerId);
                             const msgUser = isMe ? currentUserData : partnerData;
-
-                            const roleName = msgUser.role || 'Thành viên';
-                            const isManager = roleName !== 'Thành Viên' && roleName !== 'Thành viên';
-                            const roleHtml = isManager
-                                ? '<span style="display: inline-block; background: #1a1a1a; border: 1px solid #444; color: #ffcc00; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px; text-shadow: 0 0 4px rgba(255,204,0,0.4); margin-left: 6px;">' + escapeJsHtml(roleName) + '</span>'
-                                : '';
 
                             const imageTag = m.image_url
                                 ? '<div style="margin-top: 8px;"><img src="' + escapeJsHtml(m.image_url) + '" style="max-width: 100%; max-height: 300px; border-radius: 6px; object-fit: contain; display: block;"></div>'
@@ -492,6 +478,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                             const alignment = isMe ? 'flex-end' : 'flex-start';
                             const bubbleBg = isMe ? '#1a3300' : '#1a1a1a';
                             const bubbleBorder = isMe ? '#339900' : '#333';
+                            const iconPrefix = msgUser.active_icon ? (escapeJsHtml(msgUser.active_icon) + ' ') : '';
 
                             html += '<div style="display: flex; flex-direction: column; align-items: ' + alignment + ';">' +
                                 '<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">' +
@@ -499,7 +486,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                                         '<img src="' + escapeJsHtml(msgUser.avatar || '') + '" style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;">' +
                                     '</div>' +
                                     '<div style="font-size: 13px; display: flex; align-items: center; font-weight: bold;">' +
-                                        '<span style="color: ' + escapeJsHtml(msgUser.name_color || '#00ff00') + ';">' + escapeJsHtml(msgUser.display_name || msgUser.username) + '</span> ' + roleHtml +
+                                        '<span style="color: ' + escapeJsHtml(msgUser.name_color || '#00ff00') + ';">' + iconPrefix + escapeJsHtml(msgUser.display_name || msgUser.username) + '</span>' +
                                     '</div>' +
                                 '</div>' +
                                 '<div style="max-width: 80%; background: ' + bubbleBg + '; border: 1px solid ' + bubbleBorder + '; padding: 10px 14px; border-radius: 8px; color: #fff; font-size: 15px; word-break: break-word; line-height: 1.4;">' +
@@ -522,7 +509,6 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
             } catch (e) {}
         }
 
-        // Chạy ngay khi vào trang và lặp lại định kỳ
         markCurrentConversationRead().then(function() {
             syncChatNotifications(0);
             fetchRealtimeMessages();
