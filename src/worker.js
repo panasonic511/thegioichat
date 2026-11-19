@@ -28,6 +28,23 @@ function escapeHtmlText(str) {
         .replace(/'/g, '&#39;');
 }
 
+function isStaffOrAdminUser(u) {
+    if (!u) return false;
+    const roleRaw = String(u.role || '').trim().toLowerCase();
+    const staffRoles = [
+        'admin',
+        'smod',
+        'mod',
+        'điều hành viên',
+        'chủ wap',
+        'quản trị',
+        'quản lý',
+        'bqt'
+    ];
+    if (staffRoles.includes(roleRaw)) return true;
+    return Number(u.is_admin || 0) === 1 || Number(u.id || 0) === 1;
+}
+
 function getStaffAfterNickBadge(safeUser) {
     if (!safeUser) return '';
     const roleRaw = String(safeUser.role || '').trim().toLowerCase();
@@ -86,7 +103,6 @@ export function renderUser(u) {
     const displayName = escapeHtmlText(safeUser.display_name || safeUser.username || 'Thành viên');
     const userId = Number(safeUser.user_id || safeUser.id || 0);
 
-    // Tự động gắn Icon trước tên người dùng trên toàn bộ hệ thống Wap
     const activeIcon = safeUser.active_icon ? `${escapeHtmlText(safeUser.active_icon)} ` : '';
     const staffBadge = getStaffAfterNickBadge(safeUser);
 
@@ -108,16 +124,64 @@ async function checkAuth(request, env) {
 }
 
 function renderLayout(title, content, user) {
+    const isStaff = isStaffOrAdminUser(user);
+    const userId = Number(user && user.id ? user.id : 0);
+
     const menuBarHtml = user ? `
-        <a href="/" class="top-menu-item"><span class="top-menu-icon">🏠</span>Home</a>
-        <a href="/users/feed" class="top-menu-item"><span class="top-menu-icon">📋</span>Bảng tin</a>
-        <a href="/mail/notification" class="top-menu-item"><span class="top-menu-icon">🔔</span>Thông báo <span id="notiBadge" style="background:#ff0000;color:#fff;font-size:9px;padding:1px 4px;border-radius:10px;display:none;">0</span></a>
-        <a href="/mail/box" class="top-menu-item"><span class="top-menu-icon">✉️</span>Tin nhắn <span id="msgBadge" style="background:#ff0000;color:#fff;font-size:9px;padding:1px 4px;border-radius:10px;display:none;">0</span></a>
-        <a href="/shop" class="top-menu-item"><span class="top-menu-icon">🛒</span>Cửa hàng</a>
-        ${user.role && user.role !== 'Thành Viên' ? '<a href="/admin" class="top-menu-item"><span class="top-menu-icon">⚙️</span>Quản lý</a>' : ''}
+        <a href="/" class="top-menu-item"><span class="top-menu-icon">🏠</span><span>Home</span></a>
+        <a href="/online" class="top-menu-item"><span class="top-menu-icon">👥</span><span>Trực tuyến</span><span id="onlineBadge" class="top-nav-badge" style="display:none;">0</span></a>
+        <a href="/users/feed" class="top-menu-item"><span class="top-menu-icon">📋</span><span>Bảng tin</span></a>
+        <a href="/mail/notification" class="top-menu-item"><span class="top-menu-icon">🔔</span><span>Thông báo</span><span id="notiBadge" class="top-nav-badge" style="display:none;">0</span></a>
+        <a href="/mail/box" class="top-menu-item"><span class="top-menu-icon">✉️</span><span>Tin nhắn</span><span id="msgBadge" class="top-nav-badge" style="display:none;">0</span></a>
+        ${isStaff ? '<a href="/admin" class="top-menu-item"><span class="top-menu-icon">⚙️</span><span>Quản lý</span></a>' : ''}
+        <button type="button" class="top-menu-item top-menu-btn" id="topMenuBtn" onclick="toggleMainMenu(event)" aria-expanded="false">
+            <span class="top-menu-icon" id="topMenuIcon">☰</span>
+            <span>Menu</span>
+        </button>
+
+        <div class="nav-dropdown-panel" id="mainNavDropdown">
+            <a href="/profile?user=${userId}" class="nav-dropdown-item">
+                <span>👤</span>
+                <span>Trang cá nhân</span>
+            </a>
+            <a href="/search" class="nav-dropdown-item">
+                <span>🔍</span>
+                <span>Tìm kiếm nick</span>
+            </a>
+            <a href="/friends" class="nav-dropdown-item">
+                <span>👥</span>
+                <span>Bạn bè</span>
+            </a>
+
+            <div class="nav-dropdown-divider"></div>
+
+            <a href="/shop" class="nav-dropdown-item">
+                <span>🛒</span>
+                <span>Cửa hàng</span>
+            </a>
+            <a href="/forum" class="nav-dropdown-item">
+                <span>💬</span>
+                <span>Diễn đàn</span>
+            </a>
+            <a href="/entertainment" class="nav-dropdown-item">
+                <span>🎮</span>
+                <span>Khu giải trí</span>
+            </a>
+
+            <div class="nav-dropdown-divider"></div>
+
+            <a href="/settings" class="nav-dropdown-item">
+                <span>⚙️</span>
+                <span>Cài đặt</span>
+            </a>
+            <a href="/logout" class="nav-dropdown-item">
+                <span>↪️</span>
+                <span>Đăng xuất</span>
+            </a>
+        </div>
     ` : `
-        <a href="/login" class="top-menu-item"><span class="top-menu-icon">🔑</span>Đăng nhập</a>
-        <a href="/register" class="top-menu-item"><span class="top-menu-icon">📝</span>Đăng ký</a>
+        <a href="/login" class="top-menu-item"><span class="top-menu-icon">🔑</span><span>Đăng nhập</span></a>
+        <a href="/register" class="top-menu-item"><span class="top-menu-icon">📝</span><span>Đăng ký</span></a>
     `;
 
     const floatingBubbleHtml = user ? `
@@ -133,29 +197,79 @@ function renderLayout(title, content, user) {
             }
         </style>
         <script>
+            function toggleMainMenu(event) {
+                if (event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+                const panel = document.getElementById('mainNavDropdown');
+                const btn = document.getElementById('topMenuBtn');
+                const icon = document.getElementById('topMenuIcon');
+                if (!panel) return;
+                const isOpen = panel.classList.toggle('open');
+                if (btn) btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+                if (icon) icon.textContent = isOpen ? '✕' : '☰';
+            }
+
+            document.addEventListener('click', function(event) {
+                const panel = document.getElementById('mainNavDropdown');
+                const btn = document.getElementById('topMenuBtn');
+                const icon = document.getElementById('topMenuIcon');
+                if (!panel || !panel.classList.contains('open')) return;
+                if (!panel.contains(event.target) && (!btn || !btn.contains(event.target))) {
+                    panel.classList.remove('open');
+                    if (btn) btn.setAttribute('aria-expanded', 'false');
+                    if (icon) icon.textContent = '☰';
+                }
+            });
+
             async function checkRealtimeNotifications() {
                 try {
-                    const res = await fetch('/api/realtime-check');
+                    const activeChatPartner = Number(window.__ACTIVE_CHAT_PARTNER_ID__ || 0);
+                    const query = activeChatPartner > 0
+                        ? ('/api/realtime-check?in_chat_with=' + activeChatPartner + '&partner_id=' + activeChatPartner + '&_t=' + Date.now())
+                        : ('/api/realtime-check?_t=' + Date.now());
+
+                    const res = await fetch(query);
                     if (!res.ok) return;
                     const data = await res.json();
 
                     const msgBadge = document.getElementById('msgBadge');
                     const notiBadge = document.getElementById('notiBadge');
+                    const onlineBadge = document.getElementById('onlineBadge');
                     const floatBubble = document.getElementById('floatingMsgBubble');
                     const floatCount = document.getElementById('floatingMsgCount');
 
-                    if (data.unread_messages > 0) {
-                        if (msgBadge) { msgBadge.innerText = data.unread_messages; msgBadge.style.display = 'inline-block'; }
-                        if (floatBubble && floatCount) { floatCount.innerText = data.unread_messages; floatBubble.style.display = 'flex'; }
+                    let unreadMsgs = Number(data.unread_messages || 0);
+                    if (activeChatPartner > 0) {
+                        if (typeof data.other_unread_count === 'number') {
+                            unreadMsgs = data.other_unread_count;
+                        } else if (Array.isArray(data.unread_senders)) {
+                            unreadMsgs = data.unread_senders.filter(function(id) {
+                                return Number(id) !== activeChatPartner;
+                            }).length;
+                        } else {
+                            unreadMsgs = 0;
+                        }
+                    }
+
+                    if (unreadMsgs > 0) {
+                        if (msgBadge) { msgBadge.innerText = unreadMsgs; msgBadge.style.display = 'inline-block'; }
+                        if (floatBubble && floatCount) { floatCount.innerText = unreadMsgs; floatBubble.style.display = 'flex'; }
                     } else {
                         if (msgBadge) msgBadge.style.display = 'none';
-                        if (floatBubble) floatBubble.style.display = 'none';
+                        if (floatBubble) floatBubble.style.setProperty('display', 'none', 'important');
                     }
 
                     if (data.unread_notifications > 0) {
                         if (notiBadge) { notiBadge.innerText = data.unread_notifications; notiBadge.style.display = 'inline-block'; }
                     } else {
                         if (notiBadge) notiBadge.style.display = 'none';
+                    }
+
+                    if (typeof data.online_count === 'number' && data.online_count > 0 && onlineBadge) {
+                        onlineBadge.innerText = data.online_count;
+                        onlineBadge.style.display = 'inline-block';
                     }
                 } catch (e) {}
             }
@@ -169,7 +283,7 @@ function renderLayout(title, content, user) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${title} - Thế Giới Chat</title>
+    <title>${escapeHtmlText(title)} - Thế Giới Chat</title>
     <style>
         body { background: #000; color: #00ff00; font-family: Arial, sans-serif; margin: 0; padding: 0; font-size: 14px; line-height: 1.6; }
         .header { background: #000; text-align: center; padding: 16px 0; border-bottom: 2px solid #222; }
@@ -185,11 +299,60 @@ function renderLayout(title, content, user) {
             100% { color: #ff0000; text-shadow: 0 0 6px #ff0000; }
         }
         .slogan { font-size: 13px; font-weight: bold; margin-top: 6px; animation: rainbowGlow 4s infinite linear; }
-        .top-menu-wrapper { background: #111; border-bottom: 2px solid #222; padding: 10px 0; }
-        .top-menu-bar { max-width: 680px; margin: 0 auto; display: flex; justify-content: space-around; align-items: center; text-align: center; padding: 0 10px; box-sizing: border-box; }
-        .top-menu-item { color: #00ff00; text-decoration: none; font-size: 13px; display: flex; flex-direction: column; align-items: center; font-weight: bold; flex: 1; position: relative; }
+        .top-menu-wrapper { background: #111; border-bottom: 2px solid #222; padding: 10px 0; position: relative; z-index: 1000; }
+        .top-menu-bar { max-width: 680px; margin: 0 auto; display: flex; justify-content: space-around; align-items: center; flex-wrap: wrap; text-align: center; padding: 0 10px; box-sizing: border-box; position: relative; }
+        .top-menu-item { color: #00ff00; text-decoration: none; font-size: 12px; display: flex; flex-direction: column; align-items: center; font-weight: bold; flex: 1; min-width: 58px; position: relative; }
         .top-menu-item:hover { color: #fff; text-decoration: underline; }
-        .top-menu-icon { font-size: 20px; margin-bottom: 3px; }
+        .top-menu-btn { background: transparent; border: none; cursor: pointer; font-family: inherit; padding: 0; }
+        .top-menu-icon { font-size: 20px; margin-bottom: 3px; line-height: 1.1; }
+        .top-nav-badge { position: absolute; top: -3px; right: 6px; background: #ff0000; color: #fff; font-size: 9px; padding: 1px 4px; border-radius: 10px; }
+
+        .nav-dropdown-panel {
+            display: none;
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 10px;
+            width: 240px;
+            background: #0b0d10;
+            border: 1px solid #2d333d;
+            border-radius: 6px;
+            padding: 8px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.9);
+            z-index: 1500;
+            text-align: left;
+        }
+        .nav-dropdown-panel.open {
+            display: block;
+        }
+        .nav-dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 11px;
+            margin-bottom: 5px;
+            background: #14181f;
+            border: 1px solid #252b35;
+            border-radius: 4px;
+            color: #e6edf5;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: normal;
+        }
+        .nav-dropdown-item:last-child {
+            margin-bottom: 0;
+        }
+        .nav-dropdown-item:hover {
+            background: #1d232d;
+            border-color: #00ff00;
+            color: #00ff00;
+            text-decoration: none;
+        }
+        .nav-dropdown-divider {
+            height: 1px;
+            background: #222730;
+            margin: 6px 0 8px 0;
+        }
+
         .container { padding: 12px; max-width: 680px; margin: 0 auto; box-sizing: border-box; }
         .box { background: #080808; border: 1px solid #333; margin-bottom: 12px; box-sizing: border-box; }
         .box-title { background: linear-gradient(to right, #141414, #222); color: #00ff00; padding: 10px 12px; font-weight: bold; border-bottom: 1px solid #333; font-size: 14px; display: flex; align-items: center; gap: 8px; }
@@ -386,8 +549,18 @@ export default {
       if (path === '/mail/notification') return await handleMailNotification(request, env, user, renderLayout);
       if (path === '/users/feed') return await handleFeed(request, env, user, renderLayout);
       if (path === '/game') return await handleGame(request, env, user, renderLayout);
-      if (path === '/admin') return await handleAdminDashboard(request, env, user, renderLayout);
-      if (path === '/admin/update-role') return await handleAdminAction(request, env, user);
+      if (path === '/admin') {
+          if (!isStaffOrAdminUser(user)) {
+              return new Response("Bạn không có quyền truy cập khu vực quản lý.", { status: 403 });
+          }
+          return await handleAdminDashboard(request, env, user, renderLayout);
+      }
+      if (path === '/admin/update-role') {
+          if (!isStaffOrAdminUser(user)) {
+              return new Response("Bạn không có quyền thực hiện thao tác này.", { status: 403 });
+          }
+          return await handleAdminAction(request, env, user);
+      }
 
       return new Response("Không tìm thấy trang (404)", { status: 404 });
     } catch (err) {
