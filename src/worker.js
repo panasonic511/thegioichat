@@ -68,10 +68,7 @@ async function checkAuth(request, env) {
         // Chỉ tin session token do server cấp (lưu trong D1), không bao giờ tin cookie user_id từ client
         if (!readSessionToken(request)) return null;
         
-        // Đảm bảo luôn load đủ các cột cấu hình trang trí tài khoản từ DB
-        try { await env.DB.prepare("ALTER TABLE users ADD COLUMN active_icon TEXT DEFAULT ''").run(); } catch (e) {}
-        try { await env.DB.prepare("ALTER TABLE users ADD COLUMN name_color TEXT DEFAULT '#00ff00'").run(); } catch (e) {}
-        try { await env.DB.prepare("ALTER TABLE users ADD COLUMN border_color TEXT DEFAULT '#ffcc00'").run(); } catch (e) {}
+        // Các cột active_icon, name_color, border_color của bảng users được tạo bằng migration chạy một lần (không chạy mỗi request nữa)
 
         return await getSessionUser(request, env);
     } catch (e) {
