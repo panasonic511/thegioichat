@@ -1,5 +1,11 @@
 import { renderUser } from '../worker.js';
-import { saveMediaAsset, deleteMediaAsset, normalizeMediaUrl } from '../media_store.js';
+import {
+    saveMediaAsset,
+    saveMediaChunk,
+    finalizeMediaChunks,
+    deleteMediaAsset,
+    normalizeMediaUrl
+} from '../media_store.js';
 
 const STORY_TTL_SECONDS = 24 * 60 * 60;
 const MAX_ACTIVE_STORIES = 10;
@@ -219,6 +225,49 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             const formData = await request.formData();
             const action = formData.get('action');
 
+            // Nhận từng mảnh (chunk) của video/ảnh
+            if (action === 'upload_media_chunk') {
+                const uploadId = String(formData.get('upload_id') || '');
+                const chunkIndex = parseInt(formData.get('chunk_index') || '0', 10);
+                const chunkBlob = formData.get('chunk');
+                const savedChunk = await saveMediaChunk(request, env, {
+                    uploadId,
+                    chunkIndex,
+                    chunkBlob,
+                    ttlSeconds: 3600
+                });
+                return new Response(JSON.stringify({ success: true, ...savedChunk }), {
+                    headers: { 'Content-Type': 'application/json;charset=UTF-8' }
+                });
+            }
+
+            // Ghép các mảnh thành media hoàn chỉnh ngoài DB
+            if (action === 'finalize_media_upload') {
+                const uploadId = String(formData.get('upload_id') || '');
+                const totalChunks = parseInt(formData.get('total_chunks') || '0', 10);
+                const folder = String(formData.get('folder') || 'stories');
+                const mimeType = String(formData.get('mime_type') || 'video/mp4');
+                const ttl = folder === 'posts' ? 30 * 24 * 60 * 60 : STORY_TTL_SECONDS;
+
+                const finalAsset = await finalizeMediaChunks(request, env, {
+                    uploadId,
+                    totalChunks,
+                    folder,
+                    userId: user.id,
+                    mimeType,
+                    ttlSeconds: ttl
+                });
+
+                return new Response(JSON.stringify({
+                    success: true,
+                    url: finalAsset.url,
+                    mimeType: finalAsset.mimeType,
+                    size: finalAsset.size
+                }), {
+                    headers: { 'Content-Type': 'application/json;charset=UTF-8' }
+                });
+            }
+
             if (action === 'create_post') {
                 const content = String(formData.get('content') || '');
                 const postFile = formData.get('post_file');
@@ -400,6 +449,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
         } catch (e) {
             if (request.headers.get('X-Requested-With') === 'XMLHttpRequest') {
                 return new Response(JSON.stringify({ success: false, error: e.message }), {
+                    status: 500,
                     headers: { 'Content-Type': 'application/json;charset=UTF-8' }
                 });
             }
@@ -705,7 +755,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 </div>
 
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
-                    <span style="font-size: 10px; color: #888;">✨ Lưu trữ tách biệt ngoài DB</span>
+                    <span style="font-size: 10px; color: #888;">✨ Lưu trữ tách biệt ngoài DB · Tải từng mảnh bền bỉ</span>
                     <button type="submit" class="btn" style="background: #00aa00; color: #fff; padding: 6px 16px; border-radius: 4px; cursor: pointer;">Đăng bài</button>
                 </div>
             </form>
@@ -725,7 +775,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 <input type="hidden" id="story-media-type-val" name="media_type" value="image">
                 <input type="hidden" id="story-duration-val" name="duration_sec" value="0">
 
-                <label style="color: #ccc; font-size: 11px; display: block; margin-bottom: 6px;">Chọn ảnh hoặc mọi dạng video Story (lưu ngoài DB, đăng thẳng):</label>
+                <label style="color: #ccc; font-size: 11px; display: block; margin-bottom: 6px;">Chọn ảnh hoặc mọi dạng video Story (tải từng mảnh ngoài DB, chờ bao lâu cũng xong):</label>
                 <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;">
                     <label style="display: inline-flex; align-items: center; gap: 6px; background: #1a1a1a; border: 1px solid #444; color: #00ff00; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; flex-shrink: 0;">
                         🎬 Chọn ảnh hoặc video
@@ -789,6 +839,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
     <script>
         const STORY_VIEWER_LIST = ${storyViewerDataJson};
         const STORY_MEDIA_CACHE = {};
+        const CHUNK_SIZE_BYTES = 524288; // 512KB mỗi mảnh
         let currentStoryIndex = -1;
         let isSubmittingStory = false;
 
@@ -818,7 +869,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                             resolve(val || '');
                         }
                     };
-                    const timer = setTimeout(() => finish(''), 400);
+                    const timer = setTimeout(() => finish(''), 500);
 
                     v.onloadeddata = function() {
                         try { v.currentTime = 0.01; } catch (e) { clearTimeout(timer); finish(''); }
@@ -845,6 +896,83 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     resolve('');
                 }
             });
+        }
+
+        async function fetchWithRetry(url, options, maxRetries = 5) {
+            let lastError = null;
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    const res = await fetch(url, options);
+                    if (res.ok) {
+                        const data = await res.json().catch(() => null);
+                        if (data && data.success !== false) {
+                            return data;
+                        }
+                        lastError = new Error((data && data.error) || 'Phản hồi máy chủ không thành công');
+                    } else {
+                        const errData = await res.json().catch(() => null);
+                        lastError = new Error((errData && errData.error) || ('HTTP ' + res.status));
+                    }
+                } catch (err) {
+                    lastError = err;
+                }
+                if (attempt < maxRetries) {
+                    await new Promise(r => setTimeout(r, 400 * attempt));
+                }
+            }
+            throw lastError || new Error('Tải lên thất bại sau nhiều lần thử.');
+        }
+
+        async function uploadFileInChunks(file, folder, mimeType, statusEl) {
+            const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE_BYTES));
+            const uploadId = 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+
+            for (let i = 0; i < totalChunks; i++) {
+                const start = i * CHUNK_SIZE_BYTES;
+                const end = Math.min(file.size, start + CHUNK_SIZE_BYTES);
+                const chunkBlob = file.slice(start, end);
+                const pct = Math.round(((i + 1) / totalChunks) * 90);
+
+                if (statusEl) {
+                    statusEl.innerText = 'Đang tải ' + pct + '% (' + (i + 1) + '/' + totalChunks + ')';
+                    statusEl.style.color = '#ffcc00';
+                }
+
+                const fd = new FormData();
+                fd.append('action', 'upload_media_chunk');
+                fd.append('upload_id', uploadId);
+                fd.append('chunk_index', String(i));
+                fd.append('chunk', chunkBlob);
+
+                await fetchWithRetry(window.location.href, {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    body: fd
+                }, 5);
+            }
+
+            if (statusEl) {
+                statusEl.innerText = 'Đang ghép video 95%...';
+                statusEl.style.color = '#ffcc00';
+            }
+
+            const finFd = new FormData();
+            finFd.append('action', 'finalize_media_upload');
+            finFd.append('upload_id', uploadId);
+            finFd.append('total_chunks', String(totalChunks));
+            finFd.append('folder', folder);
+            finFd.append('mime_type', mimeType || file.type || 'video/mp4');
+
+            const finalRes = await fetchWithRetry(window.location.href, {
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                body: finFd
+            }, 5);
+
+            if (!finalRes || !finalRes.url) {
+                throw new Error('Không nhận được đường dẫn media sau khi ghép.');
+            }
+            return finalRes.url;
         }
 
         async function openStoryViewer(idx) {
@@ -1006,7 +1134,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
 
         async function handleStoryMediaSelect(fileInput) {
             const file = fileInput.files && fileInput.files[0];
-            const statusEl = document.getElementById('story-compress-status');
             if (!file) return;
 
             const isVideoFile = (file.type && file.type.startsWith('video/')) ||
@@ -1016,7 +1143,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 document.getElementById('story-media-type-val').value = 'video';
                 document.getElementById('story-image-val').value = '';
                 document.getElementById('story-thumb-val').value = '';
-                // Gửi trực tiếp file nhị phân lên server lưu ngoài DB, không cần chờ mã hóa Base64
                 setStoryReadyText();
                 extractQuickThumbnail(file).then((thumb) => {
                     if (thumb && !document.getElementById('story-thumb-val').value) {
@@ -1038,7 +1164,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             const submitBtn = document.getElementById('story-submit-btn');
             const fileInput = document.getElementById('story-file-input');
             const file = fileInput && fileInput.files && fileInput.files[0];
-            const val = document.getElementById('story-image-val').value.trim();
+            let val = document.getElementById('story-image-val').value.trim();
 
             if (!file && !val) {
                 statusEl.innerText = 'Chưa chọn file';
@@ -1051,28 +1177,40 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 submitBtn.disabled = true;
                 submitBtn.innerText = 'Đang đăng...';
             }
-            statusEl.innerText = 'Đang tải lên...';
-            statusEl.style.color = '#ffcc00';
-
-            const form = document.getElementById('story-create-form');
-            const formData = new FormData(form);
 
             try {
-                const res = await fetch(window.location.href, {
+                if (file && !val) {
+                    const isVideoFile = (file.type && file.type.startsWith('video/')) ||
+                        /\.(mp4|mov|webm|mkv|avi|m4v|3gp|ogg|ogv|ts|mts)$/i.test(file.name || '');
+                    const mimeToUse = file.type || (isVideoFile ? 'video/mp4' : 'image/jpeg');
+                    val = await uploadFileInChunks(file, 'stories', mimeToUse, statusEl);
+                    document.getElementById('story-image-val').value = val;
+                }
+
+                if (statusEl) {
+                    statusEl.innerText = 'Đang lưu Story 100%...';
+                    statusEl.style.color = '#ffcc00';
+                }
+
+                const form = document.getElementById('story-create-form');
+                const formData = new FormData(form);
+                if (val) {
+                    formData.delete('story_file');
+                }
+
+                await fetchWithRetry(window.location.href, {
                     method: 'POST',
                     headers: { 'X-Requested-With': 'XMLHttpRequest' },
                     body: formData
-                });
-                const data = await res.json().catch(() => null);
-                if (res.ok && (!data || data.success !== false)) {
-                    window.location.reload();
-                    return false;
-                }
-                statusEl.innerText = (data && data.error) ? data.error : 'Đăng thất bại';
-                statusEl.style.color = '#ff5555';
+                }, 5);
+
+                window.location.reload();
+                return false;
             } catch (err) {
-                statusEl.innerText = 'Lỗi kết nối';
-                statusEl.style.color = '#ff5555';
+                if (statusEl) {
+                    statusEl.innerText = err && err.message ? err.message : 'Lỗi tải lên';
+                    statusEl.style.color = '#ff5555';
+                }
             }
 
             if (submitBtn) {
