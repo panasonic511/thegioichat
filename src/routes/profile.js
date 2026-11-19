@@ -464,24 +464,50 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             </div>
 
             <!-- Form đăng bài (ẩn/hiện khi bấm nút Đăng bài) -->
-            <div id="wall-post-form" style="display: none; background: #101010; border: 1px solid #333; border-radius: 4px; padding: 8px; margin-top: 8px;">
-                <form method="POST">
-                    <input type="hidden" name="action" value="wall_post">
-                    <textarea name="content" rows="3" placeholder="${isOwner ? 'Bạn đang nghĩ gì?' : `Viết gì đó lên tường của ${escapeHtml(profileUser.display_name || profileUser.username || 'thành viên')}...`}" style="width: 100%; background: #000; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 6px; box-sizing: border-box; font-size: 12px; margin-bottom: 6px; resize: vertical;"></textarea>
-                    <input type="text" name="image_url" placeholder="Link ảnh đính kèm (tùy chọn, https://...)" style="width: 100%; background: #000; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 6px; box-sizing: border-box; font-size: 12px; margin-bottom: 8px;">
-                    <div style="display: flex; gap: 6px; justify-content: flex-end;">
-                        <button type="button" onclick="toggleWallForm()" class="btn" style="background: #2b2b2b; color: #ccc; padding: 4px 10px; font-size: 11px;">Hủy</button>
-                        <button type="submit" class="btn" style="background: #0055ff; color: #fff; padding: 4px 12px; font-size: 11px; font-weight: bold;">Đăng ngay</button>
-                    </div>
-                </form>
+            <div id="wall-post-form" style="display: none; background: #101010; border: 1px solid #333; border-radius: 4px; padding: 8px; margin-top: 8px; position: relative;">
+    <form method="POST" id="wall-post-submit-form">
+        <input type="hidden" name="action" value="wall_post">
+        <input type="hidden" name="text_color" id="wall-text-color" value="">
+        <input type="hidden" name="bg_color" id="wall-bg-color" value="">
+        <input type="hidden" name="text_glow" id="wall-text-glow" value="">
+
+        <textarea id="wall-content-textarea" name="content" rows="3" placeholder="${isOwner ? 'Bạn đang nghĩ gì?' : `Viết gì đó lên tường của ${escapeHtml(profileUser.display_name || profileUser.username || 'thành viên')}...`}" style="width: 100%; background: #000; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 8px; box-sizing: border-box; font-size: 13px; margin-bottom: 8px; resize: vertical;"></textarea>
+
+        <!-- Thanh công cụ: icon biểu tượng & Bb color chỉnh màu -->
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 6px; position: relative;">
+                <button type="button" onclick="toggleWallPicker('emoji')" title="Chèn icon biểu tượng" style="background: #1b1b1b; color: #ffcc00; border: 1px solid #3d3d3d; border-radius: 4px; padding: 4px 8px; font-size: 13px; cursor: pointer; line-height: 1.2;">😀</button>
+                <button type="button" onclick="toggleWallPicker('color')" title="Chỉnh màu chữ / nền / bóng mờ" style="background: #1b1b1b; color: #fff; border: 1px solid #3d3d3d; border-radius: 4px; padding: 4px 8px; font-size: 12px; font-weight: bold; cursor: pointer; line-height: 1.2; display: inline-flex; align-items: center; gap: 4px;">
+                    <span style="color: #ffcc00;">Bb</span>
+                    <span>🎨</span>
+                </button>
+                <span id="wall-color-preview-badge" style="font-size: 11px; color: #999;"></span>
             </div>
 
-            <!-- Danh sách bài đã đăng -->
-            <div style="margin-top: 4px;">
-                ${wallPostsHtml}
+            <div style="display: flex; gap: 6px;">
+                <button type="button" onclick="toggleWallForm()" class="btn" style="background: #2b2b2b; color: #ccc; padding: 5px 10px; font-size: 11px;">Hủy</button>
+                <button type="submit" class="btn" style="background: #0055ff; color: #fff; padding: 5px 12px; font-size: 11px; font-weight: bold;">Đăng bài</button>
             </div>
         </div>
-    </div>
+
+        <!-- Popup Icon biểu tượng -->
+        <div id="wall-emoji-picker" style="display: none; background: #161616; border: 1px solid #444; border-radius: 4px; padding: 6px; margin-top: 8px;">
+            <div style="font-size: 11px; color: #ffcc00; margin-bottom: 5px;">Chọn biểu tượng cảm xúc</div>
+            <div id="wall-emoji-list" style="display: flex; flex-wrap: wrap; gap: 4px;"></div>
+        </div>
+
+        <!-- Popup Bb Color (Màu chữ / Màu nền / Bóng mờ) -->
+        <div id="wall-color-picker" style="display: none; background: #161616; border: 1px solid #444; border-radius: 4px; padding: 6px; margin-top: 8px;">
+            <div style="display: flex; gap: 4px; margin-bottom: 6px; border-bottom: 1px solid #2b2b2b; padding-bottom: 5px;">
+                <button type="button" id="tab-color-fg" onclick="switchWallColorTab('fg')" style="background: #0055ff; color: #fff; border: 1px solid #3b7bff; border-radius: 3px; padding: 3px 8px; font-size: 11px; cursor: pointer;">Màu chữ</button>
+                <button type="button" id="tab-color-bg" onclick="switchWallColorTab('bg')" style="background: #222; color: #ccc; border: 1px solid #3a3a3a; border-radius: 3px; padding: 3px 8px; font-size: 11px; cursor: pointer;">Màu nền</button>
+                <button type="button" id="tab-color-glow" onclick="switchWallColorTab('glow')" style="background: #222; color: #ccc; border: 1px solid #3a3a3a; border-radius: 3px; padding: 3px 8px; font-size: 11px; cursor: pointer;">Bóng mờ</button>
+                <button type="button" onclick="resetWallColors()" style="margin-left: auto; background: #2a1212; color: #ff7777; border: 1px solid #552222; border-radius: 3px; padding: 3px 7px; font-size: 10px; cursor: pointer;">Mặc định</button>
+            </div>
+            <div id="wall-palette-grid" style="display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px;"></div>
+        </div>
+    </form>
+</div>
 
     <!-- Popup Modal Cài đặt thông tin -->
     ${isOwner ? `
