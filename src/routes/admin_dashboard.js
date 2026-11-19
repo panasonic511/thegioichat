@@ -1,3 +1,4 @@
+import { renderUser } from '../worker.js';
 import {
     ROLE_TIERS,
     getRoleTier,
@@ -33,6 +34,41 @@ function getRoleBadgeStyle(tier) {
     return 'background: rgba(74, 222, 128, 0.12); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.3);';
 }
 
+function renderStyledNickWithoutStaffBadge(uItem) {
+    const rendered = renderUser(uItem);
+    const rawHtml = String(rendered.nameHtml || '');
+    return rawHtml.replace(/<span class="staff-nick-badge[^"]*"[\s\S]*?<\/span>/gi, '');
+}
+
+async function isBannedByFounder(env, targetUser) {
+    const bannedById = Number(targetUser && targetUser.banned_by ? targetUser.banned_by : 0);
+    if (bannedById === 1) return true;
+    if (bannedById > 0) {
+        try {
+            const bannerUser = await env.DB.prepare("SELECT id, role, is_admin FROM users WHERE id = ?").bind(bannedById).first();
+            if (bannerUser && getRoleTier(bannerUser) === ROLE_TIERS.FOUNDER) {
+                return true;
+            }
+        } catch (e) {}
+    }
+    return false;
+}
+
+async function canActorUnbanTarget(env, actor, targetUser) {
+    const actorTier = getRoleTier(actor);
+    if (actorTier === ROLE_TIERS.FOUNDER) {
+        return canManageTargetUser(actor, targetUser).allowed;
+    }
+    if (actorTier === ROLE_TIERS.SUPER_ADMIN) {
+        const check = canManageTargetUser(actor, targetUser);
+        if (!check.allowed) return false;
+        const blockedByFounder = await isBannedByFounder(env, targetUser);
+        if (blockedByFounder) return false;
+        return true;
+    }
+    return false;
+}
+
 async function ensureAdminSchemaColumns(env) {
     const alterStatements = [
         "ALTER TABLE users ADD COLUMN gold INTEGER DEFAULT 0",
@@ -46,6 +82,8 @@ async function ensureAdminSchemaColumns(env) {
         "ALTER TABLE users ADD COLUMN current_location TEXT DEFAULT 'Trang chủ'",
         "ALTER TABLE users ADD COLUMN name_color TEXT DEFAULT '#00ff00'",
         "ALTER TABLE users ADD COLUMN name_glow TEXT DEFAULT '#000000'",
+        "ALTER TABLE users ADD COLUMN name_border TEXT DEFAULT '#000000'",
+        "ALTER TABLE users ADD COLUMN name_border_glow TEXT DEFAULT '#000000'",
         "ALTER TABLE users ADD COLUMN border_color TEXT DEFAULT '#ffcc00'",
         "ALTER TABLE users ADD COLUMN avatar_glow TEXT DEFAULT '#000000'",
         "ALTER TABLE users ADD COLUMN active_icon TEXT DEFAULT ''"
@@ -65,6 +103,7 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
 
     const actorCfg = getRoleConfig(user);
     const isFounder = actorTier === ROLE_TIERS.FOUNDER;
+    const isSuperAdmin = actorTier === ROLE_TIERS.SUPER_ADMIN;
     const currentUserId = Number(user.id || 0);
     let message = "";
 
@@ -89,23 +128,36 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
                 const isBan = actionType === 'ban_user';
                 const reason = String(formData.get('ban_reason') || '').trim();
 
-                if (isFounder) {
+                if (!isBan) {
+                    const allowedUnban = await canActorUnbanTarget(env, user, targetUser);
+                    if (!allowedUnban) {
+                        throw new Error(
+                            isSuperAdmin && await isBannedByFounder(env, targetUser)
+                                ? "Tài khoản này bị Người Sáng Lập Ban ID nên Super Admin không có quyền gỡ Ban!"
+                                : "Bạn không có quyền gỡ Ban ID cho tài khoản này!"
+                        );
+                    }
+                    await env.DB.prepare(`
+                        UPDATE users
+                        SET is_banned = 0, ban_reason = '', banned_by = 0, banned_at = 0
+                        WHERE id = ?
+                    `).bind(targetUserId).run();
+                } else if (isFounder) {
                     const check = canManageTargetUser(user, targetUser);
                     if (!check.allowed) throw new Error(check.reason);
-                    const banFlag = isBan ? 1 : 0;
-                    const cleanReason = isBan ? (reason || 'Vi phạm quy định hệ thống') : '';
+                    const cleanReason = reason || 'Vi phạm quy định hệ thống';
                     const nowSec = Math.floor(Date.now() / 1000);
                     await env.DB.prepare(`
                         UPDATE users
-                        SET is_banned = ?, ban_reason = ?, banned_by = ?, banned_at = ?
+                        SET is_banned = 1, ban_reason = ?, banned_by = ?, banned_at = ?
                         WHERE id = ?
-                    `).bind(banFlag, cleanReason, isBan ? currentUserId : 0, isBan ? nowSec : 0, targetUserId).run();
+                    `).bind(cleanReason, currentUserId, nowSec, targetUserId).run();
                 } else {
-                    const banRes = await applyBanIdAction(env, user, targetUser, isBan, reason);
+                    const banRes = await applyBanIdAction(env, user, targetUser, true, reason);
                     if (!banRes.ok) throw new Error(banRes.error);
                 }
 
-                message = `<div class="adm-alert adm-alert-ok">✅ ${isBan ? `Đã Ban ID #${targetUserId}` : `Đã mở khóa ID #${targetUserId}`} thành công!</div>`;
+                message = `<div class="adm-alert adm-alert-ok">✅ ${isBan ? `Đã Ban ID #${targetUserId}` : `Đã gỡ Ban ID #${targetUserId}`} thành công!</div>`;
             } else if (actionType === 'delete_user_account') {
                 if (!isFounder) {
                     throw new Error("Chỉ Người Sáng Lập mới có quyền xóa tài khoản người dùng!");
@@ -124,7 +176,7 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
                 } catch (e) {}
                 await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(targetUserId).run();
 
-                message = `<div class="adm-alert adm-alert-ok">✅ Đã xóa vĩnh viễn tài khoản ID #${targetUserId} (${escapeHtml(targetUser.display_name || targetUser.username || '')})!</div>`;
+                message = `<div class="adm-alert adm-alert-ok">✅ Đã xóa vĩnh viễn tài khoản ID #${targetUserId} (${escapeHtml(targetUser.display_name || '')})!</div>`;
             } else if (actionType === 'delete_user_content') {
                 const check = canManageTargetUser(user, targetUser);
                 if (!check.allowed) {
@@ -150,6 +202,8 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
                     current_location: String(formData.get('current_location') ?? targetUser.current_location ?? 'Trang chủ').trim(),
                     name_color: String(formData.get('name_color') ?? targetUser.name_color ?? '#00ff00').trim(),
                     name_glow: String(formData.get('name_glow') ?? targetUser.name_glow ?? '#000000').trim(),
+                    name_border: String(formData.get('name_border') ?? targetUser.name_border ?? '#000000').trim(),
+                    name_border_glow: String(formData.get('name_border_glow') ?? targetUser.name_border_glow ?? '#000000').trim(),
                     border_color: String(formData.get('border_color') ?? targetUser.border_color ?? '#ffcc00').trim(),
                     avatar_glow: String(formData.get('avatar_glow') ?? targetUser.avatar_glow ?? '#000000').trim(),
                     active_icon: String(formData.get('active_icon') ?? targetUser.active_icon ?? '').trim()
@@ -180,7 +234,8 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
                         UPDATE users
                         SET role = ?, level = ?, coins = ?, gold = ?, online_minutes = ?,
                             display_name = ?, gender = ?, mood = ?, current_location = ?,
-                            name_color = ?, name_glow = ?, border_color = ?, avatar_glow = ?, active_icon = ?
+                            name_color = ?, name_glow = ?, name_border = ?, name_border_glow = ?,
+                            border_color = ?, avatar_glow = ?, active_icon = ?
                         WHERE id = ?
                     `).bind(
                         finalRole,
@@ -188,12 +243,14 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
                         finalCoins,
                         finalGold,
                         finalOnlineMins,
-                        u.display_name || targetUser.display_name || targetUser.username || '',
+                        u.display_name || targetUser.display_name || '',
                         u.gender || 'male',
                         u.mood || '',
                         u.current_location || 'Trang chủ',
                         u.name_color || '#00ff00',
                         u.name_glow || '#000000',
+                        u.name_border || '#000000',
+                        u.name_border_glow || '#000000',
                         u.border_color || '#ffcc00',
                         u.avatar_glow || '#000000',
                         u.active_icon || '',
@@ -207,7 +264,7 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
                     `).bind(finalRole, finalLevel, finalCoins, finalGold, finalOnlineMins, targetUserId).run();
                 }
 
-                message = `<div class="adm-alert adm-alert-ok">✅ Đã cập nhật toàn bộ thông tin DB cho ID #${targetUserId} — Lv: <b>${finalLevel}</b> · Xu: <b>${finalCoins.toLocaleString('en-US')}</b> · Vàng: <b>${finalGold.toLocaleString('en-US')}</b> · Online: <b>${finalOnlineMins}p</b></div>`;
+                message = `<div class="adm-alert adm-alert-ok">✅ Đã cập nhật thông tin cho ID #${targetUserId} — Lv: <b>${finalLevel}</b> · Xu: <b>${finalCoins.toLocaleString('en-US')}</b> · Vàng: <b>${finalGold.toLocaleString('en-US')}</b> · Online: <b>${finalOnlineMins}p</b></div>`;
             }
         } catch (e) {
             message = `<div class="adm-alert adm-alert-err">❌ Lỗi: ${escapeHtml(e.message)}</div>`;
@@ -218,8 +275,9 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
     try {
         const res = await env.DB.prepare(`
             SELECT id, username, display_name, role, is_admin, coins, gold, level, online_minutes,
-                   is_banned, ban_reason, gender, mood, current_location,
-                   name_color, name_glow, border_color, avatar_glow, active_icon
+                   is_banned, ban_reason, banned_by, gender, mood, current_location,
+                   name_color, name_glow, name_border, name_border_glow,
+                   border_color, avatar_glow, active_icon
             FROM users
             ORDER BY id DESC
             LIMIT 120
@@ -246,6 +304,11 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
         if (lvlDiff !== 0) return lvlDiff;
         return Number(b.id || 0) - Number(a.id || 0);
     });
+
+    const founderIds = new Set(
+        usersList.filter(u => getRoleTier(u) === ROLE_TIERS.FOUNDER).map(u => Number(u.id || 0))
+    );
+    founderIds.add(1);
 
     const totalUsers = usersList.length;
     const totalBanned = usersList.filter(u => Number(u.is_banned || 0) === 1).length;
@@ -441,10 +504,13 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
             color: #38bdf8;
             font-weight: bold;
         }
-        .adm-uname {
-            color: #ffffff;
-            font-weight: bold;
+        .adm-styled-nick {
             font-size: 15px;
+            display: inline-flex;
+            align-items: center;
+        }
+        .adm-styled-nick a {
+            text-decoration: none;
         }
         .adm-role-badge {
             padding: 2px 8px;
@@ -596,6 +662,11 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
         .adm-btn-unban:hover {
             background: #22c55e;
         }
+        .adm-ban-locked {
+            font-size: 12.5px;
+            color: #fca5a5;
+            font-weight: bold;
+        }
         .adm-del-form {
             display: inline-flex;
             flex-wrap: wrap;
@@ -652,14 +723,14 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
                     <span class="adm-qtag">Max Vàng: <b style="color:#fbbf24;">${escapeHtml(maxGoldDisplay)}</b></span>
                     <span class="adm-qtag">Max Online: <b style="color:#38bdf8;">${escapeHtml(maxOnlineDisplay)}</b></span>
                 </div>
-                <div style="margin-top:6px;font-size:12.5px;color:#94a3b8;">Auto Level theo online: Tạo nick Lv.1 · 10 phút lên Lv.10 · Thành viên tối đa Lv.99. Đang ẩn nick của chính bạn để dễ xử lý người khác.</div>
+                <div style="margin-top:6px;font-size:12.5px;color:#94a3b8;">Auto Level theo online: Tạo nick Lv.1 · 10 phút lên Lv.10 · Thành viên tối đa Lv.99.</div>
             </div>
 
             ${message}
 
             <div class="adm-toolbar">
                 <input type="text" id="admSearchInput" class="adm-search-input" placeholder="🔍 Tìm theo ID, tên nick hoặc cấp bậc..." oninput="filterAdminUsers()">
-                <button type="button" id="admToggleSelfBtn" class="adm-toggle-self-btn" onclick="toggleSelfCard()">👁 Hiện nick của tôi</button>
+                ${isFounder ? `<button type="button" id="admToggleSelfBtn" class="adm-toggle-self-btn" onclick="toggleSelfCard()">👁 Hiện nick của tôi</button>` : ''}
             </div>
 
             <div id="admUsersContainer">
@@ -675,14 +746,18 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
                     const isBanned = Number(u.is_banned || 0) === 1;
                     const perm = canManageTargetUser(user, u);
                     const showBanControls = actorCfg.canBan || isFounder;
+                    const bannedByFounderFlag = founderIds.has(Number(u.banned_by || 0));
+                    const canUnbanThis = isFounder ? perm.allowed : (isSuperAdmin ? (perm.allowed && !bannedByFounderFlag) : false);
+                    const styledNickHtml = renderStyledNickWithoutStaffBadge(u);
                     const searchBlob = `${uid} ${u.display_name || ''} ${uRoleLabel}`.toLowerCase();
+                    const hideSelfClass = (isFounder && isSelf) ? 'is-self-hidden adm-self-card' : '';
 
                     return `
-                    <div class="adm-user-card ${isBanned ? 'is-banned' : ''} ${isSelf ? 'is-self-hidden adm-self-card' : ''}" data-search="${escapeHtml(searchBlob)}">
+                    <div class="adm-user-card ${isBanned ? 'is-banned' : ''} ${hideSelfClass}" data-search="${escapeHtml(searchBlob)}">
                         <div class="adm-user-top">
                             <div class="adm-user-identity">
                                 <span class="adm-uid">ID #${uid}</span>
-                                <span class="adm-uname">${escapeHtml(u.display_name || u.username || 'Thành viên')}</span>
+                                <span class="adm-styled-nick">${styledNickHtml}</span>
                                 <span class="adm-role-badge" style="${getRoleBadgeStyle(uTier)}">${escapeHtml(uRoleLabel)}</span>
                                 ${isBanned ? `<span class="adm-ban-badge">⛔ ĐÃ BAN ID</span>` : ''}
                             </div>
@@ -741,18 +816,22 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
                                             <input type="text" name="mood" value="${escapeHtml(u.mood || '')}" class="adm-input" style="color:#cbd5e1;">
                                         </div>
                                         <div class="adm-field">
-                                            <label>Màu tên &amp; Glow</label>
-                                            <input type="text" name="name_color" value="${escapeHtml(u.name_color || '#00ff00')}" placeholder="#00ff00" class="adm-input" style="color:#4ade80;">
+                                            <label>Màu tên &amp; Glow tên</label>
+                                            <div style="display:flex;gap:4px;">
+                                                <input type="text" name="name_color" value="${escapeHtml(u.name_color || '#00ff00')}" placeholder="#00ff00" class="adm-input" style="color:#4ade80;">
+                                                <input type="text" name="name_glow" value="${escapeHtml(u.name_glow || '#000000')}" placeholder="Glow" class="adm-input" style="color:#f472b6;">
+                                            </div>
                                         </div>
                                         <div class="adm-field">
-                                            <label>Glow tên / Viền / Icon</label>
+                                            <label>Viền tên / Glow viền / Icon</label>
                                             <div style="display:flex;gap:4px;">
-                                                <input type="text" name="name_glow" value="${escapeHtml(u.name_glow || '#000000')}" placeholder="Glow" class="adm-input" style="color:#f472b6;">
-                                                <input type="text" name="border_color" value="${escapeHtml(u.border_color || '#ffcc00')}" placeholder="Viền" class="adm-input" style="color:#facc15;">
+                                                <input type="text" name="name_border" value="${escapeHtml(u.name_border || '#000000')}" placeholder="Viền tên" class="adm-input" style="color:#38bdf8;">
+                                                <input type="text" name="name_border_glow" value="${escapeHtml(u.name_border_glow || '#000000')}" placeholder="Glow viền" class="adm-input" style="color:#c084fc;">
                                                 <input type="text" name="active_icon" value="${escapeHtml(u.active_icon || '')}" placeholder="Icon" class="adm-input" style="color:#fff;">
                                             </div>
                                         </div>
                                     </div>
+                                    <input type="hidden" name="border_color" value="${escapeHtml(u.border_color || '#ffcc00')}">
                                     <input type="hidden" name="avatar_glow" value="${escapeHtml(u.avatar_glow || '#000000')}">
                                 ` : ''}
 
@@ -769,14 +848,24 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
 
                             <div class="adm-ban-panel">
                                 ${showBanControls ? `
-                                    <form method="POST" class="adm-ban-form">
-                                        <input type="hidden" name="user_id" value="${uid}">
-                                        <input type="hidden" name="action_type" value="${isBanned ? 'unban_user' : 'ban_user'}">
-                                        ${!isBanned ? `<input type="text" name="ban_reason" value="${escapeHtml(u.ban_reason || '')}" placeholder="Nhập lý do Ban ID..." class="adm-ban-reason">` : ''}
-                                        <button type="submit" class="adm-btn ${isBanned ? 'adm-btn-unban' : 'adm-btn-ban'}">
-                                            ${isBanned ? '🔓 Mở Ban ID' : '⛔ Ban ID'}
-                                        </button>
-                                    </form>
+                                    ${isBanned ? (
+                                        canUnbanThis ? `
+                                            <form method="POST" class="adm-ban-form">
+                                                <input type="hidden" name="user_id" value="${uid}">
+                                                <input type="hidden" name="action_type" value="unban_user">
+                                                <button type="submit" class="adm-btn adm-btn-unban">🔓 Gỡ Ban ID</button>
+                                            </form>
+                                        ` : `
+                                            <span class="adm-ban-locked">🔒 Bị Người Sáng Lập Ban — không thể gỡ Ban</span>
+                                        `
+                                    ) : `
+                                        <form method="POST" class="adm-ban-form">
+                                            <input type="hidden" name="user_id" value="${uid}">
+                                            <input type="hidden" name="action_type" value="ban_user">
+                                            <input type="text" name="ban_reason" value="${escapeHtml(u.ban_reason || '')}" placeholder="Nhập lý do Ban ID..." class="adm-ban-reason">
+                                            <button type="submit" class="adm-btn adm-btn-ban">⛔ Ban ID</button>
+                                        </form>
+                                    `}
                                 ` : ''}
 
                                 <form method="POST" onsubmit="return confirm('Xóa dữ liệu đã chọn của ID #${uid}?');" class="adm-del-form">
