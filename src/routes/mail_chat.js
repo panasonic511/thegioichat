@@ -26,13 +26,10 @@ function buildUserVisual(uObj) {
         ? `${rendered.avatarStyle}; width: 36px; height: 36px; border-radius: 50%; object-fit: cover; display: block;`
         : 'width: 36px; height: 36px; border-radius: 50%; object-fit: cover; border: 1px solid #00ff00; display: block;';
 
-    const levelVal = Number(uObj && uObj.level ? uObj.level : 1);
-
     return {
         nameHtml: rendered.nameHtml || escapeHtml((uObj && (uObj.display_name || uObj.username)) || 'Thành viên'),
         avatarSrc,
-        avatarStyle,
-        level: Number.isNaN(levelVal) || levelVal < 1 ? 1 : levelVal
+        avatarStyle
     };
 }
 
@@ -105,6 +102,22 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         } catch (e) {}
     };
 
+    const checkPartnerTypingFromDb = async () => {
+        try {
+            const nowSec = Math.floor(Date.now() / 1000);
+            const row = await env.DB.prepare(`
+                SELECT is_typing, updated_at
+                FROM mail_typing_status
+                WHERE user_id = ? AND target_user_id = ?
+                LIMIT 1
+            `).bind(partnerId, user.id).first();
+
+            return Boolean(row && Number(row.is_typing) === 1 && (nowSec - Number(row.updated_at || 0)) <= 10);
+        } catch (e) {
+            return false;
+        }
+    };
+
     if (request.method === 'POST') {
         try {
             const formData = await request.formData();
@@ -114,6 +127,13 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                 const typingFlag = String(formData.get('is_typing') || '0') === '1';
                 await setMyTypingState(typingFlag);
                 return new Response(JSON.stringify({ success: true, is_typing: typingFlag ? 1 : 0 }), {
+                    headers: { 'Content-Type': 'application/json;charset=UTF-8' }
+                });
+            }
+
+            if (action === 'check_typing') {
+                const partnerTyping = await checkPartnerTypingFromDb();
+                return new Response(JSON.stringify({ success: true, partner_typing: partnerTyping ? 1 : 0 }), {
                     headers: { 'Content-Type': 'application/json;charset=UTF-8' }
                 });
             }
@@ -158,7 +178,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
     try {
         partner = await env.DB.prepare(`
             SELECT id, username, display_name, avatar, border_color, avatar_glow,
-                   name_color, name_glow, name_border, name_border_glow, active_icon, role, is_admin, level, coins
+                   name_color, name_glow, name_border, name_border_glow, active_icon, role, is_admin, coins
             FROM users WHERE id = ?
         `).bind(partnerId).first();
     } catch (e) {
@@ -226,15 +246,12 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
             ? `<div style="font-size: 11px; margin-top: 3px; color: ${isRead ? '#00ff88' : '#888'}; font-weight: ${isRead ? 'bold' : 'normal'};">${isRead ? '✓✓ Đã xem' : '✓ Đã gửi'}</div>`
             : '';
 
-        const levelBadgeHtml = `<span style="background: #1b2232; color: #ffd54f; border: 1px solid #394867; border-radius: 4px; padding: 1px 5px; font-size: 10px; font-weight: bold; margin-left: 6px;">Lv.${vUser.level}</span>`;
-
         return `
         <div style="display: flex; flex-direction: column; align-items: ${isMe ? 'flex-end' : 'flex-start'};">
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
                 <img src="${escapeHtml(vUser.avatarSrc)}" alt="${escapeHtml(msgUser.display_name || msgUser.username || '')}" style="${escapeHtml(vUser.avatarStyle)}">
                 <div style="font-size: 13px; display: flex; align-items: center; flex-wrap: wrap; font-weight: bold;">
                     ${vUser.nameHtml}
-                    ${levelBadgeHtml}
                 </div>
             </div>
             <div style="max-width: 80%; background: ${isMe ? '#1a3300' : '#1a1a1a'}; border: 1px solid ${isMe ? '#339900' : '#333'}; padding: 10px 14px; border-radius: 8px; color: #fff; font-size: 15px; word-break: break-word; line-height: 1.4;">
@@ -252,7 +269,6 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         avatar: currentUserVisual.avatarSrc,
         avatarStyle: currentUserVisual.avatarStyle,
         nameHtml: currentUserVisual.nameHtml,
-        level: currentUserVisual.level,
         border_color: user.border_color,
         avatar_glow: user.avatar_glow,
         name_color: user.name_color,
@@ -271,7 +287,6 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
         avatar: partnerVisual.avatarSrc,
         avatarStyle: partnerVisual.avatarStyle,
         nameHtml: partnerVisual.nameHtml,
-        level: partnerVisual.level,
         border_color: partner.border_color,
         avatar_glow: partner.avatar_glow,
         name_color: partner.name_color,
@@ -289,7 +304,6 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
             <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                 <span>🟢 Trò chuyện với</span>
                 ${partnerVisual.nameHtml}
-                <span style="background: #1b2232; color: #ffd54f; border: 1px solid #394867; border-radius: 4px; padding: 1px 6px; font-size: 11px; font-weight: bold;">Lv.${partnerVisual.level}</span>
             </div>
         </div>
         <div class="box-content" style="padding: 10px;">
@@ -357,6 +371,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
 
         let lastTypingSentState = false;
         let typingIdleTimer = null;
+        let typingHeartbeatTimer = null;
         let lastTypingPulseTs = 0;
 
         function escapeJsHtml(str) {
@@ -403,11 +418,11 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
             }
         }
 
-        async function pushTypingState(isTyping) {
+        async function pushTypingState(isTyping, force) {
             const desired = Boolean(isTyping);
             const now = Date.now();
-            if (!desired && !lastTypingSentState) return;
-            if (desired && lastTypingSentState && (now - lastTypingPulseTs < 2000)) return;
+            if (!force && !desired && !lastTypingSentState) return;
+            if (!force && desired && lastTypingSentState && (now - lastTypingPulseTs < 1500)) return;
 
             lastTypingSentState = desired;
             lastTypingPulseTs = now;
@@ -438,12 +453,25 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                 clearTimeout(typingIdleTimer);
                 typingIdleTimer = null;
             }
+            if (typingHeartbeatTimer) {
+                clearInterval(typingHeartbeatTimer);
+                typingHeartbeatTimer = null;
+            }
 
             if (hasText) {
-                pushTypingState(true);
+                pushTypingState(true, true);
+                typingHeartbeatTimer = setInterval(function() {
+                    const curInp = document.getElementById('messageInput');
+                    if (curInp && curInp.value && curInp.value.trim().length > 0) {
+                        pushTypingState(true, true);
+                    } else {
+                        stopChatInputTyping(true);
+                    }
+                }, 2000);
+
                 typingIdleTimer = setTimeout(function() {
                     stopChatInputTyping(true);
-                }, 4000);
+                }, 5000);
             } else {
                 stopChatInputTyping(true);
             }
@@ -454,10 +482,36 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                 clearTimeout(typingIdleTimer);
                 typingIdleTimer = null;
             }
+            if (typingHeartbeatTimer) {
+                clearInterval(typingHeartbeatTimer);
+                typingHeartbeatTimer = null;
+            }
             if (forceSend || lastTypingSentState) {
                 lastTypingSentState = false;
-                pushTypingState(false);
+                pushTypingState(false, true);
             }
+        }
+
+        async function pollPartnerTypingFallback() {
+            try {
+                const body = new URLSearchParams();
+                body.set('action', 'check_typing');
+                body.set('partner_id', String(partnerId));
+
+                const res = await fetch(window.location.href, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+                    },
+                    body: body.toString()
+                });
+                if (res.ok) {
+                    const d = await res.json();
+                    return Boolean(d && (d.partner_typing === 1 || d.partner_typing === true));
+                }
+            } catch (e) {}
+            return false;
         }
 
         function toggleGifPopup() {
@@ -619,13 +673,16 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
 
                     syncChatNotifications(otherUnread);
 
-                    const partnerIsTyping = Boolean(
+                    let partnerIsTyping = Boolean(
                         data.partner_typing === true ||
                         data.partner_typing === 1 ||
                         data.is_typing === true ||
                         data.is_typing === 1 ||
                         (Array.isArray(data.typing_users) && data.typing_users.some(function(id) { return Number(id) === partnerId; }))
                     );
+                    if (!partnerIsTyping) {
+                        partnerIsTyping = await pollPartnerTypingFallback();
+                    }
                     setPartnerTypingUi(partnerIsTyping);
 
                     if (Array.isArray(data.chat_messages) && data.chat_messages.length > 0) {
@@ -659,15 +716,12 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
                             const avStyle = (msgUser && msgUser.avatarStyle)
                                 ? (escapeJsHtml(msgUser.avatarStyle) + '; width: 36px; height: 36px; border-radius: 50%; object-fit: cover; display: block;')
                                 : 'width: 36px; height: 36px; border-radius: 50%; object-fit: cover; border: 1px solid #00ff00; display: block;';
-                            const lvNum = Number((msgUser && msgUser.level) || 1) || 1;
-                            const lvBadge = '<span style="background: #1b2232; color: #ffd54f; border: 1px solid #394867; border-radius: 4px; padding: 1px 5px; font-size: 10px; font-weight: bold; margin-left: 6px;">Lv.' + lvNum + '</span>';
 
                             html += '<div style="display: flex; flex-direction: column; align-items: ' + alignment + ';">' +
                                 '<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">' +
                                     '<img src="' + escapeJsHtml(avSrc) + '" style="' + avStyle + '">' +
                                     '<div style="font-size: 13px; display: flex; align-items: center; flex-wrap: wrap; font-weight: bold;">' +
                                         buildClientNameHtml(msgUser) +
-                                        lvBadge +
                                     '</div>' +
                                 '</div>' +
                                 '<div style="max-width: 80%; background: ' + bubbleBg + '; border: 1px solid ' + bubbleBorder + '; padding: 10px 14px; border-radius: 8px; color: #fff; font-size: 15px; word-break: break-word; line-height: 1.4;">' +
@@ -699,7 +753,7 @@ export async function handleMailChat(request, env, user, renderLayout, url) {
             syncChatNotifications(0);
             fetchRealtimeMessages();
         });
-        setInterval(fetchRealtimeMessages, 2000);
+        setInterval(fetchRealtimeMessages, 1500);
     </script>
     `;
 
