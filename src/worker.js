@@ -1,4 +1,4 @@
-Import { handleLogin, handleRegister } from './routes/auth.js';
+import { handleLogin, handleRegister } from './routes/auth.js';
 import { handleLogout } from './routes/logout.js';
 import { handleIndex } from './routes/index.js';
 import { handleProfile } from './routes/profile.js';
