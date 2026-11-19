@@ -1,5 +1,3 @@
-import { getMaintenanceConfig, isWapOwner, setMaintenanceMode } from './maintenance.js';
-
 function escapeHtml(str) {
     if (str === null || str === undefined) return '';
     return String(str)
@@ -8,6 +6,65 @@ function escapeHtml(str) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+function isWapOwner(user) {
+    if (!user) return false;
+    if (Number(user.is_owner) === 1 || Number(user.id) === 1) return true;
+    const role = String(user.role || '').trim().toLowerCase();
+    return role === 'chủ wap' || role === 'chu wap' || role === 'owner';
+}
+
+async function getMaintenanceConfig(env) {
+    let enabled = false;
+    let message = 'Hệ thống đang bảo trì nâng cấp để phục vụ bạn tốt hơn. Vui lòng quay lại sau!';
+    try {
+        await env.DB.prepare(`
+            CREATE TABLE IF NOT EXISTS site_settings (
+                setting_key TEXT PRIMARY KEY,
+                setting_value TEXT
+            )
+        `).run();
+
+        const rows = await env.DB.prepare(`
+            SELECT setting_key, setting_value
+            FROM site_settings
+            WHERE setting_key IN ('maintenance_mode', 'maintenance_message')
+        `).all();
+
+        for (const r of (rows.results || [])) {
+            if (r.setting_key === 'maintenance_mode') {
+                enabled = String(r.setting_value || '0') === '1';
+            } else if (r.setting_key === 'maintenance_message' && r.setting_value) {
+                message = String(r.setting_value);
+            }
+        }
+    } catch (e) {}
+    return { enabled, message };
+}
+
+async function setMaintenanceMode(env, enabled, message = null) {
+    await env.DB.prepare(`
+        CREATE TABLE IF NOT EXISTS site_settings (
+            setting_key TEXT PRIMARY KEY,
+            setting_value TEXT
+        )
+    `).run();
+
+    const modeVal = enabled ? '1' : '0';
+    await env.DB.prepare(`
+        INSERT INTO site_settings (setting_key, setting_value)
+        VALUES ('maintenance_mode', ?)
+        ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value
+    `).bind(modeVal).run();
+
+    if (message !== null && String(message).trim() !== '') {
+        await env.DB.prepare(`
+            INSERT INTO site_settings (setting_key, setting_value)
+            VALUES ('maintenance_message', ?)
+            ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value
+        `).bind(String(message).trim()).run();
+    }
 }
 
 export async function handleAdminDashboard(request, env, user, renderLayout) {
