@@ -817,11 +817,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     </div>
                 </div>
             </div>
-            <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                <button type="button" id="sv-sound-btn" onclick="toggleStorySound()" style="display: none; background: rgba(0, 255, 0, 0.16); border: 1px solid #00ff00; color: #00ff00; border-radius: 16px; padding: 0 10px; height: 32px; font-size: 11px; font-weight: bold; cursor: pointer; align-items: center; gap: 4px;">🔊 Tiếng</button>
-                <button type="button" id="sv-delete-btn" onclick="deleteCurrentStory()" style="display: none; background: rgba(255, 68, 68, 0.22); border: 1px solid #ff5555; color: #ff8888; border-radius: 50%; width: 32px; height: 32px; font-size: 13px; cursor: pointer; align-items: center; justify-content: center;" title="Xóa Story">🗑</button>
-                <button type="button" onclick="closeStoryViewer()" style="background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.25); color: #fff; border-radius: 50%; width: 32px; height: 32px; font-size: 16px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center;" title="Đóng">✕</button>
-            </div>
         </div>
 
         <div style="position: relative; flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 8px 0;">
