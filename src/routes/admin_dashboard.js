@@ -33,6 +33,30 @@ function getRoleBadgeStyle(tier) {
     return 'background: rgba(74, 222, 128, 0.12); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.3);';
 }
 
+async function ensureAdminSchemaColumns(env) {
+    const alterStatements = [
+        "ALTER TABLE users ADD COLUMN gold INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN online_minutes INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN is_banned INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN ban_reason TEXT DEFAULT ''",
+        "ALTER TABLE users ADD COLUMN banned_by INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN banned_at INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN gender TEXT DEFAULT 'male'",
+        "ALTER TABLE users ADD COLUMN mood TEXT DEFAULT ''",
+        "ALTER TABLE users ADD COLUMN current_location TEXT DEFAULT 'Trang chủ'",
+        "ALTER TABLE users ADD COLUMN name_color TEXT DEFAULT '#00ff00'",
+        "ALTER TABLE users ADD COLUMN name_glow TEXT DEFAULT '#000000'",
+        "ALTER TABLE users ADD COLUMN border_color TEXT DEFAULT '#ffcc00'",
+        "ALTER TABLE users ADD COLUMN avatar_glow TEXT DEFAULT '#000000'",
+        "ALTER TABLE users ADD COLUMN active_icon TEXT DEFAULT ''"
+    ];
+    for (const sql of alterStatements) {
+        try {
+            await env.DB.prepare(sql).run();
+        } catch (e) {}
+    }
+}
+
 export async function handleAdminDashboard(request, env, user, renderLayout) {
     const actorTier = getRoleTier(user);
     if (!user || actorTier < ROLE_TIERS.MOD) {
@@ -40,20 +64,11 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
     }
 
     const actorCfg = getRoleConfig(user);
+    const isFounder = actorTier === ROLE_TIERS.FOUNDER;
+    const currentUserId = Number(user.id || 0);
     let message = "";
 
-    try {
-        await env.DB.prepare("ALTER TABLE users ADD COLUMN gold INTEGER DEFAULT 0").run();
-    } catch (e) {}
-    try {
-        await env.DB.prepare("ALTER TABLE users ADD COLUMN online_minutes INTEGER DEFAULT 0").run();
-    } catch (e) {}
-    try {
-        await env.DB.prepare("ALTER TABLE users ADD COLUMN is_banned INTEGER DEFAULT 0").run();
-    } catch (e) {}
-    try {
-        await env.DB.prepare("ALTER TABLE users ADD COLUMN ban_reason TEXT DEFAULT ''").run();
-    } catch (e) {}
+    await ensureAdminSchemaColumns(env);
 
     if (request.method === 'POST') {
         const formData = await request.formData();
@@ -73,11 +88,43 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
             if (actionType === 'ban_user' || actionType === 'unban_user') {
                 const isBan = actionType === 'ban_user';
                 const reason = String(formData.get('ban_reason') || '').trim();
-                const banRes = await applyBanIdAction(env, user, targetUser, isBan, reason);
-                if (!banRes.ok) {
-                    throw new Error(banRes.error);
+
+                if (isFounder) {
+                    const check = canManageTargetUser(user, targetUser);
+                    if (!check.allowed) throw new Error(check.reason);
+                    const banFlag = isBan ? 1 : 0;
+                    const cleanReason = isBan ? (reason || 'Vi phạm quy định hệ thống') : '';
+                    const nowSec = Math.floor(Date.now() / 1000);
+                    await env.DB.prepare(`
+                        UPDATE users
+                        SET is_banned = ?, ban_reason = ?, banned_by = ?, banned_at = ?
+                        WHERE id = ?
+                    `).bind(banFlag, cleanReason, isBan ? currentUserId : 0, isBan ? nowSec : 0, targetUserId).run();
+                } else {
+                    const banRes = await applyBanIdAction(env, user, targetUser, isBan, reason);
+                    if (!banRes.ok) throw new Error(banRes.error);
                 }
+
                 message = `<div class="adm-alert adm-alert-ok">✅ ${isBan ? `Đã Ban ID #${targetUserId}` : `Đã mở khóa ID #${targetUserId}`} thành công!</div>`;
+            } else if (actionType === 'delete_user_account') {
+                if (!isFounder) {
+                    throw new Error("Chỉ Người Sáng Lập mới có quyền xóa tài khoản người dùng!");
+                }
+                if (targetUserId === currentUserId) {
+                    throw new Error("Không thể tự xóa tài khoản của chính bạn!");
+                }
+                try {
+                    await env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(targetUserId).run();
+                } catch (e) {}
+                try {
+                    await env.DB.prepare("DELETE FROM mail_box WHERE sender_id = ? OR receiver_id = ?").bind(targetUserId, targetUserId).run();
+                } catch (e) {}
+                try {
+                    await env.DB.prepare("DELETE FROM posts WHERE user_id = ?").bind(targetUserId).run();
+                } catch (e) {}
+                await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(targetUserId).run();
+
+                message = `<div class="adm-alert adm-alert-ok">✅ Đã xóa vĩnh viễn tài khoản ID #${targetUserId} (${escapeHtml(targetUser.display_name || targetUser.username || '')})!</div>`;
             } else if (actionType === 'delete_user_content') {
                 const check = canManageTargetUser(user, targetUser);
                 if (!check.allowed) {
@@ -96,12 +143,25 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
                 }
                 message = `<div class="adm-alert adm-alert-ok">✅ Đã xóa dữ liệu mục đã chọn của ID #${targetUserId}!</div>`;
             } else {
+                const extraFields = isFounder ? {
+                    display_name: String(formData.get('display_name') ?? targetUser.display_name ?? '').trim(),
+                    gender: String(formData.get('gender') ?? targetUser.gender ?? 'male').trim(),
+                    mood: String(formData.get('mood') ?? targetUser.mood ?? '').trim(),
+                    current_location: String(formData.get('current_location') ?? targetUser.current_location ?? 'Trang chủ').trim(),
+                    name_color: String(formData.get('name_color') ?? targetUser.name_color ?? '#00ff00').trim(),
+                    name_glow: String(formData.get('name_glow') ?? targetUser.name_glow ?? '#000000').trim(),
+                    border_color: String(formData.get('border_color') ?? targetUser.border_color ?? '#ffcc00').trim(),
+                    avatar_glow: String(formData.get('avatar_glow') ?? targetUser.avatar_glow ?? '#000000').trim(),
+                    active_icon: String(formData.get('active_icon') ?? targetUser.active_icon ?? '').trim()
+                } : undefined;
+
                 const sanitized = sanitizeManagementUpdates(user, targetUser, {
                     role: formData.get('role'),
                     level: formData.get('level'),
                     coins: formData.get('coins'),
                     gold: formData.get('gold'),
-                    online_minutes: formData.get('online_minutes')
+                    online_minutes: formData.get('online_minutes'),
+                    extraFields
                 });
 
                 if (!sanitized.ok) {
@@ -115,13 +175,39 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
                 const finalGold = u.gold ?? Number(targetUser.gold || 0);
                 const finalOnlineMins = u.online_minutes ?? Number(targetUser.online_minutes || 0);
 
-                await env.DB.prepare(`
-                    UPDATE users
-                    SET role = ?, level = ?, coins = ?, gold = ?, online_minutes = ?
-                    WHERE id = ?
-                `).bind(finalRole, finalLevel, finalCoins, finalGold, finalOnlineMins, targetUserId).run();
+                if (isFounder) {
+                    await env.DB.prepare(`
+                        UPDATE users
+                        SET role = ?, level = ?, coins = ?, gold = ?, online_minutes = ?,
+                            display_name = ?, gender = ?, mood = ?, current_location = ?,
+                            name_color = ?, name_glow = ?, border_color = ?, avatar_glow = ?, active_icon = ?
+                        WHERE id = ?
+                    `).bind(
+                        finalRole,
+                        finalLevel,
+                        finalCoins,
+                        finalGold,
+                        finalOnlineMins,
+                        u.display_name || targetUser.display_name || targetUser.username || '',
+                        u.gender || 'male',
+                        u.mood || '',
+                        u.current_location || 'Trang chủ',
+                        u.name_color || '#00ff00',
+                        u.name_glow || '#000000',
+                        u.border_color || '#ffcc00',
+                        u.avatar_glow || '#000000',
+                        u.active_icon || '',
+                        targetUserId
+                    ).run();
+                } else {
+                    await env.DB.prepare(`
+                        UPDATE users
+                        SET role = ?, level = ?, coins = ?, gold = ?, online_minutes = ?
+                        WHERE id = ?
+                    `).bind(finalRole, finalLevel, finalCoins, finalGold, finalOnlineMins, targetUserId).run();
+                }
 
-                message = `<div class="adm-alert adm-alert-ok">✅ Đã cập nhật ID #${targetUserId} — Lv: <b>${finalLevel}</b> · Xu: <b>${finalCoins.toLocaleString('en-US')}</b> · Vàng: <b>${finalGold.toLocaleString('en-US')}</b> · Online: <b>${finalOnlineMins}p</b></div>`;
+                message = `<div class="adm-alert adm-alert-ok">✅ Đã cập nhật toàn bộ thông tin DB cho ID #${targetUserId} — Lv: <b>${finalLevel}</b> · Xu: <b>${finalCoins.toLocaleString('en-US')}</b> · Vàng: <b>${finalGold.toLocaleString('en-US')}</b> · Online: <b>${finalOnlineMins}p</b></div>`;
             }
         } catch (e) {
             message = `<div class="adm-alert adm-alert-err">❌ Lỗi: ${escapeHtml(e.message)}</div>`;
@@ -131,19 +217,21 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
     let usersList = [];
     try {
         const res = await env.DB.prepare(`
-            SELECT id, username, display_name, role, is_admin, coins, gold, level, online_minutes, is_banned, ban_reason
+            SELECT id, username, display_name, role, is_admin, coins, gold, level, online_minutes,
+                   is_banned, ban_reason, gender, mood, current_location,
+                   name_color, name_glow, border_color, avatar_glow, active_icon
             FROM users
             ORDER BY id DESC
-            LIMIT 100
+            LIMIT 120
         `).all();
         usersList = (res && Array.isArray(res.results)) ? res.results : [];
     } catch (e) {
         try {
             const res2 = await env.DB.prepare(`
-                SELECT id, username, display_name, role, is_admin, coins, level
+                SELECT id, username, display_name, role, is_admin, coins, gold, level, online_minutes, is_banned, ban_reason
                 FROM users
                 ORDER BY id DESC
-                LIMIT 100
+                LIMIT 120
             `).all();
             usersList = (res2 && Array.isArray(res2.results)) ? res2.results : [];
         } catch (e2) {
@@ -300,6 +388,20 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
             outline: none;
             border-color: #4ade80;
         }
+        .adm-toggle-self-btn {
+            background: #161f2e;
+            color: #e2e8f0;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 8px 11px;
+            font-size: 12.5px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .adm-toggle-self-btn:hover {
+            border-color: #4ade80;
+            color: #4ade80;
+        }
         .adm-user-card {
             background: #10151d;
             border: 1px solid #263040;
@@ -314,6 +416,9 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
         .adm-user-card.is-banned {
             background: #190b0e;
             border-color: #7f1d1d;
+        }
+        .adm-user-card.is-self-hidden {
+            display: none;
         }
         .adm-user-top {
             display: flex;
@@ -340,10 +445,6 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
             color: #ffffff;
             font-weight: bold;
             font-size: 15px;
-        }
-        .adm-handle {
-            color: #94a3b8;
-            font-size: 13px;
         }
         .adm-role-badge {
             padding: 2px 8px;
@@ -373,9 +474,20 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
             gap: 8px;
             margin-bottom: 10px;
         }
+        .adm-extra-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-bottom: 10px;
+            padding: 9px;
+            background: #0c1017;
+            border: 1px dashed #253042;
+            border-radius: 6px;
+        }
         @media (max-width: 600px) {
             .adm-stats-grid { grid-template-columns: 1fr; }
             .adm-fields-grid { grid-template-columns: repeat(2, 1fr); }
+            .adm-extra-grid { grid-template-columns: 1fr; }
         }
         .adm-field {
             display: flex;
@@ -500,12 +612,13 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
             background: #7f1d1d;
             color: #ffffff;
         }
-        .adm-ban-note {
-            font-size: 12.5px;
-            color: #cbd5e1;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
+        .adm-btn-del-acc {
+            background: #7f1d1d;
+            color: #ffffff;
+            border: 1px solid #ef4444;
+        }
+        .adm-btn-del-acc:hover {
+            background: #b91c1c;
         }
     </style>
 
@@ -539,18 +652,20 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
                     <span class="adm-qtag">Max Vàng: <b style="color:#fbbf24;">${escapeHtml(maxGoldDisplay)}</b></span>
                     <span class="adm-qtag">Max Online: <b style="color:#38bdf8;">${escapeHtml(maxOnlineDisplay)}</b></span>
                 </div>
-                <div style="margin-top:6px;font-size:12.5px;color:#94a3b8;">Auto Level theo online: Tạo nick Lv.1 · 10 phút lên Lv.10 · Thành viên tối đa Lv.99.</div>
+                <div style="margin-top:6px;font-size:12.5px;color:#94a3b8;">Auto Level theo online: Tạo nick Lv.1 · 10 phút lên Lv.10 · Thành viên tối đa Lv.99. Đang ẩn nick của chính bạn để dễ xử lý người khác.</div>
             </div>
 
             ${message}
 
             <div class="adm-toolbar">
-                <input type="text" id="admSearchInput" class="adm-search-input" placeholder="🔍 Tìm theo ID, tên hiển thị, username hoặc cấp bậc..." oninput="filterAdminUsers()">
+                <input type="text" id="admSearchInput" class="adm-search-input" placeholder="🔍 Tìm theo ID, tên nick hoặc cấp bậc..." oninput="filterAdminUsers()">
+                <button type="button" id="admToggleSelfBtn" class="adm-toggle-self-btn" onclick="toggleSelfCard()">👁 Hiện nick của tôi</button>
             </div>
 
             <div id="admUsersContainer">
                 ${usersList.map(u => {
                     const uid = Number(u.id || 0);
+                    const isSelf = uid === currentUserId;
                     const uTier = getRoleTier(u);
                     const uRoleLabel = getRoleConfig(u).label;
                     const uCoins = Number(u.coins || 0);
@@ -559,15 +674,15 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
                     const uOnlineMins = Number(u.online_minutes || 0);
                     const isBanned = Number(u.is_banned || 0) === 1;
                     const perm = canManageTargetUser(user, u);
-                    const searchBlob = `${uid} ${u.display_name || ''} ${u.username || ''} ${uRoleLabel}`.toLowerCase();
+                    const showBanControls = actorCfg.canBan || isFounder;
+                    const searchBlob = `${uid} ${u.display_name || ''} ${uRoleLabel}`.toLowerCase();
 
                     return `
-                    <div class="adm-user-card ${isBanned ? 'is-banned' : ''}" data-search="${escapeHtml(searchBlob)}">
+                    <div class="adm-user-card ${isBanned ? 'is-banned' : ''} ${isSelf ? 'is-self-hidden adm-self-card' : ''}" data-search="${escapeHtml(searchBlob)}">
                         <div class="adm-user-top">
                             <div class="adm-user-identity">
                                 <span class="adm-uid">ID #${uid}</span>
-                                <span class="adm-uname">${escapeHtml(u.display_name || u.username)}</span>
-                                <span class="adm-handle">(@${escapeHtml(u.username)})</span>
+                                <span class="adm-uname">${escapeHtml(u.display_name || u.username || 'Thành viên')}</span>
                                 <span class="adm-role-badge" style="${getRoleBadgeStyle(uTier)}">${escapeHtml(uRoleLabel)}</span>
                                 ${isBanned ? `<span class="adm-ban-badge">⛔ ĐÃ BAN ID</span>` : ''}
                             </div>
@@ -604,6 +719,43 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
                                     </div>
                                 </div>
 
+                                ${isFounder ? `
+                                    <div class="adm-extra-grid">
+                                        <div class="adm-field">
+                                            <label>Tên hiển thị (DB)</label>
+                                            <input type="text" name="display_name" value="${escapeHtml(u.display_name || '')}" class="adm-input" style="color:#f8fafc;">
+                                        </div>
+                                        <div class="adm-field">
+                                            <label>Giới tính (DB)</label>
+                                            <select name="gender" class="adm-select" style="color:#e2e8f0;">
+                                                <option value="male" ${String(u.gender || 'male').toLowerCase() === 'male' || String(u.gender || '').toLowerCase() === 'nam' ? 'selected' : ''}>Nam (male)</option>
+                                                <option value="female" ${String(u.gender || '').toLowerCase() === 'female' || String(u.gender || '').toLowerCase() === 'nữ' || String(u.gender || '').toLowerCase() === 'nu' ? 'selected' : ''}>Nữ (female)</option>
+                                            </select>
+                                        </div>
+                                        <div class="adm-field">
+                                            <label>Vị trí hiện tại (DB)</label>
+                                            <input type="text" name="current_location" value="${escapeHtml(u.current_location || 'Trang chủ')}" class="adm-input" style="color:#fbbf24;">
+                                        </div>
+                                        <div class="adm-field">
+                                            <label>Tâm trạng (DB)</label>
+                                            <input type="text" name="mood" value="${escapeHtml(u.mood || '')}" class="adm-input" style="color:#cbd5e1;">
+                                        </div>
+                                        <div class="adm-field">
+                                            <label>Màu tên &amp; Glow</label>
+                                            <input type="text" name="name_color" value="${escapeHtml(u.name_color || '#00ff00')}" placeholder="#00ff00" class="adm-input" style="color:#4ade80;">
+                                        </div>
+                                        <div class="adm-field">
+                                            <label>Glow tên / Viền / Icon</label>
+                                            <div style="display:flex;gap:4px;">
+                                                <input type="text" name="name_glow" value="${escapeHtml(u.name_glow || '#000000')}" placeholder="Glow" class="adm-input" style="color:#f472b6;">
+                                                <input type="text" name="border_color" value="${escapeHtml(u.border_color || '#ffcc00')}" placeholder="Viền" class="adm-input" style="color:#facc15;">
+                                                <input type="text" name="active_icon" value="${escapeHtml(u.active_icon || '')}" placeholder="Icon" class="adm-input" style="color:#fff;">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <input type="hidden" name="avatar_glow" value="${escapeHtml(u.avatar_glow || '#000000')}">
+                                ` : ''}
+
                                 <div class="adm-row-actions">
                                     <div class="adm-role-group">
                                         <span>Cấp bậc:</span>
@@ -616,7 +768,7 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
                             </form>
 
                             <div class="adm-ban-panel">
-                                ${actorCfg.canBan ? `
+                                ${showBanControls ? `
                                     <form method="POST" class="adm-ban-form">
                                         <input type="hidden" name="user_id" value="${uid}">
                                         <input type="hidden" name="action_type" value="${isBanned ? 'unban_user' : 'ban_user'}">
@@ -625,9 +777,7 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
                                             ${isBanned ? '🔓 Mở Ban ID' : '⛔ Ban ID'}
                                         </button>
                                     </form>
-                                ` : `
-                                    <span class="adm-ban-note">🛡️ <b>Ban ID:</b> Cấp bậc <b>${escapeHtml(actorCfg.label)}</b> không cần khóa tài khoản (toàn quyền hệ thống).</span>
-                                `}
+                                ` : ''}
 
                                 <form method="POST" onsubmit="return confirm('Xóa dữ liệu đã chọn của ID #${uid}?');" class="adm-del-form">
                                     <input type="hidden" name="user_id" value="${uid}">
@@ -639,6 +789,14 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
                                     </select>
                                     <button type="submit" class="adm-btn adm-btn-del">🗑 Xóa mục</button>
                                 </form>
+
+                                ${isFounder && !isSelf ? `
+                                    <form method="POST" onsubmit="return confirm('CẢNH BÁO: Xóa vĩnh viễn tài khoản ID #${uid} khỏi DB?');" class="adm-del-form">
+                                        <input type="hidden" name="user_id" value="${uid}">
+                                        <input type="hidden" name="action_type" value="delete_user_account">
+                                        <button type="submit" class="adm-btn adm-btn-del-acc">❌ Xóa tài khoản</button>
+                                    </form>
+                                ` : ''}
                             </div>
                         ` : `
                             <div style="color:#94a3b8;font-size:13px;padding:6px 0;">🔒 Tài khoản có cấp bậc cao hơn hoặc ngang hàng — bạn chỉ có thể xem.</div>
@@ -651,13 +809,34 @@ export async function handleAdminDashboard(request, env, user, renderLayout) {
     </div>
 
     <script>
-        function filterAdminUsers() {
+        var __showSelfCard = false;
+
+        function applyFilters() {
             var q = (document.getElementById('admSearchInput').value || '').trim().toLowerCase();
             var cards = document.querySelectorAll('#admUsersContainer .adm-user-card');
             for (var i = 0; i < cards.length; i++) {
-                var hay = cards[i].getAttribute('data-search') || '';
-                cards[i].style.display = (!q || hay.indexOf(q) !== -1) ? '' : 'none';
+                var card = cards[i];
+                var isSelf = card.classList.contains('adm-self-card');
+                if (isSelf && !__showSelfCard) {
+                    card.style.display = 'none';
+                    continue;
+                }
+                var hay = card.getAttribute('data-search') || '';
+                card.style.display = (!q || hay.indexOf(q) !== -1) ? '' : 'none';
             }
+        }
+
+        function filterAdminUsers() {
+            applyFilters();
+        }
+
+        function toggleSelfCard() {
+            __showSelfCard = !__showSelfCard;
+            var btn = document.getElementById('admToggleSelfBtn');
+            if (btn) {
+                btn.textContent = __showSelfCard ? '🙈 Ẩn nick của tôi' : '👁 Hiện nick của tôi';
+            }
+            applyFilters();
         }
     </script>
 
