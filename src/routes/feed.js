@@ -1,8 +1,8 @@
 import { renderUser } from '../worker.js';
+import { saveMediaAsset, deleteMediaAsset, normalizeMediaUrl } from '../media_store.js';
 
 const STORY_TTL_SECONDS = 24 * 60 * 60;
 const MAX_ACTIVE_STORIES = 10;
-const MAX_DIRECT_SQL_MEDIA_CHARS = 1600000; // ~1.6MB an toàn cho giới hạn ~2MB/giá trị của SQLite/D1
 
 function escapeAttr(str) {
     if (str === null || str === undefined) return '';
@@ -22,9 +22,33 @@ function isStoryExpired(createdAtStr) {
     return (Date.now() - ts) >= STORY_TTL_SECONDS * 1000;
 }
 
-async function maintainStoriesRetention(env) {
+async function cleanupExpiredAndOverflowMedia(request, env) {
     if (!env || !env.DB) return;
     try {
+        const staleRows = await env.DB.prepare(`
+            SELECT stories.id,
+                   stories.image_url, stories.media_url, stories.thumb_url,
+                   ma.media_url AS ma_media_url, ma.thumb_url AS ma_thumb_url
+            FROM stories
+            LEFT JOIN media_assets ma ON ma.owner_type = 'story' AND ma.owner_id = stories.id
+            WHERE datetime(stories.created_at, '+24 hours') <= datetime('now')
+               OR stories.id NOT IN (
+                   SELECT id FROM stories ORDER BY id DESC LIMIT ${MAX_ACTIVE_STORIES}
+               )
+        `).all();
+
+        const urlsToDelete = new Set();
+        for (const r of ((staleRows && staleRows.results) || [])) {
+            [r.image_url, r.media_url, r.thumb_url, r.ma_media_url, r.ma_thumb_url].forEach(u => {
+                const norm = normalizeMediaUrl(u);
+                if (norm.startsWith('/media/')) urlsToDelete.add(norm);
+            });
+        }
+
+        for (const u of urlsToDelete) {
+            await deleteMediaAsset(request, env, u);
+        }
+
         await env.DB.batch([
             env.DB.prepare(`
                 DELETE FROM media_assets
@@ -55,8 +79,8 @@ async function maintainStoriesRetention(env) {
     } catch (e) {}
 }
 
-function scheduleRetention(env, ctx) {
-    const task = maintainStoriesRetention(env);
+function scheduleRetention(request, env, ctx) {
+    const task = cleanupExpiredAndOverflowMedia(request, env);
     if (ctx && typeof ctx.waitUntil === 'function') {
         ctx.waitUntil(task);
         return Promise.resolve();
@@ -64,29 +88,7 @@ function scheduleRetention(env, ctx) {
     return task;
 }
 
-async function fileToDataUrlFast(file) {
-    if (!file) return '';
-    if (typeof file.arrayBuffer === 'function') {
-        const buf = await file.arrayBuffer();
-        const bytes = new Uint8Array(buf);
-        let binary = '';
-        const chunkSize = 0x8000;
-        for (let i = 0; i < bytes.length; i += chunkSize) {
-            binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
-        }
-        const mime = file.type || 'video/mp4';
-        return 'data:' + mime + ';base64,' + btoa(binary);
-    }
-    return await new Promise((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => resolve(r.result || '');
-        r.onerror = () => reject(new Error('Không thể đọc file'));
-        r.readAsDataURL(file);
-    });
-}
-
 export async function handleFeed(request, env, user, renderLayout, ctx) {
-    // 1. Tự động khởi tạo bảng dữ liệu & bảng quản lý media tập trung (ảnh + video)
     try {
         await env.DB.batch([
             env.DB.prepare(`
@@ -168,7 +170,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
     const limit = 10;
     const offset = (page - 1) * limit;
 
-    // Endpoint nhẹ lấy media đầy đủ của 1 Story khi người dùng mở xem toàn màn hình
     if (request.method === 'GET' && urlObj.searchParams.get('story_media_id')) {
         const storyMediaId = parseInt(urlObj.searchParams.get('story_media_id'), 10);
         if (!isNaN(storyMediaId) && storyMediaId > 0) {
@@ -185,7 +186,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 `).bind(storyMediaId).first();
 
                 if (!row || isStoryExpired(row.created_at)) {
-                    await scheduleRetention(env, ctx);
+                    await scheduleRetention(request, env, ctx);
                     return new Response(JSON.stringify({ success: false, expired: true }), {
                         status: 404,
                         headers: { 'Content-Type': 'application/json;charset=UTF-8' }
@@ -195,8 +196,8 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 return new Response(JSON.stringify({
                     success: true,
                     id: storyMediaId,
-                    mediaUrl: row.media_url || '',
-                    thumbUrl: row.thumb_url || '',
+                    mediaUrl: normalizeMediaUrl(row.media_url || ''),
+                    thumbUrl: normalizeMediaUrl(row.thumb_url || ''),
                     mediaType: row.media_type || 'image'
                 }), {
                     headers: {
@@ -213,7 +214,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
         }
     }
 
-    // 2. Xử lý các yêu cầu POST
     if (request.method === 'POST') {
         try {
             const formData = await request.formData();
@@ -221,7 +221,28 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
 
             if (action === 'create_post') {
                 const content = String(formData.get('content') || '');
-                const imageUrl = String(formData.get('image_url') || '');
+                const postFile = formData.get('post_file');
+                const rawImageUrl = String(formData.get('image_url') || '').trim();
+                let imageUrl = rawImageUrl;
+
+                if (postFile && typeof postFile === 'object' && postFile.size > 0) {
+                    const saved = await saveMediaAsset(request, env, {
+                        folder: 'posts',
+                        userId: user.id,
+                        file: postFile,
+                        ttlSeconds: 30 * 24 * 60 * 60
+                    });
+                    if (saved.url) imageUrl = saved.url;
+                } else if (rawImageUrl.startsWith('data:')) {
+                    const saved = await saveMediaAsset(request, env, {
+                        folder: 'posts',
+                        userId: user.id,
+                        dataUrl: rawImageUrl,
+                        ttlSeconds: 30 * 24 * 60 * 60
+                    });
+                    if (saved.url) imageUrl = saved.url;
+                }
+
                 if (content.trim() !== '' || imageUrl.trim() !== '') {
                     const insertedPost = await env.DB.prepare(
                         "INSERT INTO posts (user_id, content, image_url, created_at) VALUES (?, ?, ?, datetime('now')) RETURNING id"
@@ -255,54 +276,95 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     ).bind(postId, user.id, commentText).run();
                 }
             } else if (action === 'create_story') {
-                let mediaUrl = String(formData.get('image_url') || formData.get('media_url') || '').trim();
                 const uploadedFile = formData.get('story_file');
+                const rawMediaUrl = String(formData.get('image_url') || formData.get('media_url') || '').trim();
+                const rawThumb = String(formData.get('thumb_url') || '').trim();
                 const rawType = String(formData.get('media_type') || 'image').toLowerCase();
-                const isUploadedFile = uploadedFile && typeof uploadedFile === 'object' && uploadedFile.size > 0;
+                const hasFile = uploadedFile && typeof uploadedFile === 'object' && uploadedFile.size > 0;
 
-                if (!mediaUrl && isUploadedFile) {
-                    mediaUrl = await fileToDataUrlFast(uploadedFile);
+                let mediaUrl = '';
+                let detectedType = rawType === 'video' ? 'video' : 'image';
+
+                if (hasFile) {
+                    const saved = await saveMediaAsset(request, env, {
+                        folder: 'stories',
+                        userId: user.id,
+                        file: uploadedFile,
+                        ttlSeconds: STORY_TTL_SECONDS
+                    });
+                    mediaUrl = saved.url;
+                    if (String(saved.mimeType || uploadedFile.type || '').toLowerCase().startsWith('video/')) {
+                        detectedType = 'video';
+                    }
+                } else if (rawMediaUrl) {
+                    if (rawMediaUrl.startsWith('data:')) {
+                        const saved = await saveMediaAsset(request, env, {
+                            folder: 'stories',
+                            userId: user.id,
+                            dataUrl: rawMediaUrl,
+                            ttlSeconds: STORY_TTL_SECONDS
+                        });
+                        mediaUrl = saved.url;
+                        if (String(saved.mimeType || '').toLowerCase().startsWith('video/')) {
+                            detectedType = 'video';
+                        }
+                    } else {
+                        mediaUrl = normalizeMediaUrl(rawMediaUrl);
+                    }
                 }
 
-                const mediaType = (rawType === 'video' || (isUploadedFile && String(uploadedFile.type || '').startsWith('video/')))
-                    ? 'video'
-                    : 'image';
-                const rawThumb = String(formData.get('thumb_url') || '').trim();
+                let thumbFinal = '';
+                if (rawThumb) {
+                    if (rawThumb.startsWith('data:')) {
+                        const savedThumb = await saveMediaAsset(request, env, {
+                            folder: 'story_thumbs',
+                            userId: user.id,
+                            dataUrl: rawThumb,
+                            ttlSeconds: STORY_TTL_SECONDS
+                        });
+                        thumbFinal = savedThumb.url;
+                    } else {
+                        thumbFinal = normalizeMediaUrl(rawThumb);
+                    }
+                } else if (detectedType === 'image') {
+                    thumbFinal = mediaUrl;
+                }
+
                 const durationSec = Math.min(30, Math.max(0, parseFloat(formData.get('duration_sec') || '0') || 0));
 
                 if (mediaUrl !== '') {
-                    if (mediaUrl.length > MAX_DIRECT_SQL_MEDIA_CHARS) {
-                        if (request.headers.get('X-Requested-With') === 'XMLHttpRequest') {
-                            return new Response(JSON.stringify({
-                                success: false,
-                                error: 'Video vượt giới hạn lưu trực tiếp SQL (~1.2MB), hãy chọn clip ngắn/nhẹ hơn.'
-                            }), {
-                                status: 413,
-                                headers: { 'Content-Type': 'application/json;charset=UTF-8' }
-                            });
-                        }
-                    } else {
-                        const thumbFinal = rawThumb || (mediaType === 'image' ? mediaUrl : '');
-                        const imageColVal = mediaType === 'image' ? mediaUrl : thumbFinal;
+                    const imageColVal = detectedType === 'image' ? mediaUrl : thumbFinal;
 
-                        const insertedStory = await env.DB.prepare(
-                            "INSERT INTO stories (user_id, image_url, media_url, thumb_url, media_type, caption, created_at) VALUES (?, ?, ?, ?, ?, '', datetime('now')) RETURNING id"
-                        ).bind(user.id, imageColVal, mediaUrl, thumbFinal, mediaType).first();
+                    const insertedStory = await env.DB.prepare(
+                        "INSERT INTO stories (user_id, image_url, media_url, thumb_url, media_type, caption, created_at) VALUES (?, ?, ?, ?, ?, '', datetime('now')) RETURNING id"
+                    ).bind(user.id, imageColVal, mediaUrl, thumbFinal, detectedType).first();
 
-                        if (insertedStory && insertedStory.id) {
-                            await env.DB.prepare(
-                                "INSERT INTO media_assets (user_id, owner_type, owner_id, media_type, media_url, thumb_url, duration_sec, created_at) VALUES (?, 'story', ?, ?, ?, ?, ?, datetime('now'))"
-                            ).bind(user.id, insertedStory.id, mediaType, mediaUrl, thumbFinal, durationSec).run();
-                        }
-
-                        await scheduleRetention(env, ctx);
+                    if (insertedStory && insertedStory.id) {
+                        await env.DB.prepare(
+                            "INSERT INTO media_assets (user_id, owner_type, owner_id, media_type, media_url, thumb_url, duration_sec, created_at) VALUES (?, 'story', ?, ?, ?, ?, ?, datetime('now'))"
+                        ).bind(user.id, insertedStory.id, detectedType, mediaUrl, thumbFinal, durationSec).run();
                     }
+
+                    await scheduleRetention(request, env, ctx);
                 }
             } else if (action === 'delete_story') {
                 const storyId = formData.get('story_id');
-                const targetStory = await env.DB.prepare("SELECT user_id FROM stories WHERE id = ?").bind(storyId).first();
+                const targetStory = await env.DB.prepare(`
+                    SELECT stories.user_id, stories.image_url, stories.media_url, stories.thumb_url,
+                           ma.media_url AS ma_media_url, ma.thumb_url AS ma_thumb_url
+                    FROM stories
+                    LEFT JOIN media_assets ma ON ma.owner_type = 'story' AND ma.owner_id = stories.id
+                    WHERE stories.id = ?
+                `).bind(storyId).first();
+
                 const isManager = (user.role && user.role !== 'Thành Viên');
                 if (targetStory && (isManager || targetStory.user_id === user.id)) {
+                    for (const u of [
+                        targetStory.image_url, targetStory.media_url, targetStory.thumb_url,
+                        targetStory.ma_media_url, targetStory.ma_thumb_url
+                    ]) {
+                        await deleteMediaAsset(request, env, u);
+                    }
                     await env.DB.batch([
                         env.DB.prepare("DELETE FROM media_assets WHERE owner_type = 'story' AND owner_id = ?").bind(storyId),
                         env.DB.prepare("DELETE FROM stories WHERE id = ?").bind(storyId)
@@ -310,10 +372,17 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 }
             } else if (action === 'delete_post') {
                 const postId = formData.get('post_id');
-                const targetPost = await env.DB.prepare("SELECT user_id FROM posts WHERE id = ?").bind(postId).first();
+                const targetPost = await env.DB.prepare(`
+                    SELECT posts.user_id, posts.image_url, ma.media_url AS ma_media_url
+                    FROM posts
+                    LEFT JOIN media_assets ma ON ma.owner_type = 'post' AND ma.owner_id = posts.id
+                    WHERE posts.id = ?
+                `).bind(postId).first();
                 const isManager = (user.role && user.role !== 'Thành Viên');
 
                 if (targetPost && (isManager || targetPost.user_id === user.id)) {
+                    await deleteMediaAsset(request, env, targetPost.image_url);
+                    await deleteMediaAsset(request, env, targetPost.ma_media_url);
                     await env.DB.batch([
                         env.DB.prepare("DELETE FROM media_assets WHERE owner_type = 'post' AND owner_id = ?").bind(postId),
                         env.DB.prepare("DELETE FROM post_likes WHERE post_id = ?").bind(postId),
@@ -336,10 +405,9 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             }
         }
     } else {
-        await scheduleRetention(env, ctx);
+        await scheduleRetention(request, env, ctx);
     }
 
-    // 3. Lấy danh sách Stories trong 24h, tối đa 10 Story mới nhất
     let storiesHtml = '';
     let storyViewerDataJson = '[]';
     try {
@@ -347,10 +415,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             SELECT stories.id, stories.user_id, stories.created_at,
                    COALESCE(ma.thumb_url, stories.thumb_url, stories.image_url) AS resolved_thumb_url,
                    COALESCE(ma.media_type, stories.media_type, 'image') AS resolved_media_type,
-                   CASE WHEN COALESCE(ma.media_type, stories.media_type, 'image') = 'image'
-                        THEN COALESCE(ma.media_url, stories.media_url, stories.image_url)
-                        ELSE ''
-                   END AS inline_image_url,
+                   COALESCE(ma.media_url, stories.media_url, stories.image_url) AS resolved_media_url,
                    users.username, users.display_name, users.avatar, users.role
             FROM stories
             LEFT JOIN media_assets ma ON ma.owner_type = 'story' AND ma.owner_id = stories.id
@@ -373,7 +438,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 userId: s.user_id || 0,
                 name: sName,
                 avatar: sAvatar,
-                mediaUrl: detectedType === 'image' ? (s.inline_image_url || '') : '',
+                mediaUrl: normalizeMediaUrl(s.resolved_media_url || ''),
                 mediaType: detectedType,
                 createdAt: s.created_at || 'Vừa xong',
                 role: s.role || 'Thành Viên',
@@ -393,7 +458,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
 
         stories.forEach((s, idx) => {
             const isVid = s.resolved_media_type === 'video';
-            const thumbSrc = s.resolved_thumb_url || (isVid ? fallbackVideoThumb : '');
+            const thumbSrc = normalizeMediaUrl(s.resolved_thumb_url) || (isVid ? fallbackVideoThumb : '');
             const sName = s.display_name || s.username || 'Thành viên';
             const sAvatar = s.avatar || fallbackAvatar;
             const bgStyle = thumbSrc
@@ -412,7 +477,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
         storiesHtml = '';
     }
 
-    // 4. Truy vấn bài viết & tổng số trang tối ưu bằng batch
     let postsQuery = '';
     if (tab === 'trending') {
         postsQuery = `
@@ -462,7 +526,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
 
     const totalPages = Math.ceil(totalPosts / limit) || 1;
 
-    // 5. Lấy likes & comments theo batch cho toàn bộ bài viết trên trang (tránh N+1 query)
     let postsHtml = '';
     try {
         if (posts.length === 0) {
@@ -518,8 +581,9 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     `;
                 });
 
-                const imageTag = p.image_url
-                    ? `<div style="margin-top: 8px; background: #000; text-align: center; border-radius: 4px; overflow: hidden;"><img src="${p.image_url}" loading="lazy" style="width: 100%; max-height: 450px; object-fit: contain; display: block; margin: 0 auto;"></div>`
+                const imgSrc = normalizeMediaUrl(p.image_url);
+                const imageTag = imgSrc
+                    ? `<div style="margin-top: 8px; background: #000; text-align: center; border-radius: 4px; overflow: hidden;"><img src="${escapeAttr(imgSrc)}" loading="lazy" style="width: 100%; max-height: 450px; object-fit: contain; display: block; margin: 0 auto;"></div>`
                     : '';
 
                 const roleDisplayHtml = (p.role && p.role !== 'Thành Viên') ? `
@@ -592,7 +656,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
         }
     } catch (e) {}
 
-    // 6. Giao diện Phân trang
     let paginationHtml = '';
     if (totalPages > 1) {
         paginationHtml = `<div style="display: flex; justify-content: center; align-items: center; gap: 6px; margin: 15px 0; font-size: 12px;">`;
@@ -616,7 +679,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
     const trendingColor = (tab === 'trending') ? '#00ff00' : '#aaa';
     const followingColor = (tab === 'following') ? '#00ff00' : '#aaa';
 
-    // 7. Giao diện hoàn chỉnh
     const content = `
     <div class="box">
         <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
@@ -636,35 +698,34 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 <div style="margin-top: 6px; display: flex; align-items: center; gap: 8px;">
                     <label style="display: inline-flex; align-items: center; gap: 6px; background: #1a1a1a; border: 1px solid #444; color: #00ff00; padding: 5px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">
                         📷 Thêm ảnh
-                        <input type="file" accept="image/*" onchange="compressAndSetImage(this, '#post-image-val')" style="display: none;">
+                        <input type="file" name="post_file" accept="image/*" onchange="compressAndSetImage(this, '#post-image-val')" style="display: none;">
                     </label>
                     <input type="hidden" id="post-image-val" name="image_url">
                     <div id="post-compress-status" style="font-size: 10px; color: #aaa;"></div>
                 </div>
 
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
-                    <span style="font-size: 10px; color: #888;">✨ Tự động nén tối ưu dung lượng</span>
+                    <span style="font-size: 10px; color: #888;">✨ Lưu trữ tách biệt ngoài DB</span>
                     <button type="submit" class="btn" style="background: #00aa00; color: #fff; padding: 6px 16px; border-radius: 4px; cursor: pointer;">Đăng bài</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <!-- Popup Modal Đăng Story (Tồn tại 24h, tối đa 10 Story trên thanh) -->
     <div id="story-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.88); z-index: 999; justify-content: center; align-items: center; padding: 10px; box-sizing: border-box;">
         <div style="background: #111; border: 1px solid #444; width: 100%; max-width: 360px; padding: 12px; box-sizing: border-box; border-radius: 6px; max-height: 92vh; overflow-y: auto;">
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 6px; margin-bottom: 10px;">
                 <b style="color: #00ff00; font-size: 12px;">📸 Đăng Story (24h · Tối đa 10 Story)</b>
                 <button type="button" onclick="closeStoryModal()" style="background:none; border:none; color:#ff5555; font-weight:bold; cursor:pointer;">✕</button>
             </div>
-            <form id="story-create-form" method="POST" onsubmit="return handleStoryFormSubmit(event)">
+            <form id="story-create-form" method="POST" enctype="multipart/form-data" onsubmit="return handleStoryFormSubmit(event)">
                 <input type="hidden" name="action" value="create_story">
                 <input type="hidden" id="story-image-val" name="image_url">
                 <input type="hidden" id="story-thumb-val" name="thumb_url">
                 <input type="hidden" id="story-media-type-val" name="media_type" value="image">
                 <input type="hidden" id="story-duration-val" name="duration_sec" value="0">
 
-                <label style="color: #ccc; font-size: 11px; display: block; margin-bottom: 6px;">Chọn ảnh hoặc mọi dạng video Story (đăng thẳng, không chờ chuyển thể phân giải):</label>
+                <label style="color: #ccc; font-size: 11px; display: block; margin-bottom: 6px;">Chọn ảnh hoặc mọi dạng video Story (lưu ngoài DB, đăng thẳng):</label>
                 <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;">
                     <label style="display: inline-flex; align-items: center; gap: 6px; background: #1a1a1a; border: 1px solid #444; color: #00ff00; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; flex-shrink: 0;">
                         🎬 Chọn ảnh hoặc video
@@ -678,7 +739,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
         </div>
     </div>
 
-    <!-- Modal Xem Story Toàn Màn Hình -->
     <div id="story-viewer-modal" onclick="handleStoryBackdropClick(event)" style="display: none; position: fixed; inset: 0; background: #0b0b0d; z-index: 10000; flex-direction: column; justify-content: space-between; user-select: none;">
         <div style="position: relative; z-index: 3; display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: linear-gradient(to bottom, rgba(0,0,0,0.82), rgba(0,0,0,0));">
             <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
@@ -738,15 +798,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 statusEl.innerText = 'Video đã sẵn sàng';
                 statusEl.style.color = '#00ff00';
             }
-        }
-
-        function blobToDataUrl(blob) {
-            return new Promise((resolve, reject) => {
-                const r = new FileReader();
-                r.onload = () => resolve(r.result || '');
-                r.onerror = () => reject(new Error('Không thể đọc dữ liệu media.'));
-                r.readAsDataURL(blob);
-            });
         }
 
         function extractQuickThumbnail(file) {
@@ -965,23 +1016,13 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 document.getElementById('story-media-type-val').value = 'video';
                 document.getElementById('story-image-val').value = '';
                 document.getElementById('story-thumb-val').value = '';
-                statusEl.innerText = 'Đang tải...';
-                statusEl.style.color = '#ffcc00';
-
-                // Đọc thẳng file video ngay lập tức, không chờ metadata để không bị chậm/treo
-                try {
-                    const dataUrl = await blobToDataUrl(file);
-                    document.getElementById('story-image-val').value = dataUrl || '';
-                    setStoryReadyText();
-                    extractQuickThumbnail(file).then((thumb) => {
-                        if (thumb && !document.getElementById('story-thumb-val').value) {
-                            document.getElementById('story-thumb-val').value = thumb;
-                        }
-                    });
-                } catch (err) {
-                    statusEl.innerText = 'Lỗi đọc video';
-                    statusEl.style.color = '#ff5555';
-                }
+                // Gửi trực tiếp file nhị phân lên server lưu ngoài DB, không cần chờ mã hóa Base64
+                setStoryReadyText();
+                extractQuickThumbnail(file).then((thumb) => {
+                    if (thumb && !document.getElementById('story-thumb-val').value) {
+                        document.getElementById('story-thumb-val').value = thumb;
+                    }
+                });
             } else {
                 document.getElementById('story-media-type-val').value = 'image';
                 document.getElementById('story-duration-val').value = '0';
@@ -997,23 +1038,10 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             const submitBtn = document.getElementById('story-submit-btn');
             const fileInput = document.getElementById('story-file-input');
             const file = fileInput && fileInput.files && fileInput.files[0];
+            const val = document.getElementById('story-image-val').value.trim();
 
-            let val = document.getElementById('story-image-val').value.trim();
-            if (!val && file) {
-                try {
-                    val = await blobToDataUrl(file);
-                    document.getElementById('story-image-val').value = val;
-                } catch (err) {}
-            }
-
-            if (!val && !file) {
+            if (!file && !val) {
                 statusEl.innerText = 'Chưa chọn file';
-                statusEl.style.color = '#ff5555';
-                return false;
-            }
-
-            if (val && val.length > ${MAX_DIRECT_SQL_MEDIA_CHARS}) {
-                statusEl.innerText = 'Video quá nặng (>1.2MB), chọn clip ngắn hơn';
                 statusEl.style.color = '#ff5555';
                 return false;
             }
@@ -1023,15 +1051,11 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 submitBtn.disabled = true;
                 submitBtn.innerText = 'Đang đăng...';
             }
-            statusEl.innerText = 'Đang gửi...';
+            statusEl.innerText = 'Đang tải lên...';
             statusEl.style.color = '#ffcc00';
 
             const form = document.getElementById('story-create-form');
             const formData = new FormData(form);
-            // Không gửi lặp file nhị phân nặng nếu đã có chuỗi media ở image_url
-            if (val) {
-                formData.delete('story_file');
-            }
 
             try {
                 const res = await fetch(window.location.href, {
