@@ -1,5 +1,8 @@
 import { renderUser } from '../worker.js';
 
+const STORY_TTL_SECONDS = 24 * 60 * 60;
+const MAX_ACTIVE_STORIES = 10;
+
 function escapeAttr(str) {
     if (str === null || str === undefined) return '';
     return String(str)
@@ -8,6 +11,51 @@ function escapeAttr(str) {
         .replace(/'/g, '&#39;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
+}
+
+function isStoryExpired(createdAtStr) {
+    if (!createdAtStr) return false;
+    const normalized = String(createdAtStr).trim().replace(' ', 'T') + (String(createdAtStr).includes('Z') || String(createdAtStr).includes('+') ? '' : 'Z');
+    const ts = Date.parse(normalized);
+    if (isNaN(ts)) return false;
+    return (Date.now() - ts) >= STORY_TTL_SECONDS * 1000;
+}
+
+async function maintainStoriesRetention(env) {
+    if (!env || !env.DB) return;
+    try {
+        // 1. Xóa Story đã quá 24 giờ
+        await env.DB.batch([
+            env.DB.prepare(`
+                DELETE FROM media_assets
+                WHERE owner_type = 'story'
+                  AND owner_id IN (
+                      SELECT id FROM stories
+                      WHERE datetime(created_at, '+24 hours') <= datetime('now')
+                  )
+            `),
+            env.DB.prepare(`
+                DELETE FROM stories
+                WHERE datetime(created_at, '+24 hours') <= datetime('now')
+            `)
+        ]);
+
+        // 2. Giữ tối đa 10 Story mới nhất; nếu lố 10 thì xóa Story cũ nhất (cuối cùng trên thanh)
+        const activeRows = await env.DB.prepare(`
+            SELECT id FROM stories ORDER BY id DESC
+        `).all();
+        const rows = (activeRows && activeRows.results) || [];
+        if (rows.length > MAX_ACTIVE_STORIES) {
+            const overflowIds = rows.slice(MAX_ACTIVE_STORIES).map(r => r.id).filter(Boolean);
+            if (overflowIds.length > 0) {
+                const placeholders = overflowIds.map(() => '?').join(',');
+                await env.DB.batch([
+                    env.DB.prepare(`DELETE FROM media_assets WHERE owner_type = 'story' AND owner_id IN (${placeholders})`).bind(...overflowIds),
+                    env.DB.prepare(`DELETE FROM stories WHERE id IN (${placeholders})`).bind(...overflowIds)
+                ]);
+            }
+        }
+    } catch (e) {}
 }
 
 export async function handleFeed(request, env, user, renderLayout) {
@@ -87,19 +135,21 @@ export async function handleFeed(request, env, user, renderLayout) {
         try { await env.DB.prepare("ALTER TABLE stories ADD COLUMN media_type TEXT DEFAULT 'image'").run(); } catch (e) {}
     } catch (e) {}
 
+    await maintainStoriesRetention(env);
+
     const urlObj = new URL(request.url);
     const tab = urlObj.searchParams.get('tab') || 'new';
     const page = parseInt(urlObj.searchParams.get('page')) || 1;
     const limit = 10;
     const offset = (page - 1) * limit;
 
-    // Endpoint nhẹ lấy media đầy đủ của 1 Story khi người dùng mở xem toàn màn hình (giảm nặng khi load trang)
+    // Endpoint nhẹ lấy media đầy đủ của 1 Story khi người dùng mở xem toàn màn hình
     if (request.method === 'GET' && urlObj.searchParams.get('story_media_id')) {
         const storyMediaId = parseInt(urlObj.searchParams.get('story_media_id'), 10);
         if (!isNaN(storyMediaId) && storyMediaId > 0) {
             try {
                 const row = await env.DB.prepare(`
-                    SELECT stories.id,
+                    SELECT stories.id, stories.created_at,
                            COALESCE(ma.media_url, stories.media_url, stories.image_url) AS media_url,
                            COALESCE(ma.thumb_url, stories.thumb_url, stories.image_url) AS thumb_url,
                            COALESCE(ma.media_type, stories.media_type, 'image') AS media_type
@@ -109,12 +159,19 @@ export async function handleFeed(request, env, user, renderLayout) {
                     LIMIT 1
                 `).bind(storyMediaId).first();
 
+                if (!row || isStoryExpired(row.created_at)) {
+                    return new Response(JSON.stringify({ success: false, expired: true }), {
+                        status: 404,
+                        headers: { 'Content-Type': 'application/json;charset=UTF-8' }
+                    });
+                }
+
                 return new Response(JSON.stringify({
-                    success: Boolean(row),
+                    success: true,
                     id: storyMediaId,
-                    mediaUrl: row ? (row.media_url || '') : '',
-                    thumbUrl: row ? (row.thumb_url || '') : '',
-                    mediaType: row ? (row.media_type || 'image') : 'image'
+                    mediaUrl: row.media_url || '',
+                    thumbUrl: row.thumb_url || '',
+                    mediaType: row.media_type || 'image'
                 }), {
                     headers: {
                         'Content-Type': 'application/json;charset=UTF-8',
@@ -172,6 +229,8 @@ export async function handleFeed(request, env, user, renderLayout) {
                     ).bind(postId, user.id, commentText).run();
                 }
             } else if (action === 'create_story') {
+                await maintainStoriesRetention(env);
+
                 const mediaUrl = String(formData.get('image_url') || formData.get('media_url') || '').trim();
                 const rawThumb = String(formData.get('thumb_url') || '').trim();
                 const rawType = String(formData.get('media_type') || 'image').toLowerCase();
@@ -191,6 +250,9 @@ export async function handleFeed(request, env, user, renderLayout) {
                             "INSERT INTO media_assets (user_id, owner_type, owner_id, media_type, media_url, thumb_url, duration_sec, created_at) VALUES (?, 'story', ?, ?, ?, ?, ?, datetime('now'))"
                         ).bind(user.id, insertedStory.id, mediaType, mediaUrl, thumbFinal, durationSec).run();
                     }
+
+                    // Sau khi thêm Story mới, đảm bảo không vượt quá 10 Story (xóa Story cũ nhất nếu lố)
+                    await maintainStoriesRetention(env);
                 }
             } else if (action === 'delete_story') {
                 const storyId = formData.get('story_id');
@@ -231,7 +293,7 @@ export async function handleFeed(request, env, user, renderLayout) {
         }
     }
 
-    // 3. Lấy danh sách Stories nhẹ (chỉ lấy thumb_url cho danh sách ngang; video tải khi mở toàn màn hình)
+    // 3. Lấy danh sách Stories trong 24h, tối đa 10 Story mới nhất
     let storiesHtml = '';
     let storyViewerDataJson = '[]';
     try {
@@ -247,7 +309,8 @@ export async function handleFeed(request, env, user, renderLayout) {
             FROM stories
             LEFT JOIN media_assets ma ON ma.owner_type = 'story' AND ma.owner_id = stories.id
             LEFT JOIN users ON stories.user_id = users.id
-            ORDER BY stories.id DESC LIMIT 15
+            WHERE datetime(stories.created_at, '+24 hours') > datetime('now')
+            ORDER BY stories.id DESC LIMIT ${MAX_ACTIVE_STORIES}
         `).all();
         const stories = storyRes.results || [];
         const isManager = (user.role && user.role !== 'Thành Viên');
@@ -278,6 +341,7 @@ export async function handleFeed(request, env, user, renderLayout) {
                 <div onclick="openStoryModal()" style="min-width: 68px; height: 110px; background: #1a1a1a; border: 1px dashed #00ff00; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0;">
                     <div style="width: 28px; height: 28px; background: #00ff00; color: #000; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 16px; margin-bottom: 4px;">+</div>
                     <div style="font-size: 9px; color: #aaa; text-align: center;">Thêm Story</div>
+                    <div style="font-size: 8px; color: #777; margin-top: 2px;">${stories.length}/10 · 24h</div>
                 </div>
         `;
 
@@ -540,11 +604,11 @@ export async function handleFeed(request, env, user, renderLayout) {
         </div>
     </div>
 
-    <!-- Popup Modal Đăng Story (Ảnh hoặc Video tối đa 30s) -->
+    <!-- Popup Modal Đăng Story (Tồn tại 24h, tối đa 10 Story trên thanh) -->
     <div id="story-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.88); z-index: 999; justify-content: center; align-items: center; padding: 10px; box-sizing: border-box;">
         <div style="background: #111; border: 1px solid #444; width: 100%; max-width: 360px; padding: 12px; box-sizing: border-box; border-radius: 6px; max-height: 92vh; overflow-y: auto;">
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 6px; margin-bottom: 10px;">
-                <b style="color: #00ff00; font-size: 12px;">📸 Đăng Story mới (Ảnh / Video ≤ 30s)</b>
+                <b style="color: #00ff00; font-size: 12px;">📸 Đăng Story (24h · Tối đa 10 Story)</b>
                 <button type="button" onclick="closeStoryModal()" style="background:none; border:none; color:#ff5555; font-weight:bold; cursor:pointer;">✕</button>
             </div>
             <form method="POST" onsubmit="return validateStorySubmit(event)">
@@ -554,7 +618,7 @@ export async function handleFeed(request, env, user, renderLayout) {
                 <input type="hidden" id="story-media-type-val" name="media_type" value="image">
                 <input type="hidden" id="story-duration-val" name="duration_sec" value="0">
 
-                <label style="color: #ccc; font-size: 11px; display: block; margin-bottom: 6px;">Chọn ảnh hoặc video Story (video tối đa 30 giây):</label>
+                <label style="color: #ccc; font-size: 11px; display: block; margin-bottom: 6px;">Chọn ảnh hoặc video Story (video ≤ 30s đăng thẳng, không chờ chuyển thể lâu):</label>
                 <div style="margin-bottom: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                     <label style="display: inline-flex; align-items: center; gap: 6px; background: #1a1a1a; border: 1px solid #444; color: #00ff00; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">
                         🎬 Chọn ảnh hoặc video
@@ -566,7 +630,7 @@ export async function handleFeed(request, env, user, renderLayout) {
                 <!-- Khung cắt video khi video dài hơn 30 giây -->
                 <div id="video-trim-panel" style="display: none; background: #161006; border: 1px solid #ff9900; border-radius: 5px; padding: 8px; margin-bottom: 10px; font-size: 11px;">
                     <div style="color: #ffcc00; font-weight: bold; margin-bottom: 6px;">
-                        ✂️ Video dài hơn 30 giây (<span id="vt-total-sec">0</span>s) — hãy cắt còn tối đa 30s:
+                        ✂️ Video dài hơn 30 giây (<span id="vt-total-sec">0</span>s) — cắt còn tối đa 30s:
                     </div>
                     <video id="vt-preview-video" controls playsinline style="width: 100%; max-height: 180px; background: #000; border-radius: 4px; margin-bottom: 8px; display: block;"></video>
 
@@ -581,7 +645,7 @@ export async function handleFeed(request, env, user, renderLayout) {
                     </div>
 
                     <button type="button" id="vt-cut-btn" onclick="trimVideoToStory()" style="width: 100%; background: #ff8800; color: #000; font-weight: bold; border: none; padding: 7px 10px; border-radius: 4px; font-size: 11px; cursor: pointer;">
-                        ✂️ Cắt video ngắn hơn (≤ 30s)
+                        ✂️ Cắt video nhanh (≤ 30s)
                     </button>
                 </div>
 
@@ -601,7 +665,7 @@ export async function handleFeed(request, env, user, renderLayout) {
                         <span id="sv-role-badge" style="display: none; background: rgba(255,204,0,0.18); border: 1px solid #ffcc00; color: #ffcc00; font-size: 10px; font-weight: bold; padding: 1px 6px; border-radius: 4px;"></span>
                     </div>
                     <div style="font-size: 11px; color: #ccc; text-shadow: 0 1px 3px #000;">
-                        <span id="sv-time"></span> · 🌍 Công khai
+                        <span id="sv-time"></span> · 🌍 Công khai (24h)
                     </div>
                 </div>
             </div>
@@ -642,7 +706,6 @@ export async function handleFeed(request, env, user, renderLayout) {
         const STORY_VIEWER_LIST = ${storyViewerDataJson};
         const STORY_MEDIA_CACHE = {};
         const MAX_STORY_VIDEO_SEC = 30;
-        const MAX_DIRECT_VIDEO_BYTES = 2.5 * 1024 * 1024; // 2.5MB: dùng trực tiếp không cần ghi lại tốn thời gian
         let currentStoryIndex = -1;
         let pendingVideoFile = null;
         let pendingVideoObjectUrl = '';
@@ -659,47 +722,48 @@ export async function handleFeed(request, env, user, renderLayout) {
             });
         }
 
-        function extractVideoThumbnailFromUrl(srcUrl) {
+        // Trích thumbnail siêu nhanh với timeout ngắn (800ms) để không bao giờ làm chậm việc đăng
+        function extractQuickThumbnail(srcUrl) {
             return new Promise((resolve) => {
                 try {
                     const v = document.createElement('video');
                     v.muted = true;
                     v.playsInline = true;
-                    v.preload = 'auto';
+                    v.preload = 'metadata';
                     v.src = srcUrl;
                     let settled = false;
-                    const done = (val) => {
+                    const finish = (val) => {
                         if (!settled) {
                             settled = true;
                             resolve(val || '');
                         }
                     };
-                    const timer = setTimeout(() => done(''), 1800);
+                    const timer = setTimeout(() => finish(''), 800);
 
                     v.onloadeddata = function() {
                         try {
-                            v.currentTime = Math.min(0.15, Math.max(0, (v.duration || 1) * 0.05));
+                            v.currentTime = 0.05;
                         } catch (e) {
                             clearTimeout(timer);
-                            done('');
+                            finish('');
                         }
                     };
                     v.onseeked = function() {
                         clearTimeout(timer);
                         try {
                             const c = document.createElement('canvas');
-                            c.width = 120;
-                            c.height = 180;
+                            c.width = 96;
+                            c.height = 144;
                             const ctx = c.getContext('2d');
                             ctx.drawImage(v, 0, 0, c.width, c.height);
-                            done(c.toDataURL('image/jpeg', 0.55));
+                            finish(c.toDataURL('image/jpeg', 0.45));
                         } catch (e) {
-                            done('');
+                            finish('');
                         }
                     };
                     v.onerror = () => {
                         clearTimeout(timer);
-                        done('');
+                        finish('');
                     };
                 } catch (e) {
                     resolve('');
@@ -707,7 +771,8 @@ export async function handleFeed(request, env, user, renderLayout) {
             });
         }
 
-        function recordFastVideoTrim(srcUrl, startSec, cutSec) {
+        // Cắt nhanh chỉ khi video > 30s, ưu tiên tốc độ hơn độ phân giải cao
+        function recordUltraFastTrim(srcUrl, startSec, cutSec) {
             return new Promise((resolve, reject) => {
                 const workVideo = document.createElement('video');
                 workVideo.src = srcUrl;
@@ -716,7 +781,7 @@ export async function handleFeed(request, env, user, renderLayout) {
                 workVideo.preload = 'auto';
 
                 const safeCutSec = Math.min(MAX_STORY_VIDEO_SEC, Math.max(0.5, cutSec));
-                const timeoutMs = Math.min(22000, Math.round(safeCutSec * 1000) + 4000);
+                const timeoutMs = Math.min(16000, Math.round(safeCutSec * 1000) + 2500);
                 let finished = false;
                 let rafId = null;
                 let recorder = null;
@@ -730,7 +795,7 @@ export async function handleFeed(request, env, user, renderLayout) {
                     reject(new Error(msg));
                 };
 
-                const guardTimer = setTimeout(() => cleanupAndFail('Cắt video quá thời gian cho phép.'), timeoutMs);
+                const guardTimer = setTimeout(() => cleanupAndFail('Cắt video quá lâu, hãy chọn đoạn ngắn hơn.'), timeoutMs);
 
                 workVideo.onloadedmetadata = function() {
                     const safeDur = Math.max(0.5, Number(workVideo.duration || safeCutSec));
@@ -740,17 +805,17 @@ export async function handleFeed(request, env, user, renderLayout) {
 
                 workVideo.onseeked = function() {
                     if (finished) return;
-                    const origW = workVideo.videoWidth || 320;
-                    const origH = workVideo.videoHeight || 480;
-                    const maxDim = 320;
+                    const origW = workVideo.videoWidth || 240;
+                    const origH = workVideo.videoHeight || 360;
+                    const maxDim = 240;
                     let w = origW;
                     let h = origH;
                     if (w > maxDim || h > maxDim) {
                         if (w >= h) {
-                            h = Math.max(96, Math.round((h * maxDim) / w));
+                            h = Math.max(80, Math.round((h * maxDim) / w));
                             w = maxDim;
                         } else {
-                            w = Math.max(96, Math.round((w * maxDim) / h));
+                            w = Math.max(80, Math.round((w * maxDim) / h));
                             h = maxDim;
                         }
                     }
@@ -760,10 +825,10 @@ export async function handleFeed(request, env, user, renderLayout) {
                     canvas.height = h;
                     const ctx = canvas.getContext('2d');
 
-                    const stream = canvas.captureStream ? canvas.captureStream(18) : null;
+                    const stream = canvas.captureStream ? canvas.captureStream(15) : null;
                     if (!stream || typeof MediaRecorder === 'undefined') {
                         clearTimeout(guardTimer);
-                        cleanupAndFail('Trình duyệt không hỗ trợ cắt video trực tiếp.');
+                        cleanupAndFail('Trình duyệt không hỗ trợ cắt nhanh.');
                         return;
                     }
 
@@ -777,7 +842,7 @@ export async function handleFeed(request, env, user, renderLayout) {
                     }
 
                     recorder = chosenMime
-                        ? new MediaRecorder(stream, { mimeType: chosenMime, videoBitsPerSecond: 420000 })
+                        ? new MediaRecorder(stream, { mimeType: chosenMime, videoBitsPerSecond: 300000 })
                         : new MediaRecorder(stream);
 
                     const chunks = [];
@@ -793,7 +858,7 @@ export async function handleFeed(request, env, user, renderLayout) {
                         if (finished) return;
                         ctx.drawImage(workVideo, 0, 0, canvas.width, canvas.height);
                         if (!thumbData) {
-                            try { thumbData = canvas.toDataURL('image/jpeg', 0.55); } catch (e) {}
+                            try { thumbData = canvas.toDataURL('image/jpeg', 0.45); } catch (e) {}
                         }
                         if (performance.now() - startTimeMs < targetMs && !workVideo.ended) {
                             rafId = requestAnimationFrame(drawFrame);
@@ -863,7 +928,7 @@ export async function handleFeed(request, env, user, renderLayout) {
 
                 let resolvedUrl = item.mediaUrl || STORY_MEDIA_CACHE[item.id] || '';
                 if (!resolvedUrl && item.id) {
-                    document.getElementById('sv-feedback').innerText = '⏳ Đang tải video...';
+                    document.getElementById('sv-feedback').innerText = '⚡ Đang mở video...';
                     try {
                         const res = await fetch('?story_media_id=' + encodeURIComponent(item.id));
                         const data = await res.json();
@@ -1012,7 +1077,7 @@ export async function handleFeed(request, env, user, renderLayout) {
                 document.getElementById('story-image-val').value = '';
                 document.getElementById('story-thumb-val').value = '';
                 isProcessingStoryMedia = true;
-                statusEl.innerText = '⚡ Đang đọc thông tin video...';
+                statusEl.innerText = '⚡ Đang đọc nhanh video...';
                 statusEl.style.color = '#ffcc00';
 
                 const objUrl = URL.createObjectURL(file);
@@ -1025,8 +1090,9 @@ export async function handleFeed(request, env, user, renderLayout) {
                     pendingVideoDuration = dur;
                     document.getElementById('vt-total-sec').innerText = dur.toFixed(1);
 
-                    // Trích thumbnail nhanh song song
-                    const thumbPromise = extractVideoThumbnailFromUrl(objUrl);
+                    // Không chặn đăng nếu thumbnail mất thời gian: đọc file trực tiếp ngay
+                    const dataUrlPromise = blobToDataUrl(file);
+                    const thumbPromise = extractQuickThumbnail(objUrl);
 
                     if (dur > MAX_STORY_VIDEO_SEC) {
                         const thumb = await thumbPromise;
@@ -1034,7 +1100,7 @@ export async function handleFeed(request, env, user, renderLayout) {
                         videoNeedsTrim = true;
                         isProcessingStoryMedia = false;
                         trimPanel.style.display = 'block';
-                        statusEl.innerText = '⚠️ Video dài ' + dur.toFixed(1) + 's (> 30s). Hãy cắt ngắn hơn!';
+                        statusEl.innerText = '⚠️ Video dài ' + dur.toFixed(1) + 's (> 30s). Cắt gọn ≤ 30s!';
                         statusEl.style.color = '#ff9900';
 
                         const pv = document.getElementById('vt-preview-video');
@@ -1051,21 +1117,17 @@ export async function handleFeed(request, env, user, renderLayout) {
                         durRange.value = initDur.toFixed(1);
                         updateTrimRange();
                     } else {
-                        // Video <= 30s: không phát lại 30s để ghi; chuyển trực tiếp Blob/File thành DataURL tức thì
+                        // Video <= 30s: không chuyển thể phân giải để load & đăng nhanh nhất có thể
                         videoNeedsTrim = false;
                         trimPanel.style.display = 'none';
                         document.getElementById('story-duration-val').value = dur.toFixed(1);
 
                         try {
-                            const [thumb, dataUrl] = await Promise.all([thumbPromise, blobToDataUrl(file)]);
+                            const [dataUrl, thumb] = await Promise.all([dataUrlPromise, thumbPromise]);
                             if (thumb) document.getElementById('story-thumb-val').value = thumb;
                             document.getElementById('story-image-val').value = dataUrl || '';
                             isProcessingStoryMedia = false;
-                            if (file.size > MAX_DIRECT_VIDEO_BYTES) {
-                                statusEl.innerText = '✅ Video ' + dur.toFixed(1) + 's sẵn sàng (dung lượng lớn, có thể mất vài giây gửi)';
-                            } else {
-                                statusEl.innerText = '✅ Video ' + dur.toFixed(1) + 's sẵn sàng đăng ngay!';
-                            }
+                            statusEl.innerText = '✅ Video ' + dur.toFixed(1) + 's sẵn sàng đăng ngay!';
                             statusEl.style.color = '#00ff00';
                         } catch (err) {
                             isProcessingStoryMedia = false;
@@ -1122,12 +1184,12 @@ export async function handleFeed(request, env, user, renderLayout) {
 
             cutBtn.disabled = true;
             isProcessingStoryMedia = true;
-            cutBtn.innerText = '⚡ Đang cắt video (' + cutSec.toFixed(1) + 's)...';
-            statusEl.innerText = '⚡ Đang cắt đoạn video ' + cutSec.toFixed(1) + 's...';
+            cutBtn.innerText = '⚡ Đang cắt nhanh (' + cutSec.toFixed(1) + 's)...';
+            statusEl.innerText = '⚡ Đang cắt đoạn ' + cutSec.toFixed(1) + 's...';
             statusEl.style.color = '#ffcc00';
 
             try {
-                const compact = await recordFastVideoTrim(srcUrl, startSec, cutSec);
+                const compact = await recordUltraFastTrim(srcUrl, startSec, cutSec);
                 document.getElementById('story-image-val').value = compact.videoDataUrl || '';
                 if (compact.thumbDataUrl) document.getElementById('story-thumb-val').value = compact.thumbDataUrl;
                 document.getElementById('story-duration-val').value = cutSec.toFixed(1);
@@ -1135,13 +1197,13 @@ export async function handleFeed(request, env, user, renderLayout) {
                 isProcessingStoryMedia = false;
                 cutBtn.disabled = false;
                 cutBtn.innerText = '✂️ Cắt lại đoạn khác';
-                statusEl.innerText = '✅ Đã cắt video còn ' + cutSec.toFixed(1) + 's! Bấm Đăng Story ngay.';
+                statusEl.innerText = '✅ Đã cắt xong (' + cutSec.toFixed(1) + 's)! Bấm Đăng Story ngay.';
                 statusEl.style.color = '#00ff00';
             } catch (err) {
                 videoNeedsTrim = false;
                 isProcessingStoryMedia = false;
                 cutBtn.disabled = false;
-                cutBtn.innerText = '✂️ Cắt video ngắn hơn (≤ 30s)';
+                cutBtn.innerText = '✂️ Cắt video nhanh (≤ 30s)';
                 statusEl.innerText = '⚠️ ' + (err && err.message ? err.message : 'Không thể cắt video, hãy chọn video ≤ 30s.');
                 statusEl.style.color = '#ff5555';
             }
@@ -1154,14 +1216,14 @@ export async function handleFeed(request, env, user, renderLayout) {
 
             if (isProcessingStoryMedia) {
                 e.preventDefault();
-                statusEl.innerText = '⚡ Đang hoàn tất xử lý media, vui lòng đợi 1–2 giây rồi bấm Đăng Story.';
+                statusEl.innerText = '⚡ Đang đọc file, đợi 1 giây rồi bấm Đăng Story.';
                 statusEl.style.color = '#ffcc00';
                 return false;
             }
 
             if (type === 'video' && (videoNeedsTrim || pendingVideoDuration > MAX_STORY_VIDEO_SEC) && !val) {
                 e.preventDefault();
-                statusEl.innerText = '⚠️ Video dài hơn 30 giây! Vui lòng bấm "Cắt video ngắn hơn" trước khi đăng.';
+                statusEl.innerText = '⚠️ Video dài hơn 30 giây! Vui lòng bấm "Cắt video nhanh" trước khi đăng.';
                 statusEl.style.color = '#ff5555';
                 return false;
             }
