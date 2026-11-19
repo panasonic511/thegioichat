@@ -36,99 +36,227 @@ function formatLocationLabel(row) {
     return 'Trang chủ';
 }
 
-function formatMoodLabel(row) {
-    const mood = String(row.mood || row.status_text || row.bio_status || '').trim();
-    return mood;
+// Cấp bậc càng cao số càng lớn: Admin (3) > SMOD (2) > MOD (1) > Thành viên (0)
+function getRoleRankTier(u) {
+    if (!u) return 0;
+    const roleRaw = String(u.role || '').trim().toLowerCase();
+
+    if (
+        roleRaw === 'admin' ||
+        roleRaw === 'chủ wap' ||
+        roleRaw === 'quản trị' ||
+        roleRaw === 'quản lý' ||
+        roleRaw === 'bqt' ||
+        Number(u.is_admin || 0) === 1 ||
+        Number(u.id || 0) === 1
+    ) {
+        return 3;
+    }
+
+    if (roleRaw === 'smod') {
+        return 2;
+    }
+
+    if (roleRaw === 'mod' || roleRaw === 'điều hành viên') {
+        return 1;
+    }
+
+    return 0;
 }
 
-export async function handleOnline(request, env, user, renderLayout, url) {
-    const tabParam = String(url.searchParams.get('tab') || 'all').trim().toLowerCase();
-    const moodFilter = String(url.searchParams.get('mood') || '').trim();
-    const pageParam = parseInt(url.searchParams.get('page') || '1', 10);
-    const currentPage = Number.isNaN(pageParam) || pageParam < 1 ? 1 : pageParam;
-    const perPage = 10;
+function getUserLevelValue(u) {
+    if (!u) return 0;
+    const lvl = Number(u.level ?? u.user_level ?? 0);
+    if (!Number.isNaN(lvl) && lvl > 0) return lvl;
+    return 0;
+}
 
-    let allUsers = [];
+function compareUsersByRankAndLevel(a, b) {
+    const rankA = getRoleRankTier(a);
+    const rankB = getRoleRankTier(b);
+    if (rankB !== rankA) {
+        return rankB - rankA;
+    }
+
+    const lvlA = getUserLevelValue(a);
+    const lvlB = getUserLevelValue(b);
+    if (lvlB !== lvlA) {
+        return lvlB - lvlA;
+    }
+
+    return Number(b.id || 0) - Number(a.id || 0);
+}
+
+function parseTimestampToSeconds(raw) {
+    if (raw === null || raw === undefined || raw === '') return 0;
+    const num = Number(raw);
+    if (!Number.isNaN(num) && num > 0) {
+        return num > 100000000000 ? Math.floor(num / 1000) : Math.floor(num);
+    }
+    const parsedMs = Date.parse(String(raw));
+    if (!Number.isNaN(parsedMs)) {
+        return Math.floor(parsedMs / 1000);
+    }
+    return 0;
+}
+
+function isUserCurrentlyOnline(u, nowSec, activeSessionUserIds, currentUserId) {
+    const uid = Number(u.id || 0);
+    if (!uid) return false;
+
+    if (currentUserId && uid === Number(currentUserId)) {
+        return true;
+    }
+
+    if (activeSessionUserIds && activeSessionUserIds.has(uid)) {
+        return true;
+    }
+
+    if (u.is_online !== undefined && u.is_online !== null && String(u.is_online).trim() !== '') {
+        const flag = Number(u.is_online);
+        if (flag === 0 || String(u.is_online).toLowerCase() === 'false' || String(u.is_online).toLowerCase() === 'off') {
+            return false;
+        }
+    }
+
+    const lastSeenSec = Math.max(
+        parseTimestampToSeconds(u.last_seen),
+        parseTimestampToSeconds(u.last_active),
+        parseTimestampToSeconds(u.updated_at)
+    );
+
+    if (lastSeenSec > 0) {
+        return (nowSec - lastSeenSec) <= 300; // Hoạt động trong 5 phút gần nhất mới tính là đang ON
+    }
+
+    return false;
+}
+
+async function getFriendUserIds(env, currentUserId) {
+    const friendIds = new Set();
+    if (!currentUserId) return friendIds;
+
+    const queries = [
+        {
+            sql: `SELECT friend_id AS fid FROM friends WHERE user_id = ? UNION SELECT user_id AS fid FROM friends WHERE friend_id = ?`,
+            binds: [currentUserId, currentUserId]
+        },
+        {
+            sql: `SELECT user_id_2 AS fid FROM friendships WHERE user_id_1 = ? AND status = 'accepted' UNION SELECT user_id_1 AS fid FROM friendships WHERE user_id_2 = ? AND status = 'accepted'`,
+            binds: [currentUserId, currentUserId]
+        },
+        {
+            sql: `SELECT target_id AS fid FROM user_friends WHERE user_id = ?`,
+            binds: [currentUserId]
+        }
+    ];
+
+    for (const q of queries) {
+        try {
+            const res = await env.DB.prepare(q.sql).bind(...q.binds).all();
+            if (res && Array.isArray(res.results)) {
+                for (const row of res.results) {
+                    const fid = Number(row.fid || 0);
+                    if (fid > 0 && fid !== Number(currentUserId)) {
+                        friendIds.add(fid);
+                    }
+                }
+                if (friendIds.size > 0) break;
+            }
+        } catch (e) {}
+    }
+
+    return friendIds;
+}
+
+async function getActiveSessionUserIds(env, nowSec) {
+    const ids = new Set();
+    try {
+        const res = await env.DB.prepare(`SELECT user_id, expires_at, created_at FROM sessions`).all();
+        if (res && Array.isArray(res.results)) {
+            for (const s of res.results) {
+                const uid = Number(s.user_id || 0);
+                if (!uid) continue;
+                const expSec = parseTimestampToSeconds(s.expires_at);
+                if (expSec > 0 && expSec < nowSec) continue;
+                ids.add(uid);
+            }
+        }
+    } catch (e) {}
+    return ids;
+}
+
+export async function getOnlineUsers(env, currentUser) {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const currentUserId = Number(currentUser && currentUser.id ? currentUser.id : 0);
+
+    // Cập nhật last_seen cho người đang truy cập nếu cột tồn tại
+    if (currentUserId > 0) {
+        try {
+            await env.DB.prepare(`UPDATE users SET last_seen = ? WHERE id = ?`).bind(nowSec, currentUserId).run();
+        } catch (e) {}
+    }
+
+    let rawUsers = [];
     try {
         const res = await env.DB.prepare(`
             SELECT id, username, display_name, avatar, border_color, avatar_glow,
                    name_color, name_glow, name_border, name_border_glow,
-                   active_icon, role, is_admin, gender, last_seen, current_location, mood
+                   active_icon, role, is_admin, gender, level, last_seen, current_location
             FROM users
-            ORDER BY id DESC
-            LIMIT 200
+            LIMIT 500
         `).all();
-        allUsers = (res && Array.isArray(res.results)) ? res.results : [];
+        rawUsers = (res && Array.isArray(res.results)) ? res.results : [];
     } catch (e) {
         try {
             const res2 = await env.DB.prepare(`
                 SELECT id, username, display_name, avatar, border_color, avatar_glow,
                        name_color, name_glow, name_border, name_border_glow,
-                       active_icon, role, is_admin
+                       active_icon, role, is_admin, gender, level
                 FROM users
-                ORDER BY id DESC
-                LIMIT 200
+                LIMIT 500
             `).all();
-            allUsers = (res2 && Array.isArray(res2.results)) ? res2.results : [];
+            rawUsers = (res2 && Array.isArray(res2.results)) ? res2.results : [];
         } catch (e2) {
-            allUsers = [];
+            rawUsers = [];
         }
     }
 
-    // Lọc danh sách người trực tuyến (nếu có last_seen thì ưu tiên người hoạt động gần đây, nếu cột chưa có thì lấy danh sách thành viên)
-    const nowSec = Math.floor(Date.now() / 1000);
-    const hasLastSeen = allUsers.some(u => u.last_seen !== undefined && u.last_seen !== null && String(u.last_seen).trim() !== '');
+    const activeSessionUserIds = await getActiveSessionUserIds(env, nowSec);
 
-    let onlineList = allUsers;
-    if (hasLastSeen) {
-        const activeRecent = allUsers.filter(u => {
-            const raw = u.last_seen;
-            if (!raw) return false;
-            const num = Number(raw);
-            if (!Number.isNaN(num) && num > 1000000000) {
-                const sec = num > 100000000000 ? Math.floor(num / 1000) : num;
-                return (nowSec - sec) <= 900;
-            }
-            const parsedMs = Date.parse(String(raw));
-            if (!Number.isNaN(parsedMs)) {
-                return (Date.now() - parsedMs) <= 900 * 1000;
-            }
-            return false;
-        });
-        if (activeRecent.length > 0) {
-            onlineList = activeRecent;
-        }
+    const onlineUsers = rawUsers.filter(u =>
+        isUserCurrentlyOnline(u, nowSec, activeSessionUserIds, currentUserId)
+    );
+
+    if (currentUser && currentUser.id && !onlineUsers.some(u => Number(u.id) === currentUserId)) {
+        onlineUsers.push(currentUser);
     }
 
-    // Nếu người dùng hiện tại đang đăng nhập thì đảm bảo có mặt đầu danh sách
-    if (user && user.id && !onlineList.some(u => Number(u.id) === Number(user.id))) {
-        onlineList = [user, ...onlineList];
-    }
+    onlineUsers.sort(compareUsersByRankAndLevel);
+    return onlineUsers;
+}
 
+export async function handleOnline(request, env, user, renderLayout, url) {
+    const tabParam = String(url.searchParams.get('tab') || 'all').trim().toLowerCase();
+    const pageParam = parseInt(url.searchParams.get('page') || '1', 10);
+    const currentPage = Number.isNaN(pageParam) || pageParam < 1 ? 1 : pageParam;
+    const perPage = 10;
+
+    const currentUserId = Number(user && user.id ? user.id : 0);
+    const onlineList = await getOnlineUsers(env, user);
     const totalOnlineCount = onlineList.length;
 
-    // Thu thập danh sách tâm trạng nếu có
-    const moodOptions = Array.from(new Set(
-        onlineList
-            .map(u => formatMoodLabel(u))
-            .filter(Boolean)
-    ));
-
-    // Áp dụng bộ lọc tab / tâm trạng
     let filteredList = onlineList.slice();
     if (tabParam === 'male') {
         filteredList = filteredList.filter(u => isMaleGender(u.gender));
     } else if (tabParam === 'female') {
         filteredList = filteredList.filter(u => isFemaleGender(u.gender));
     } else if (tabParam === 'friends') {
-        filteredList = filteredList.filter(u => Number(u.id) !== Number(user && user.id ? user.id : 0));
-    } else if (tabParam === 'mood') {
-        if (moodFilter) {
-            filteredList = filteredList.filter(u => formatMoodLabel(u) === moodFilter);
-        } else {
-            filteredList = filteredList.filter(u => Boolean(formatMoodLabel(u)));
-        }
+        const friendIds = await getFriendUserIds(env, currentUserId);
+        filteredList = filteredList.filter(u => friendIds.has(Number(u.id || 0)));
     }
+
+    filteredList.sort(compareUsersByRankAndLevel);
 
     const totalFiltered = filteredList.length;
     const totalPages = Math.max(1, Math.ceil(totalFiltered / perPage));
@@ -136,10 +264,9 @@ export async function handleOnline(request, env, user, renderLayout, url) {
     const startIdx = (safePage - 1) * perPage;
     const pageItems = filteredList.slice(startIdx, startIdx + perPage);
 
-    const buildTabUrl = (tabName, moodVal = '') => {
+    const buildTabUrl = (tabName) => {
         const params = new URLSearchParams();
         if (tabName && tabName !== 'all') params.set('tab', tabName);
-        if (moodVal) params.set('mood', moodVal);
         const qs = params.toString();
         return '/online' + (qs ? '?' + qs : '');
     };
@@ -147,7 +274,6 @@ export async function handleOnline(request, env, user, renderLayout, url) {
     const buildPageUrl = (pageNum) => {
         const params = new URLSearchParams();
         if (tabParam && tabParam !== 'all') params.set('tab', tabParam);
-        if (moodFilter) params.set('mood', moodFilter);
         if (pageNum > 1) params.set('page', String(pageNum));
         const qs = params.toString();
         return '/online' + (qs ? '?' + qs : '');
@@ -175,7 +301,10 @@ export async function handleOnline(request, env, user, renderLayout, url) {
 
     let rowsHtml = '';
     if (pageItems.length === 0) {
-        rowsHtml = `<div class="online-empty">Không có người dùng nào phù hợp với bộ lọc hiện tại.</div>`;
+        const emptyMsg = tabParam === 'friends'
+            ? 'Hiện chưa có bạn bè nào đang trực tuyến.'
+            : 'Không có người dùng nào đang trực tuyến trong mục này.';
+        rowsHtml = `<div class="online-empty">${escapeHtml(emptyMsg)}</div>`;
     } else {
         rowsHtml = pageItems.map((uItem, idx) => {
             const uid = Number(uItem.id || 0);
@@ -191,13 +320,8 @@ export async function handleOnline(request, env, user, renderLayout, url) {
 
             const genderText = formatGenderLabel(uItem.gender);
             const locationText = formatLocationLabel(uItem);
-            const moodText = formatMoodLabel(uItem);
-
-            const moodLineHtml = moodText
-                ? `<div class="online-meta-line online-mood-line">💬 ${escapeHtml(moodText)}</div>`
-                : '';
-
-            const isSelf = Number(user && user.id ? user.id : 0) === uid;
+            const levelText = getUserLevelValue(uItem);
+            const isSelf = currentUserId === uid;
             const mailHref = isSelf ? '/mail/box' : `/mail/chat?user=${uid}`;
 
             return `
@@ -211,8 +335,7 @@ export async function handleOnline(request, env, user, renderLayout, url) {
                                 ${rendered.nameHtml}
                                 <span class="online-on-badge">ON</span>
                             </div>
-                            ${moodLineHtml}
-                            <div class="online-meta-line">▸ Giới tính: <span class="online-val-white">${escapeHtml(genderText)}</span></div>
+                            <div class="online-meta-line">▸ Giới tính: <span class="online-val-white">${escapeHtml(genderText)}</span> · Level: <span class="online-val-green">${levelText}</span></div>
                             <div class="online-meta-line">▸ Vị trí: <span class="online-val-gold">${escapeHtml(locationText)}</span></div>
                         </div>
                     </div>
@@ -273,7 +396,7 @@ export async function handleOnline(request, env, user, renderLayout, url) {
             overflow: hidden;
         }
         .online-tab-link {
-            padding: 6px 12px;
+            padding: 6px 14px;
             font-size: 12px;
             font-weight: bold;
             color: #cbd5e1;
@@ -291,14 +414,6 @@ export async function handleOnline(request, env, user, renderLayout, url) {
         .online-tab-link.active {
             background: #1f2937;
             color: #fff;
-        }
-        .online-mood-select {
-            background: #10141a;
-            color: #e2e8f0;
-            border: 1px solid #2c3440;
-            border-radius: 4px;
-            padding: 4px 8px;
-            font-size: 12px;
         }
         .online-pagination {
             display: flex;
@@ -385,12 +500,12 @@ export async function handleOnline(request, env, user, renderLayout, url) {
             color: #94a3b8;
             line-height: 1.45;
         }
-        .online-mood-line {
-            color: #cbd5e1;
-            margin-bottom: 1px;
-        }
         .online-val-white {
             color: #e2e8f0;
+            font-weight: bold;
+        }
+        .online-val-green {
+            color: #4ade80;
             font-weight: bold;
         }
         .online-val-gold {
@@ -440,15 +555,7 @@ export async function handleOnline(request, env, user, renderLayout, url) {
                 <a href="${escapeHtml(buildTabUrl('male'))}" class="online-tab-link ${tabParam === 'male' ? 'active' : ''}">Nam</a>
                 <a href="${escapeHtml(buildTabUrl('female'))}" class="online-tab-link ${tabParam === 'female' ? 'active' : ''}">Nữ</a>
                 <a href="${escapeHtml(buildTabUrl('friends'))}" class="online-tab-link ${tabParam === 'friends' ? 'active' : ''}">Bạn bè</a>
-                <a href="${escapeHtml(buildTabUrl('mood', moodFilter))}" class="online-tab-link ${tabParam === 'mood' ? 'active' : ''}">Tâm trạng ▾</a>
             </div>
-
-            ${tabParam === 'mood' && moodOptions.length > 0 ? `
-                <select class="online-mood-select" onchange="if(this.value){window.location.href='/online?tab=mood&mood='+encodeURIComponent(this.value);}else{window.location.href='/online?tab=mood';}">
-                    <option value="">-- Tất cả tâm trạng --</option>
-                    ${moodOptions.map(m => `<option value="${escapeHtml(m)}" ${moodFilter === m ? 'selected' : ''}>${escapeHtml(m)}</option>`).join('')}
-                </select>
-            ` : ''}
         </div>
 
         ${paginationHtml}
