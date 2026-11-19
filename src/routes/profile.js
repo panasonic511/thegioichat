@@ -1,35 +1,11 @@
 import { renderUser } from '../worker.js';
 
-// Bộ icon động dùng chung (mặc định bộ Vịt con - Cute Ducks từ blog.uhm.vn/emo/vitcon/)
-// Bạn có thể chạy trên Console trang vitcon:
-// copy(JSON.stringify([...document.querySelectorAll('a.emo img')].map((img, i) => ({ name: `Vịt con ${i + 1}`, url: img.src })), null, 4))
-// rồi dán đè vào mảng dưới đây.
-const ANIMATED_ICONS = Array.from({ length: 24 }, (_, idx) => ({
-    name: `Vịt con ${idx + 1}`,
-    url: `https://blog.uhm.vn/emo/vitcon/${idx + 1}.gif`
-}));
-
 function escapeHtml(str) {
     return String(str ?? '')
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
-}
-
-function renderRichTextHtml(text) {
-    const raw = String(text ?? '');
-    const urlRegex = /(https?:\/\/[^\s"'<>]+\.(?:gif|webp|png|jpe?g)(?:\?[^\s"'<>]*)?)/gi;
-    return raw.split(urlRegex).map((part) => {
-        if (!part) return '';
-        if (urlRegex.test(part)) {
-            urlRegex.lastIndex = 0;
-            const safeUrl = escapeHtml(part);
-            return `<img src="${safeUrl}" alt="icon" style="height:24px;width:auto;vertical-align:middle;display:inline-block;margin:0 2px;">`;
-        }
-        urlRegex.lastIndex = 0;
-        return escapeHtml(part);
-    }).join('');
 }
 
 function formatTimeAgo(val) {
@@ -283,7 +259,6 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                             avatarSrc: styleInfo.avatarSrc,
                             avatarStyle: styleInfo.avatarStyle,
                             content: commentText,
-                            contentHtml: renderRichTextHtml(commentText),
                             timeAgo: 'Vừa xong'
                         }
                     }), {
@@ -361,6 +336,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
     }
 
     const rProfile = renderUser(profileUser);
+    const pIcon = profileUser.active_icon ? `${profileUser.active_icon} ` : '';
     const followingRow = await env.DB.prepare("SELECT COUNT(*) as total FROM follows WHERE follower_id = ?").bind(targetId).first();
     const followerRow = await env.DB.prepare("SELECT COUNT(*) as total FROM follows WHERE following_id = ?").bind(targetId).first();
     const friendsRow = await env.DB.prepare("SELECT COUNT(*) as total FROM friends WHERE user_id = ? OR friend_id = ?").bind(targetId, targetId).first();
@@ -408,15 +384,13 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 const pid = Number(c.post_id);
                 if (!commentsByPost[pid]) commentsByPost[pid] = [];
                 const styleInfo = formatCommentUserStyle(c);
-                const rawCmt = c.content || '';
                 commentsByPost[pid].push({
                     id: Number(c.id || 0),
                     userId: Number(c.user_id || 0),
                     nameHtml: styleInfo.nameHtml,
                     avatarSrc: styleInfo.avatarSrc,
                     avatarStyle: styleInfo.avatarStyle,
-                    content: rawCmt,
-                    contentHtml: renderRichTextHtml(rawCmt),
+                    content: c.content || '',
                     timeAgo: formatTimeAgo(c.created_at)
                 });
             }
@@ -442,7 +416,6 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         : "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/></svg>";
 
     const commentsJsonSafe = JSON.stringify(commentsByPost).replace(/</g, '\\u003c');
-    const animatedIconsJsonSafe = JSON.stringify(ANIMATED_ICONS).replace(/</g, '\\u003c');
 
     const wallPostsHtml = userPosts.length === 0
         ? `<div style="color: #888; text-align: center; padding: 14px; font-size: 12px;">Chưa có bài đăng nào.</div>`
@@ -475,6 +448,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
 
             return `
             <div style="background: #141414; border: 1px solid #2b2b2b; border-radius: 4px; padding: 10px; margin-top: 8px;">
+                <!-- Header bài đăng -->
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <img src="${avatarSrc}" width="34" height="34" style="${rProfile.avatarStyle} display: block;">
@@ -493,14 +467,17 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                     ` : `<span style="color: #666; font-size: 12px;">⋮</span>`}
                 </div>
 
-                ${rawText ? `<div style="font-size: 13px; color: #f2f2f2; line-height: 1.6; white-space: pre-wrap; text-align: center; margin-bottom: ${imgUrl ? '10px' : '8px'}; ${escapeHtml(postStyle)}">${renderRichTextHtml(rawText)}</div>` : ''}
+                <!-- Nội dung bài đăng -->
+                ${rawText ? `<div style="font-size: 13px; color: #f2f2f2; line-height: 1.6; white-space: pre-wrap; text-align: center; margin-bottom: ${imgUrl ? '10px' : '8px'}; ${escapeHtml(postStyle)}">${escapeHtml(rawText)}</div>` : ''}
 
+                <!-- Ảnh bài đăng -->
                 ${imgUrl ? `
                 <div style="text-align: center; background: #080808; border: 1px solid #222; border-radius: 4px; overflow: hidden; margin-bottom: 8px;">
                     <img src="${escapeHtml(imgUrl)}" alt="Ảnh bài đăng" style="max-width: 100%; max-height: 380px; object-fit: contain; display: block; margin: 0 auto;">
                 </div>
                 ` : ''}
 
+                <!-- Hàng dưới: Ô icon tim và ô icon bình luận mở Popup -->
                 <div style="display: flex; align-items: center; gap: 10px; border-top: 1px solid #242424; padding-top: 8px; flex-wrap: wrap;">
                     <form method="POST" style="margin: 0; display: inline-flex; align-items: center;">
                         <input type="hidden" name="action" value="like_post">
@@ -540,6 +517,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             </div>
             ` : ''}
 
+            <!-- Avatar kèm nút icon máy ảnh mở modal -->
             <div style="position: relative; margin-top: -35px; margin-bottom: 4px; display: inline-block;">
                 <img src="${avatarSrc}" width="66" height="66" style="${rProfile.avatarStyle} display: block;">
                 ${isOwner ? `<button type="button" onclick="openAvatarModal()" title="Đổi ảnh đại diện" style="position: absolute; bottom: -2px; right: -2px; background: #111; color: #00ff00; border: 1px solid #00ff00; border-radius: 50%; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; box-shadow: 0 0 4px #000;">📷</button>` : ''}
@@ -550,15 +528,16 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 <span style="color: #ffcc00; font-size: 11px;">[Lv.${profileUser.level || 1}]</span>
             </div>
 
+            <!-- Hiển thị phân biệt: Quản lý có khung, Thành viên hiển thị chữ bình thường -->
             <div style="text-align: center; font-size: 13px; margin: 6px 0 10px 0;">
                 <span style="color: #aaa; font-size: 11px;">ID ${profileUser.id}</span> 
                 <span style="margin: 0 4px; color: #666;">·</span> 
                 ${(profileUser.role && profileUser.role !== 'Thành Viên') ? `
                     <span style="display: inline-block; background: #1a1a1a; border: 1px solid #444; color: #ffcc00; font-size: 11px; font-weight: bold; padding: 2px 8px; border-radius: 4px; text-shadow: 0 0 4px rgba(255,204,0,0.4);">
-                        ${escapeHtml(profileUser.role)}
+                        ${profileUser.role}
                     </span>
                 ` : `
-                    <span style="color: #00ff00; font-size: 12px;">${escapeHtml(profileUser.role || 'Thành Viên')}</span>
+                    <span style="color: #00ff00; font-size: 12px;">${profileUser.role || 'Thành Viên'}</span>
                 `}
             </div>
             ${!isOwner ? `
@@ -579,6 +558,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         </div>
     </div>
 
+    <!-- Hộp Quà tặng -->
     ${(() => {
         const activeGifts = [];
         if (giftCounts.love > 0) {
@@ -637,24 +617,26 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         `;
     })()}
 
+    <!-- Thông tin chi tiết -->
     <div class="box" style="max-width: 654px; margin: 0 auto 8px auto;">
         <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
             <span>Thông tin chi tiết</span>
             ${isOwner ? `<a href="javascript:void(0)" onclick="openSettingsModal()" style="font-size: 10px; color: #ffcc00;">[Chỉnh sửa]</a>` : ''}
         </div>
         <div class="box-content" style="font-size: 13px; line-height: 1.8; padding: 8px;">
-            <div>❤️ Hẹn hò: <b>${escapeHtml(profileUser.relationships || profileUser.relationship || 'Đang độc thân')}</b></div>
-            <div>👤 Giới tính: <b>${escapeHtml(profileUser.gender || 'Chưa cập nhật')}</b></div>
+            <div>❤️ Hẹn hò: <b>${profileUser.relationships || profileUser.relationship || 'Đang độc thân'}</b></div>
+            <div>👤 Giới tính: <b>${profileUser.gender || 'Chưa cập nhật'}</b></div>
             <div>⭐ Level: <b style="color: #ffcc00;">${profileUser.level || 1}</b> - <a href="/profile/level" style="color: #00ff00;">Kiểm tra</a></div>
             <div>🪙 Xu: <b style="color: #00ff00;">${(profileUser.coins || 0).toLocaleString()} Xu</b></div>
             <div>💰 Vàng: <b style="color: #ffcc00;">${(profileUser.gold || 0).toLocaleString()} Vàng</b></div>
             <div>📝 Bài viết: <b>${postCount}</b></div>
-            <div>🏙️ Tỉnh thành: <b>${escapeHtml(profileUser.province || 'Chưa cập nhật')}</b></div>
-            <div>🎂 Sinh nhật: <b>${escapeHtml(profileUser.birthday || 'Chưa cập nhật')}</b></div>
-            <div>📅 Ngày đăng ký: <b>${escapeHtml(profileUser.created_at || 'Thành viên hệ thống')}</b></div>
+            <div>🏙️ Tỉnh thành: <b>${profileUser.province || 'Chưa cập nhật'}</b></div>
+            <div>🎂 Sinh nhật: <b>${profileUser.birthday || 'Chưa cập nhật'}</b></div>
+            <div>📅 Ngày đăng ký: <b>${profileUser.created_at || 'Thành viên hệ thống'}</b></div>
         </div>
     </div>
 
+    <!-- Tường nhà & Bài đã đăng -->
     <div class="box" style="max-width: 654px; margin: 0 auto 8px auto;">
         <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
             <span>🏠 Tường nhà</span>
@@ -667,6 +649,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 </button>
             </div>
 
+            <!-- Form đăng bài (ẩn/hiện khi bấm nút Đăng bài) -->
             <div id="wall-post-form" style="display: none; background: #101010; border: 1px solid #333; border-radius: 4px; padding: 8px; margin-top: 8px; position: relative;">
                 <form method="POST" id="wall-post-submit-form">
                     <input type="hidden" name="action" value="wall_post">
@@ -676,6 +659,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
 
                     <textarea id="wall-content-textarea" name="content" rows="3" placeholder="${isOwner ? 'Bạn đang nghĩ gì?' : `Viết gì đó lên tường của ${escapeHtml(profileUser.display_name || profileUser.username || 'thành viên')}...`}" style="width: 100%; background: #000; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 8px; box-sizing: border-box; font-size: 13px; margin-bottom: 8px; resize: vertical;"></textarea>
 
+                    <!-- Thanh công cụ: icon biểu tượng & Bb color chỉnh màu -->
                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
                         <div style="display: flex; align-items: center; gap: 6px; position: relative;">
                             <button type="button" onclick="toggleWallPicker('emoji')" title="Chèn icon biểu tượng" style="background: #1b1b1b; color: #ffcc00; border: 1px solid #3d3d3d; border-radius: 4px; padding: 4px 8px; font-size: 13px; cursor: pointer; line-height: 1.2;">😀</button>
@@ -692,11 +676,13 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                         </div>
                     </div>
 
+                    <!-- Popup Icon biểu tượng -->
                     <div id="wall-emoji-picker" style="display: none; background: #161616; border: 1px solid #444; border-radius: 4px; padding: 6px; margin-top: 8px;">
                         <div style="font-size: 11px; color: #ffcc00; margin-bottom: 5px;">Chọn biểu tượng cảm xúc</div>
-                        <div id="wall-emoji-list" style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center; max-height: 130px; overflow-y: auto;"></div>
+                        <div id="wall-emoji-list" style="display: flex; flex-wrap: wrap; gap: 4px;"></div>
                     </div>
 
+                    <!-- Popup Bb Color (Màu chữ / Màu nền / Bóng mờ) -->
                     <div id="wall-color-picker" style="display: none; background: #161616; border: 1px solid #444; border-radius: 4px; padding: 6px; margin-top: 8px;">
                         <div style="display: flex; gap: 4px; margin-bottom: 6px; border-bottom: 1px solid #2b2b2b; padding-bottom: 5px; flex-wrap: wrap;">
                             <button type="button" id="tab-color-fg" onclick="switchWallColorTab('fg')" style="background: #0055ff; color: #fff; border: 1px solid #3b7bff; border-radius: 3px; padding: 3px 8px; font-size: 11px; cursor: pointer;">Màu chữ</button>
@@ -709,14 +695,17 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 </form>
             </div>
 
+            <!-- Danh sách bài đã đăng -->
             <div style="margin-top: 4px;">
                 ${wallPostsHtml}
             </div>
         </div>
     </div>
 
+    <!-- Popup Modal Bình luận bài viết -->
     <div id="comment-popup-modal" onclick="if(event.target===this) closeCommentPopup();" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.75); z-index: 1000; justify-content: center; align-items: center; padding: 12px; box-sizing: border-box;">
         <div style="background: #141414; border: 1px solid #383838; border-radius: 10px; width: 100%; max-width: 460px; max-height: 82vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.85);">
+            <!-- Header Popup -->
             <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #1a1a1a; border-bottom: 1px solid #2d2d2d;">
                 <div style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #fff;">
                     <span>Bình luận</span>
@@ -725,6 +714,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 <button type="button" onclick="closeCommentPopup()" title="Đóng" style="background: none; border: none; color: #aaa; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px;">✕</button>
             </div>
 
+            <!-- Thanh nhập bình luận -->
             <div style="padding: 10px 12px; border-bottom: 1px solid #262626; background: #141414;">
                 <form method="POST" id="comment-popup-form" onsubmit="submitCommentAjax(event)" style="display: flex; align-items: center; gap: 8px; margin: 0;">
                     <input type="hidden" name="action" value="comment_post">
@@ -737,13 +727,15 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                     </button>
                 </form>
                 <div id="comment-popup-error" style="display: none; color: #ff6666; font-size: 11px; margin-top: 6px;"></div>
-                <div id="comment-popup-emoji-bar" style="display: none; flex-wrap: wrap; gap: 5px; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px solid #252525; max-height: 120px; overflow-y: auto;"></div>
+                <div id="comment-popup-emoji-bar" style="display: none; flex-wrap: wrap; gap: 5px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #252525;"></div>
             </div>
 
+            <!-- Danh sách bình luận -->
             <div id="comment-popup-list" style="padding: 12px; overflow-y: auto; flex: 1; background: #111111;"></div>
         </div>
     </div>
 
+    <!-- Popup Modal Cài đặt thông tin -->
     ${isOwner ? `
     <div id="settings-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.88); z-index: 999; justify-content: center; align-items: center; padding: 10px; box-sizing: border-box;">
         <div style="background: #111; border: 1px solid #444; width: 100%; max-width: 400px; padding: 12px; box-sizing: border-box; max-height: 90vh; overflow-y: auto;">
@@ -777,6 +769,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
     </div>
     ` : ''}
 
+    <!-- Popup Modal Đổi Avatar (Có kéo/zoom) -->
     <div id="avatar-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.88); z-index: 999; justify-content: center; align-items: center; padding: 10px; box-sizing: border-box;">
         <div style="background: #111; border: 1px solid #444; width: 100%; max-width: 380px; padding: 12px; box-sizing: border-box; text-align: center;">
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 6px; margin-bottom: 8px;">
@@ -798,6 +791,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         </div>
     </div>
 
+    <!-- Popup Modal Đổi Ảnh bìa -->
     <div id="cover-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.88); z-index: 999; justify-content: center; align-items: center; padding: 10px; box-sizing: border-box;">
         <div style="background: #111; border: 1px solid #444; width: 100%; max-width: 380px; padding: 12px; box-sizing: border-box; text-align: center;">
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 6px; margin-bottom: 8px;">
@@ -819,9 +813,9 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         </div>
     </div>
 
+    <!-- JavaScript kích hoạt Popup Bình luận AJAX, Modal, Tường nhà, Icon & Bb Color, Cắt/Kéo ảnh -->
     <script>
         const WALL_COMMENTS_DATA = ${commentsJsonSafe};
-        const WAP_ANIMATED_ICONS = ${animatedIconsJsonSafe};
         const FALLBACK_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/></svg>";
         let activeCommentPostId = 0;
 
@@ -830,32 +824,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 .replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
-        }
-
-        function renderRichTextClient(text) {
-            const raw = String(text ?? '');
-            const urlRegex = /(https?:\/\/[^\s"'<>]+\.(?:gif|webp|png|jpe?g)(?:\?[^\s"'<>]*)?)/gi;
-            return raw.split(urlRegex).map((part) => {
-                if (!part) return '';
-                if (urlRegex.test(part)) {
-                    urlRegex.lastIndex = 0;
-                    return '<img src="' + escapeJsHtml(part) + '" alt="icon" style="height:24px;width:auto;vertical-align:middle;display:inline-block;margin:0 2px;">';
-                }
-                urlRegex.lastIndex = 0;
-                return escapeJsHtml(part);
-            }).join('');
-        }
-
-        function buildAnimatedIconButtonsHtml(insertFnName) {
-            if (!Array.isArray(WAP_ANIMATED_ICONS) || WAP_ANIMATED_ICONS.length === 0) return '';
-            return WAP_ANIMATED_ICONS.map((it) => {
-                if (!it || !it.url) return '';
-                const safeUrl = escapeJsHtml(String(it.url).trim());
-                const safeName = escapeJsHtml(it.name || 'Icon');
-                return '<button type="button" title="' + safeName + '" onclick="' + insertFnName + '(\'' + safeUrl + '\')" style="background:#1a1a1a;border:1px solid #3a3a3a;border-radius:4px;padding:3px 5px;cursor:pointer;display:inline-flex;align-items:center;"><img src="' + safeUrl + '" alt="' + safeName + '" style="height:22px;width:auto;display:block;"></button>';
-            }).join('');
+                .replace(/"/g, '&quot;');
         }
 
         function renderCommentListInPopup(postId) {
@@ -876,18 +845,17 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 return;
             }
 
-            listEl.innerHTML = list.map((c) => {
+            listEl.innerHTML = list.map(c => {
                 const av = (c.avatarSrc && !String(c.avatarSrc).includes('7gXvS6v')) ? c.avatarSrc : FALLBACK_AVATAR;
                 const avStyle = c.avatarStyle || 'border-radius: 50%; object-fit: cover;';
                 const nameMarkup = c.nameHtml || escapeJsHtml(c.name || ('ID #' + c.userId));
-                const bodyMarkup = c.contentHtml || renderRichTextClient(c.content);
                 return \`
                 <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px;">
                     <img src="\${escapeJsHtml(av)}" width="32" height="32" style="\${escapeJsHtml(avStyle)} flex-shrink:0;margin-top:2px;">
                     <div style="flex:1;min-width:0;">
                         <div style="background:#1c1c1c;border:1px solid #2b2b2b;border-radius:8px;padding:6px 10px;">
                             <div style="font-size:12px;line-height:1.3;margin-bottom:2px;">\${nameMarkup}</div>
-                            <div style="font-size:13px;color:#e5e7eb;white-space:pre-wrap;word-break:break-word;">\${bodyMarkup}</div>
+                            <div style="font-size:13px;color:#e5e7eb;white-space:pre-wrap;word-break:break-word;">\${escapeJsHtml(c.content)}</div>
                         </div>
                         <div style="font-size:11px;color:#888;margin-top:3px;padding-left:4px;">\${escapeJsHtml(c.timeAgo || 'Vừa xong')}</div>
                     </div>
@@ -959,9 +927,6 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 if (!Array.isArray(WALL_COMMENTS_DATA[postId])) {
                     WALL_COMMENTS_DATA[postId] = [];
                 }
-                if (data.comment && !data.comment.contentHtml) {
-                    data.comment.contentHtml = renderRichTextClient(data.comment.content);
-                }
                 WALL_COMMENTS_DATA[postId].unshift(data.comment);
 
                 const postCountSpan = document.getElementById('post-comment-count-' + postId);
@@ -998,10 +963,9 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             bar.style.display = show ? 'flex' : 'none';
             if (show && !bar.dataset.loaded) {
                 const icons = ['😀','😂','😍','😘','😎','😭','😡','👍','❤️','💖','🔥','✨','🎉','🌸'];
-                const emojiHtml = icons.map((ic) =>
-                    '<button type="button" onclick="insertCommentEmoji(\'' + ic + '\')" style="background:#222;border:1px solid #383838;border-radius:4px;padding:2px 6px;font-size:13px;cursor:pointer;">' + ic + '</button>'
+                bar.innerHTML = icons.map(ic =>
+                    \`<button type="button" onclick="insertCommentEmoji('\${ic}')" style="background:#222;border:1px solid #383838;border-radius:4px;padding:2px 6px;font-size:13px;cursor:pointer;">\${ic}</button>\`
                 ).join('');
-                bar.innerHTML = emojiHtml + buildAnimatedIconButtonsHtml('insertCommentEmoji');
                 bar.dataset.loaded = '1';
             }
         }
@@ -1016,8 +980,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         function toggleWallForm() {
             const formBox = document.getElementById('wall-post-form');
             if (!formBox) return;
-            const isHidden = (formBox.style.display === 'none' || !formBox.style.display);
-            formBox.style.display = isHidden ? 'block' : 'none';
+            formBox.style.display = (formBox.style.display === 'none' || !formBox.style.display) ? 'block' : 'none';
         }
 
         const WALL_EMOJIS = ['😀','😁','😂','🤣','😊','😍','😘','😎','🤩','🥳','😭','😡','🥺','🤔','👍','👎','❤️','💖','🔥','✨','🎉','💯','🌸','🌹','🎵','🎶','⭐','👑','💍','🎁'];
@@ -1049,10 +1012,9 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         function renderWallEmojis() {
             const el = document.getElementById('wall-emoji-list');
             if (!el) return;
-            const emojiHtml = WALL_EMOJIS.map((em) =>
-                '<button type="button" onclick="insertWallEmoji(\'' + em + '\')" style="background:#222;border:1px solid #383838;border-radius:3px;padding:3px 6px;font-size:14px;cursor:pointer;">' + em + '</button>'
+            el.innerHTML = WALL_EMOJIS.map(em =>
+                \`<button type="button" onclick="insertWallEmoji('\${em}')" style="background:#222;border:1px solid #383838;border-radius:3px;padding:3px 6px;font-size:14px;cursor:pointer;">\${em}</button>\`
             ).join('');
-            el.innerHTML = emojiHtml + buildAnimatedIconButtonsHtml('insertWallEmoji');
         }
 
         function insertWallEmoji(emoji) {
@@ -1067,7 +1029,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
 
         function switchWallColorTab(mode) {
             wallColorMode = mode;
-            ['fg', 'bg', 'glow'].forEach((m) => {
+            ['fg', 'bg', 'glow'].forEach(m => {
                 const btn = document.getElementById('tab-color-' + m);
                 if (!btn) return;
                 const active = (m === mode);
@@ -1081,8 +1043,8 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         function renderWallPalette() {
             const grid = document.getElementById('wall-palette-grid');
             if (!grid) return;
-            grid.innerHTML = WALL_COLORS.map((hex) =>
-                '<button type="button" onclick="applyWallColor(\'' + hex + '\')" title="' + hex + '" style="height:22px;background:' + hex + ';border:1px solid #555;border-radius:3px;cursor:pointer;"></button>'
+            grid.innerHTML = WALL_COLORS.map(hex =>
+                \`<button type="button" onclick="applyWallColor('\${hex}')" title="\${hex}" style="height:22px;background:\${hex};border:1px solid #555;border-radius:3px;cursor:pointer;"></button>\`
             ).join('');
         }
 
@@ -1098,14 +1060,14 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             if (ta) {
                 ta.style.color = wallSelectedColors.fg || '#fff';
                 ta.style.backgroundColor = wallSelectedColors.bg || '#000';
-                ta.style.textShadow = wallSelectedColors.glow ? ('0 0 8px ' + wallSelectedColors.glow) : 'none';
+                ta.style.textShadow = wallSelectedColors.glow ? \`0 0 8px \${wallSelectedColors.glow}\` : 'none';
             }
             if (badge) {
                 const parts = [];
                 if (wallSelectedColors.fg) parts.push('Chữ');
                 if (wallSelectedColors.bg) parts.push('Nền');
                 if (wallSelectedColors.glow) parts.push('Bóng');
-                badge.textContent = parts.length ? ('Đã chọn: ' + parts.join(' + ')) : '';
+                badge.textContent = parts.length ? \`Đã chọn: \${parts.join(' + ')}\` : '';
             }
         }
 
