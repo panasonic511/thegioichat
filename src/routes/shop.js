@@ -1,37 +1,13 @@
 import { renderUser } from '../worker.js';
 
-function escapeHtml(str) {
-    return String(str ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
-
 export async function handleShop(request, env, user, renderLayout) {
     const rUser = renderUser(user);
-
-    function getRoleBadgeStyle(role) {
-        const r = String(role || 'Thành Viên').trim();
-        if (r === 'Chủ Wap') {
-            return 'background: #1a1500; color: #ffcc00; border: 1px solid #665200; font-weight: bold; padding: 3px 10px; font-size: 11px; border-radius: 4px; display: inline-block;';
-        } else if (r === 'Admin') {
-            return 'background: #2a0800; color: #ff3300; border: 1px solid #ff3300; text-shadow: 0 0 6px #ff0000; font-weight: bold; padding: 3px 10px; font-size: 11px; border-radius: 4px; display: inline-block;';
-        } else if (r === 'Mod') {
-            return 'background: #001a2a; color: #00ffff; border: 1px solid #00ffff; text-shadow: 0 0 6px #00ffff; font-weight: bold; padding: 3px 10px; font-size: 11px; border-radius: 4px; display: inline-block;';
-        } else {
-            return 'background: #141414; color: #00ff00; border: 1px solid #444; font-weight: bold; padding: 3px 10px; font-size: 11px; border-radius: 4px; display: inline-block;';
-        }
-    }
 
     const styledAvatarHtml = String(rUser.avatarHtml || '').replace(
         'style="',
         'style="width: 44px; height: 44px; '
     );
 
-    const safeRole = escapeHtml(user?.role || 'Thành Viên');
-    const level = Number(user?.level || 1);
     const coins = Number(user?.coins || 0).toLocaleString('en-US');
     const gold = Number(user?.gold || 0).toLocaleString('en-US');
 
@@ -176,22 +152,19 @@ export async function handleShop(request, env, user, renderLayout) {
     <div class="shop-wrap">
         <!-- Header thông tin tài khoản -->
         <div class="shop-card">
-            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: #0c0c0c;">
+            <div style="display: flex; align-items: center; padding: 12px 14px; background: #0c0c0c;">
                 <div style="display: flex; align-items: center; gap: 12px; min-width: 0;">
                     <div style="width: 44px; height: 44px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;">
                         ${styledAvatarHtml}
                     </div>
                     <div style="min-width: 0;">
                         <div style="font-size: 14px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                            ${rUser.nameHtml} <span style="color: #ffcc00; font-size: 12px; font-weight: bold;">[Lv.${level}]</span>
+                            ${rUser.nameHtml}
                         </div>
                         <div style="font-size: 11px; color: #ccc; margin-top: 3px;">
                             🪙 ${coins} Xu | 👑 ${gold} Vàng
                         </div>
                     </div>
-                </div>
-                <div style="flex-shrink: 0; margin-left: 8px;">
-                    <span style="${getRoleBadgeStyle(user?.role)}">${safeRole}</span>
                 </div>
             </div>
         </div>
@@ -329,3 +302,6 @@ export async function handleShop(request, env, user, renderLayout) {
         headers: { 'Content-Type': 'text/html;charset=UTF-8' }
     });
 }
+```[cite: 10]
+
+Nếu ở Trang chủ (`index.js`) hoặc các trang khác vẫn còn hiển thị `[Lv.xx]` hoặc badge góc phải, bạn gửi thêm file đó để mình dọn sạch cho đồng bộ toàn wap nhé!
