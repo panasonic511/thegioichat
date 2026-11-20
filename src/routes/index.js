@@ -70,18 +70,10 @@ export async function handleIndex(request, env, user, renderLayout) {
         recentFeeds = fRows?.results || [];
     } catch (e) {}
 
-    let totalUsers = 1, totalFeeds = 0, recentUsers = [];
+    let totalFeeds = 0;
     try {
-        const uCount = await env.DB.prepare("SELECT COUNT(*) as total FROM users").first();
-        totalUsers = uCount?.total || 1;
         const fCount = await env.DB.prepare("SELECT COUNT(*) as total FROM feeds").first();
         totalFeeds = fCount?.total || 0;
-        const rUsers = await env.DB.prepare(`
-            SELECT id, username, display_name, role, is_admin, active_icon,
-                   name_color, name_glow, name_border, name_border_glow, border_color, avatar_glow, avatar
-            FROM users ORDER BY id DESC LIMIT 6
-        `).all();
-        recentUsers = rUsers.results || [];
     } catch (e) {}
 
     const nowSec = Math.floor(Date.now() / 1000);
@@ -250,17 +242,6 @@ export async function handleIndex(request, env, user, renderLayout) {
                     </a>
                 </div>
             </div>
-        </div>
-    </div>
-
-    <!-- Danh sách thành viên thật -->
-    <div class="box">
-        <div class="box-title">👥 Thành viên thật (${totalUsers})</div>
-        <div class="box-content" style="font-size: 14px;">
-            ${recentUsers.length > 0 ? recentUsers.map(u => {
-                const uUI = renderUser(u);
-                return `<span style="display:inline-block; margin-right:10px; margin-bottom:6px;">${uUI.nameHtml}</span>`;
-            }).join(' · ') : '<span style="color:#888;">Chưa có thành viên nào.</span>'}
         </div>
     </div>
 
