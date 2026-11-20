@@ -620,4 +620,3 @@ export default {
     }
   }
 };
-```[cite: 24]
