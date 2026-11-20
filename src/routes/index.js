@@ -1,6 +1,10 @@
 import { handleLogin } from './auth.js';
 import { renderUser } from '../worker.js';
 
+const PAGE_SIZE = 10;
+const MAX_PAGES = 10;
+const FULL_CHAT_LIMIT = PAGE_SIZE * MAX_PAGES; // 10 trang x 10 tin = 100 tin
+
 function escapeHtml(str) {
     return String(str ?? '')
         .replace(/&/g, '&amp;')
@@ -70,6 +74,19 @@ async function ensureChatTable(db) {
     } catch (e) {}
 }
 
+async function resetChatIfFullTenPages(db, incomingCount = 1) {
+    await ensureChatTable(db);
+    try {
+        const row = await db.prepare("SELECT COUNT(*) AS total FROM community_chat").first();
+        const currentTotal = Number(row?.total ?? 0);
+        if (currentTotal + Number(incomingCount || 1) > FULL_CHAT_LIMIT) {
+            await db.prepare("DELETE FROM community_chat").run();
+            return true;
+        }
+    } catch (e) {}
+    return false;
+}
+
 async function getUserChatCount(db, userId) {
     const uid = Number(userId || 0);
     if (!uid) return 0;
@@ -99,23 +116,14 @@ async function attachChatCounts(db, messages) {
     return result;
 }
 
-async function fetchChatMessages(db, afterId = 0, limit = 25) {
+async function fetchChatPage(db, page = 1, pageSize = PAGE_SIZE) {
     await ensureChatTable(db);
     try {
-        if (afterId > 0) {
-            const rows = await db.prepare(`
-                SELECT c.id, c.user_id, c.content, c.created_at,
-                       u.display_name, u.username, u.role, u.is_admin, u.active_icon,
-                       u.name_color, u.name_glow, u.name_border, u.name_border_glow,
-                       u.border_color, u.avatar_glow, u.avatar, u.gender, u.level, u.coins, u.status_text
-                FROM community_chat c
-                LEFT JOIN users u ON c.user_id = u.id
-                WHERE c.id > ?
-                ORDER BY c.id DESC
-                LIMIT ?
-            `).bind(afterId, limit).all();
-            return await attachChatCounts(db, rows?.results || []);
-        }
+        const cntRow = await db.prepare("SELECT COUNT(*) AS total FROM community_chat").first();
+        const totalCount = Number(cntRow?.total ?? 0);
+        const totalPages = Math.max(1, Math.min(MAX_PAGES, Math.ceil(totalCount / pageSize)));
+        const safePage = Math.min(Math.max(1, Number(page || 1)), totalPages);
+        const offset = (safePage - 1) * pageSize;
 
         const rows = await db.prepare(`
             SELECT c.id, c.user_id, c.content, c.created_at,
@@ -125,25 +133,76 @@ async function fetchChatMessages(db, afterId = 0, limit = 25) {
             FROM community_chat c
             LEFT JOIN users u ON c.user_id = u.id
             ORDER BY c.id DESC
-            LIMIT ?
-        `).bind(limit).all();
-        return await attachChatCounts(db, rows?.results || []);
+            LIMIT ? OFFSET ?
+        `).bind(pageSize, offset).all();
+
+        const enriched = await attachChatCounts(db, rows?.results || []);
+        return {
+            messages: enriched,
+            page: safePage,
+            totalPages,
+            totalCount
+        };
     } catch (e) {
-        return [];
+        return {
+            messages: [],
+            page: 1,
+            totalPages: 1,
+            totalCount: 0
+        };
     }
 }
 
+function normalizeUnixSec(ts) {
+    const n = Number(ts || 0);
+    if (!n) return Math.floor(Date.now() / 1000);
+    return n > 1e11 ? Math.floor(n / 1000) : Math.floor(n);
+}
+
 function formatTimeAgoVn(tsSec) {
+    const sec = normalizeUnixSec(tsSec);
     const nowSec = Math.floor(Date.now() / 1000);
-    const diff = Math.max(0, nowSec - Number(tsSec || nowSec));
-    if (diff < 30) return 'Vừa xong';
+    const diff = Math.max(0, nowSec - sec);
+    if (diff < 10) return 'Vừa xong';
     if (diff < 60) return `${diff} giây trước`;
     const mins = Math.floor(diff / 60);
     if (mins < 60) return `${mins} phút trước`;
     const hours = Math.floor(mins / 60);
     if (hours < 24) return `${hours} giờ trước`;
     const days = Math.floor(hours / 24);
-    return `${days} ngày trước`;
+    if (days < 7) return `${days} ngày trước`;
+
+    const vnDate = new Date((sec + 7 * 3600) * 1000);
+    const dd = String(vnDate.getUTCDate()).padStart(2, '0');
+    const mm = String(vnDate.getUTCMonth() + 1).padStart(2, '0');
+    const hh = String(vnDate.getUTCHours()).padStart(2, '0');
+    const mi = String(vnDate.getUTCMinutes()).padStart(2, '0');
+    return `${hh}:${mi} ${dd}/${mm}`;
+}
+
+function buildPaginationHtml(page, totalPages) {
+    if (totalPages <= 1) return '';
+    const prevPage = Math.max(1, page - 1);
+    const nextPage = Math.min(totalPages, page + 1);
+    const btns = [];
+
+    btns.push(
+        `<button type="button" class="cchat-page-btn ${page <= 1 ? 'disabled' : ''}" ${page <= 1 ? 'disabled' : ''} onclick="cchatGoPage(${prevPage})">&lt;</button>`
+    );
+
+    const startP = Math.max(1, Math.min(page - 2, totalPages - 4));
+    const endP = Math.min(totalPages, Math.max(1, startP + 4));
+    for (let p = startP; p <= endP; p++) {
+        btns.push(
+            `<button type="button" class="cchat-page-btn ${p === page ? 'active' : ''}" onclick="cchatGoPage(${p})">${p}</button>`
+        );
+    }
+
+    btns.push(
+        `<button type="button" class="cchat-page-btn ${page >= totalPages ? 'disabled' : ''}" ${page >= totalPages ? 'disabled' : ''} onclick="cchatGoPage(${nextPage})">&gt;</button>`
+    );
+
+    return `<div class="cchat-pagination" id="cchatPagination">${btns.join('')}</div>`;
 }
 
 function buildChatItemHtml(msg) {
@@ -152,14 +211,15 @@ function buildChatItemHtml(msg) {
         'style="',
         'style="width:36px;height:36px;display:block;'
     );
-    const timeLabel = formatTimeAgoVn(msg.created_at);
+    const tsSec = normalizeUnixSec(msg.created_at);
+    const timeLabel = formatTimeAgoVn(tsSec);
     const formattedBody = renderBbcodeAndIcons(msg.content || '');
     const chatCount = Number(msg.ctop_chat_count ?? 0).toLocaleString();
     const coins = Number(msg.coins || 0).toLocaleString();
     const moodStatus = msg.status_text ? `<div class="cchat-status">» Status: ${escapeHtml(msg.status_text)}</div>` : '';
 
     return `
-    <div class="cchat-item" data-msg-id="${Number(msg.id || 0)}" data-username="${escapeHtml(msg.username || msg.display_name || '')}">
+    <div class="cchat-item" data-msg-id="${Number(msg.id || 0)}" data-ts="${tsSec}" data-username="${escapeHtml(msg.username || msg.display_name || '')}">
         <div class="cchat-row-top">
             <div class="cchat-user-meta">
                 <div class="cchat-ava">${smallAvatar}</div>
@@ -218,20 +278,20 @@ export async function handleIndex(request, env, user, renderLayout) {
     const isAjaxChat = url.searchParams.get('ajax_chat') === '1' || request.headers.get('X-Community-Chat') === '1';
 
     if (isAjaxChat && request.method === 'GET') {
-        const afterId = Math.max(0, Number(url.searchParams.get('after_id') || 0));
-        const mode = url.searchParams.get('mode') || 'poll';
-        const list = mode === 'reload'
-            ? await fetchChatMessages(env.DB, 0, 25)
-            : await fetchChatMessages(env.DB, afterId, 25);
-
-        const itemsHtml = list.map(buildChatItemHtml).join('');
-        const maxId = list.reduce((acc, m) => Math.max(acc, Number(m.id || 0)), afterId);
+        const page = Math.max(1, Number(url.searchParams.get('page') || 1));
+        const pageData = await fetchChatPage(env.DB, page, PAGE_SIZE);
+        const itemsHtml = pageData.messages.map(buildChatItemHtml).join('');
+        const paginationHtml = buildPaginationHtml(pageData.page, pageData.totalPages);
+        const maxId = pageData.messages.reduce((acc, m) => Math.max(acc, Number(m.id || 0)), 0);
 
         return new Response(JSON.stringify({
             ok: true,
-            mode,
+            page: pageData.page,
+            total_pages: pageData.totalPages,
+            total_count: pageData.totalCount,
             last_id: maxId,
-            items_html: itemsHtml
+            items_html: itemsHtml,
+            pagination_html: paginationHtml
         }), {
             headers: { 'Content-Type': 'application/json;charset=UTF-8', 'Cache-Control': 'no-store' }
         });
@@ -239,13 +299,16 @@ export async function handleIndex(request, env, user, renderLayout) {
 
     if (isAjaxChat && request.method === 'POST') {
         let contentText = '';
+        let requestedPage = 1;
         try {
             const body = await request.json();
             contentText = String(body?.content ?? '').trim();
+            requestedPage = Math.max(1, Number(body?.page || 1));
         } catch (e) {
             try {
                 const fd = await request.formData();
                 contentText = String(fd.get('content') ?? '').trim();
+                requestedPage = Math.max(1, Number(fd.get('page') || 1));
             } catch (e2) {}
         }
 
@@ -260,7 +323,7 @@ export async function handleIndex(request, env, user, renderLayout) {
             contentText = contentText.slice(0, 600);
         }
 
-        await ensureChatTable(env.DB);
+        const wasReset = await resetChatIfFullTenPages(env.DB, 1);
         const nowSec = Math.floor(Date.now() / 1000);
 
         const inserted = await env.DB.prepare(
@@ -273,7 +336,7 @@ export async function handleIndex(request, env, user, renderLayout) {
             id: inserted?.id || Date.now(),
             user_id: Number(user.id),
             content: contentText,
-            created_at: nowSec,
+            created_at: normalizeUnixSec(inserted?.created_at || nowSec),
             display_name: user.display_name,
             username: user.username,
             role: user.role,
@@ -293,10 +356,21 @@ export async function handleIndex(request, env, user, renderLayout) {
             ctop_chat_count: userChatCount
         };
 
+        const targetPage = wasReset ? 1 : requestedPage;
+        const pageData = await fetchChatPage(env.DB, targetPage, PAGE_SIZE);
+        const maxId = pageData.messages.reduce((acc, m) => Math.max(acc, Number(m.id || 0)), Number(msgRecord.id));
+
         return new Response(JSON.stringify({
             ok: true,
             id: Number(msgRecord.id),
-            item_html: buildChatItemHtml(msgRecord)
+            reset: wasReset,
+            page: pageData.page,
+            total_pages: pageData.totalPages,
+            total_count: pageData.totalCount,
+            last_id: maxId,
+            item_html: buildChatItemHtml(msgRecord),
+            items_html: pageData.messages.map(buildChatItemHtml).join(''),
+            pagination_html: buildPaginationHtml(pageData.page, pageData.totalPages)
         }), {
             headers: { 'Content-Type': 'application/json;charset=UTF-8', 'Cache-Control': 'no-store' }
         });
@@ -334,11 +408,13 @@ export async function handleIndex(request, env, user, renderLayout) {
         totalFeeds = fCount?.total || 0;
     } catch (e) {}
 
-    const chatMessages = await fetchChatMessages(env.DB, 0, 20);
+    const initialPageData = await fetchChatPage(env.DB, 1, PAGE_SIZE);
+    const chatMessages = initialPageData.messages;
     const initialLastId = chatMessages.reduce((acc, m) => Math.max(acc, Number(m.id || 0)), 0);
     const initialChatHtml = chatMessages.length > 0
         ? chatMessages.map(buildChatItemHtml).join('')
         : `<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào. Hãy là người mở màn chát cộng đồng!</div>`;
+    const initialPaginationHtml = buildPaginationHtml(initialPageData.page, initialPageData.totalPages);
 
     const nowSec = Math.floor(Date.now() / 1000);
     let partyCount = 0;
@@ -574,20 +650,6 @@ export async function handleIndex(request, env, user, renderLayout) {
             color: #4ade80;
             background: #19222c;
         }
-        .cchat-clear-btn {
-            margin-left: auto;
-            background: #181214;
-            color: #fca5a5;
-            border: 1px solid #3b2328;
-            border-radius: 5px;
-            padding: 6px 9px;
-            font-size: 12px;
-            cursor: pointer;
-        }
-        .cchat-clear-btn:hover {
-            background: #2b171b;
-            color: #fff;
-        }
         .cchat-picker-panel {
             display: none;
             margin-top: 8px;
@@ -653,7 +715,7 @@ export async function handleIndex(request, env, user, renderLayout) {
             min-height: 16px;
         }
         .cchat-stream {
-            max-height: 430px;
+            max-height: 450px;
             overflow-y: auto;
             padding: 8px;
             display: flex;
@@ -668,7 +730,7 @@ export async function handleIndex(request, env, user, renderLayout) {
             padding: 8px 10px;
         }
         .cchat-item.is-new {
-            animation: cchatSlideIn 0.25s ease-out;
+            animation: cchatSlideIn 0.2s ease-out;
             border-color: #38bdf8;
             border-left-color: #38bdf8;
         }
@@ -747,6 +809,40 @@ export async function handleIndex(request, env, user, renderLayout) {
             color: #888;
             padding: 16px 8px;
             font-size: 13px;
+        }
+        .cchat-pagination {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            padding: 8px 10px 10px 10px;
+            border-top: 1px solid #1c222b;
+            flex-wrap: wrap;
+        }
+        .cchat-page-btn {
+            min-width: 28px;
+            height: 26px;
+            padding: 0 7px;
+            background: #121720;
+            color: #cbd5e1;
+            border: 1px solid #2a3342;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .cchat-page-btn:hover:not(:disabled) {
+            border-color: #38bdf8;
+            color: #fff;
+        }
+        .cchat-page-btn.active {
+            background: #2563eb;
+            border-color: #3b82f6;
+            color: #fff;
+        }
+        .cchat-page-btn.disabled, .cchat-page-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
         }
         .wap-anim-ico {
             display: inline-block;
@@ -894,7 +990,7 @@ export async function handleIndex(request, env, user, renderLayout) {
     </div>
 
     <!-- Chát cộng đồng -->
-    <div class="box cchat-box" id="communityChatBox" data-last-id="${initialLastId}">
+    <div class="box cchat-box" id="communityChatBox" data-last-id="${initialLastId}" data-page="${initialPageData.page}" data-total-pages="${initialPageData.totalPages}">
         <div class="cchat-header">
             <div class="cchat-title-wrap">
                 <span class="cchat-live-dot"></span>
@@ -954,10 +1050,14 @@ export async function handleIndex(request, env, user, renderLayout) {
         <div class="cchat-stream" id="cchatStream">
             ${initialChatHtml}
         </div>
+        <div id="cchatPaginationWrap">
+            ${initialPaginationHtml}
+        </div>
     </div>
 
     <script>
         (function() {
+            const PAGE_SIZE = ${PAGE_SIZE};
             const WAP_ICONS = [
                 { code: '[smile]', emo: '😄', anim: 'ico-bounce', name: 'Vui vẻ' },
                 { code: '[lol]', emo: '😂', anim: 'ico-shake', name: 'Cười lớn' },
@@ -987,6 +1087,7 @@ export async function handleIndex(request, env, user, renderLayout) {
 
             const boxEl = document.getElementById('communityChatBox');
             const streamEl = document.getElementById('cchatStream');
+            const pagWrapEl = document.getElementById('cchatPaginationWrap');
             const inputEl = document.getElementById('cchatInput');
             const sendBtnEl = document.getElementById('cchatSendBtn');
             const statusEl = document.getElementById('cchatStatusMsg');
@@ -998,6 +1099,14 @@ export async function handleIndex(request, env, user, renderLayout) {
 
             let isSending = false;
             let isPolling = false;
+
+            function getCurrentPage() {
+                return Math.max(1, Number(boxEl ? (boxEl.getAttribute('data-page') || 1) : 1));
+            }
+
+            function setCurrentPage(p) {
+                if (boxEl) boxEl.setAttribute('data-page', String(Math.max(1, Number(p || 1))));
+            }
 
             function getLastId() {
                 return Number(boxEl ? (boxEl.getAttribute('data-last-id') || 0) : 0);
@@ -1018,6 +1127,45 @@ export async function handleIndex(request, env, user, renderLayout) {
             function updateCounter() {
                 if (!inputEl || !counterEl) return;
                 counterEl.textContent = inputEl.value.length + ' / 600';
+            }
+
+            function formatClientTimeAgo(tsSec) {
+                const nowSec = Math.floor(Date.now() / 1000);
+                const sec = Number(tsSec || nowSec);
+                const diff = Math.max(0, nowSec - sec);
+                if (diff < 10) return 'Vừa xong';
+                if (diff < 60) return diff + ' giây trước';
+                const mins = Math.floor(diff / 60);
+                if (mins < 60) return mins + ' phút trước';
+                const hours = Math.floor(mins / 60);
+                if (hours < 24) return hours + ' giờ trước';
+                const days = Math.floor(hours / 24);
+                if (days < 7) return days + ' ngày trước';
+                const vnDate = new Date((sec + 7 * 3600) * 1000);
+                const dd = String(vnDate.getUTCDate()).padStart(2, '0');
+                const mm = String(vnDate.getUTCMonth() + 1).padStart(2, '0');
+                const hh = String(vnDate.getUTCHours()).padStart(2, '0');
+                const mi = String(vnDate.getUTCMinutes()).padStart(2, '0');
+                return hh + ':' + mi + ' ' + dd + '/' + mm;
+            }
+
+            function refreshTimestamps() {
+                if (!streamEl) return;
+                streamEl.querySelectorAll('.cchat-item').forEach(function(item) {
+                    const ts = Number(item.getAttribute('data-ts') || 0);
+                    const timeSpan = item.querySelector('.cchat-time');
+                    if (ts > 0 && timeSpan) {
+                        timeSpan.textContent = '· ' + formatClientTimeAgo(ts);
+                    }
+                });
+            }
+
+            function trimStreamToPageSize() {
+                if (!streamEl) return;
+                const items = Array.from(streamEl.querySelectorAll('.cchat-item'));
+                for (let i = PAGE_SIZE; i < items.length; i++) {
+                    items[i].remove();
+                }
             }
 
             function insertAtCursor(snippet, selectOffsetStart, selectOffsetEnd) {
@@ -1100,25 +1248,74 @@ export async function handleIndex(request, env, user, renderLayout) {
                 insertAtCursor('@' + uname + ' ');
             };
 
-            function appendItemsHtml(itemsHtml, highlightNew) {
-                if (!itemsHtml || !streamEl) return;
-                const emptyNote = document.getElementById('cchatEmptyNote');
-                if (emptyNote) emptyNote.remove();
-
-                const temp = document.createElement('div');
-                temp.innerHTML = itemsHtml;
-                const nodes = Array.from(temp.children).reverse();
-
-                nodes.forEach(function(node) {
-                    const idAttr = Number(node.getAttribute('data-msg-id') || 0);
-                    if (idAttr > 0 && streamEl.querySelector('[data-msg-id="' + idAttr + '"]')) {
-                        return;
-                    }
-                    if (highlightNew) node.classList.add('is-new');
-                    streamEl.prepend(node);
-                    if (idAttr > 0) setLastId(idAttr);
-                });
+            function escapeLocalHtml(s) {
+                return String(s ?? '')
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
             }
+
+            function formatPreviewBody(raw) {
+                let txt = String(raw ?? '');
+                const iconMap = {
+                    '[smile]': '<span class="wap-anim-ico ico-bounce">😄</span>',
+                    '[lol]': '<span class="wap-anim-ico ico-shake">😂</span>',
+                    '[love]': '<span class="wap-anim-ico ico-pulse">😍</span>',
+                    '[heart]': '<span class="wap-anim-ico ico-beat">❤️</span>',
+                    '[fire]': '<span class="wap-anim-ico ico-flicker">🔥</span>',
+                    '[cool]': '<span class="wap-anim-ico ico-tilt">😎</span>',
+                    '[cry]': '<span class="wap-anim-ico ico-drop">😭</span>',
+                    '[angry]': '<span class="wap-anim-ico ico-shake">😡</span>',
+                    '[party]': '<span class="wap-anim-ico ico-spin">🎉</span>',
+                    '[star]': '<span class="wap-anim-ico ico-pulse">🌟</span>',
+                    '[wink]': '<span class="wap-anim-ico ico-tilt">😉</span>',
+                    '[hug]': '<span class="wap-anim-ico ico-beat">🥰</span>'
+                };
+                const holders = [];
+                Object.keys(iconMap).forEach(function(k, idx) {
+                    holders.push(iconMap[k]);
+                    txt = txt.split(k).join('@@ICO_' + idx + '@@');
+                });
+                txt = escapeLocalHtml(txt)
+                    .replace(/\\[color=([^\\]]+)\\]([\\s\\S]*?)\\[\\/color\\]/gi, function(_, col, inner) {
+                        const c = String(col || '').trim();
+                        const okCol = (/^#[0-9a-fA-F]{3,8}$/.test(c) || /^[a-zA-Z]{3,20}$/.test(c)) ? c : '#4ade80';
+                        return '<span style="color:' + okCol + ';font-weight:bold;">' + inner + '</span>';
+                    })
+                    .replace(/\\n/g, '<br>')
+                    .replace(/@@ICO_(\\d+)@@/g, function(_, idx) {
+                        return holders[Number(idx)] || '';
+                    });
+                return txt;
+            }
+
+            window.cchatGoPage = async function(targetPage) {
+                if (isPolling || !streamEl) return;
+                isPolling = true;
+                const p = Math.max(1, Number(targetPage || 1));
+                setStatus('Đang tải trang ' + p + '...', false);
+                try {
+                    const res = await fetch('/?ajax_chat=1&page=' + p + '&_t=' + Date.now(), {
+                        headers: { 'X-Community-Chat': '1' }
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.ok) {
+                            setCurrentPage(data.page || p);
+                            streamEl.innerHTML = data.items_html || '<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào.</div>';
+                            if (pagWrapEl) pagWrapEl.innerHTML = data.pagination_html || '';
+                            if (data.last_id) setLastId(data.last_id);
+                            refreshTimestamps();
+                            setStatus('', false);
+                        }
+                    }
+                } catch (e) {
+                } finally {
+                    isPolling = false;
+                }
+            };
 
             window.cchatSubmitForm = async function(ev) {
                 if (ev) ev.preventDefault();
@@ -1133,7 +1330,35 @@ export async function handleIndex(request, env, user, renderLayout) {
 
                 isSending = true;
                 if (sendBtnEl) sendBtnEl.disabled = true;
-                setStatus('Đang gửi...', false);
+
+                const emptyNote = document.getElementById('cchatEmptyNote');
+                if (emptyNote) emptyNote.remove();
+
+                const nowSec = Math.floor(Date.now() / 1000);
+                const tempCard = document.createElement('div');
+                tempCard.className = 'cchat-item is-new';
+                tempCard.setAttribute('data-ts', String(nowSec));
+                tempCard.innerHTML =
+                    '<div class="cchat-row-top">' +
+                        '<div class="cchat-user-meta">' +
+                            '<div class="cchat-info">' +
+                                '<div class="cchat-nick-line">' +
+                                    '<b>' + escapeLocalHtml(${JSON.stringify(String(user.display_name || user.username || 'Bạn'))}) + '</b>' +
+                                    '<span class="cchat-time">· Vừa xong</span>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="cchat-body">' + formatPreviewBody(text) + '</div>';
+
+                if (getCurrentPage() === 1 && streamEl) {
+                    streamEl.prepend(tempCard);
+                    trimStreamToPageSize();
+                }
+
+                inputEl.value = '';
+                updateCounter();
+                setStatus('', false);
 
                 try {
                     const res = await fetch('/?ajax_chat=1', {
@@ -1142,20 +1367,38 @@ export async function handleIndex(request, env, user, renderLayout) {
                             'Content-Type': 'application/json',
                             'X-Community-Chat': '1'
                         },
-                        body: JSON.stringify({ content: text })
+                        body: JSON.stringify({
+                            content: text,
+                            page: getCurrentPage()
+                        })
                     });
                     const data = await res.json();
                     if (!res.ok || !data.ok) {
+                        tempCard.remove();
                         setStatus(data.error || 'Không thể gửi tin nhắn.', true);
                     } else {
-                        appendItemsHtml(data.item_html, true);
-                        if (data.id) setLastId(data.id);
-                        inputEl.value = '';
-                        updateCounter();
-                        setStatus('Đã gửi tin nhắn!', false);
-                        setTimeout(function() { setStatus('', false); }, 1800);
+                        setCurrentPage(data.page || 1);
+                        if (typeof data.items_html === 'string' && streamEl) {
+                            streamEl.innerHTML = data.items_html || '<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào.</div>';
+                        } else {
+                            tempCard.remove();
+                        }
+                        if (pagWrapEl) {
+                            pagWrapEl.innerHTML = data.pagination_html || '';
+                        }
+                        if (data.last_id) {
+                            setLastId(data.last_id);
+                        } else if (data.id) {
+                            setLastId(data.id);
+                        }
+                        refreshTimestamps();
+                        if (data.reset) {
+                            setStatus('Đã đầy 10 trang, toàn bộ tin nhắn cũ đã được tự động xóa.', false);
+                            setTimeout(function() { setStatus('', false); }, 2500);
+                        }
                     }
                 } catch (err) {
+                    tempCard.remove();
                     setStatus('Lỗi kết nối khi gửi tin nhắn.', true);
                 } finally {
                     isSending = false;
@@ -1165,41 +1408,29 @@ export async function handleIndex(request, env, user, renderLayout) {
             };
 
             window.cchatReloadList = async function() {
-                if (isPolling || !streamEl) return;
-                isPolling = true;
-                setStatus('Đang cập nhật...', false);
-                try {
-                    const res = await fetch('/?ajax_chat=1&mode=reload&_t=' + Date.now(), {
-                        headers: { 'X-Community-Chat': '1' }
-                    });
-                    if (res.ok) {
-                        const data = await res.json();
-                        if (data.ok) {
-                            streamEl.innerHTML = data.items_html || '<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào.</div>';
-                            if (data.last_id) setLastId(data.last_id);
-                            setStatus('', false);
-                        }
-                    }
-                } catch (e) {
-                } finally {
-                    isPolling = false;
-                }
+                await window.cchatGoPage(1);
             };
 
-            async function pollNewMessages() {
-                if (isPolling || isSending) return;
+            async function pollCurrentPage() {
+                if (isPolling || isSending || !streamEl) return;
                 isPolling = true;
                 try {
-                    const lastId = getLastId();
-                    const res = await fetch('/?ajax_chat=1&mode=poll&after_id=' + lastId + '&_t=' + Date.now(), {
+                    const p = getCurrentPage();
+                    const res = await fetch('/?ajax_chat=1&page=' + p + '&_t=' + Date.now(), {
                         headers: { 'X-Community-Chat': '1' }
                     });
                     if (res.ok) {
                         const data = await res.json();
-                        if (data.ok && data.items_html) {
-                            appendItemsHtml(data.items_html, true);
+                        if (data.ok && typeof data.items_html === 'string') {
+                            const currentTopId = Number(streamEl.querySelector('.cchat-item')?.getAttribute('data-msg-id') || 0);
+                            const nextTopId = Number(data.last_id || 0);
+                            if (nextTopId !== currentTopId || p !== 1) {
+                                streamEl.innerHTML = data.items_html || '<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào.</div>';
+                                if (pagWrapEl) pagWrapEl.innerHTML = data.pagination_html || '';
+                                if (data.last_id) setLastId(data.last_id);
+                            }
+                            refreshTimestamps();
                         }
-                        if (data.last_id) setLastId(data.last_id);
                     }
                 } catch (e) {
                 } finally {
@@ -1218,7 +1449,9 @@ export async function handleIndex(request, env, user, renderLayout) {
             }
 
             renderPickers();
-            setInterval(pollNewMessages, 4000);
+            refreshTimestamps();
+            setInterval(refreshTimestamps, 15000);
+            setInterval(pollCurrentPage, 4000);
         })();
     </script>
     `;
