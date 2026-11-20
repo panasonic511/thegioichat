@@ -19,7 +19,7 @@ export const ROLE_LIMITS = {
         canChangeRoles: true,
         canAssignFounderOrSuperAdmin: true,
         canEditAllDbFields: true,
-        canBan: false // Người Sáng Lập không cần hạn chế/cơ chế ban riêng
+        canBan: true
     },
     [ROLE_TIERS.SUPER_ADMIN]: {
         key: 'super_admin',
@@ -80,22 +80,25 @@ export const ROLE_LIMITS = {
 };
 
 export function normalizeRoleKey(roleInput, isAdminFlag = 0, userId = 0) {
+    const uid = Number(userId || 0);
     const raw = String(roleInput || '').trim().toLowerCase();
 
     if (
+        uid === 1 ||
         raw === 'người sáng lập' ||
         raw === 'nguoi sang lap' ||
         raw === 'founder' ||
         raw === 'chủ wap' ||
-        raw === 'chu wap' ||
-        Number(userId || 0) === 1
+        raw === 'chu wap'
     ) {
         return 'founder';
     }
 
     if (
         raw === 'super admin' ||
+        raw === 'super_admin' ||
         raw === 'superadmin' ||
+        raw === 's.admin' ||
         raw === 'sadmin' ||
         raw === 'smod'
     ) {
@@ -108,6 +111,7 @@ export function normalizeRoleKey(roleInput, isAdminFlag = 0, userId = 0) {
         raw === 'quan tri' ||
         raw === 'quản lý' ||
         raw === 'quan ly' ||
+        raw === 'bqt' ||
         Number(isAdminFlag || 0) === 1
     ) {
         return 'admin';
@@ -126,7 +130,8 @@ export function normalizeRoleKey(roleInput, isAdminFlag = 0, userId = 0) {
 
 export function getRoleTier(userObj) {
     if (!userObj) return ROLE_TIERS.MEMBER;
-    const key = normalizeRoleKey(userObj.role, userObj.is_admin, userObj.id);
+    const uid = Number(userObj.id || userObj.user_id || 0);
+    const key = normalizeRoleKey(userObj.role, userObj.is_admin, uid);
     if (key === 'founder') return ROLE_TIERS.FOUNDER;
     if (key === 'super_admin') return ROLE_TIERS.SUPER_ADMIN;
     if (key === 'admin') return ROLE_TIERS.ADMIN;
@@ -199,6 +204,7 @@ export async function syncUserOnlineAndLevel(env, userObj, deltaMinutes = 0) {
     }
 
     const tier = getRoleTier(userObj);
+    const canonicalRoleLabel = getRoleConfig(userObj).label;
     const currentDbLevel = Number(userObj.level || 1);
     const autoLevel = calculateOnlineLevel(currentMinutes, userObj);
 
@@ -219,6 +225,7 @@ export async function syncUserOnlineAndLevel(env, userObj, deltaMinutes = 0) {
 
     return {
         ...userObj,
+        role: userObj.role || canonicalRoleLabel,
         online_minutes: currentMinutes,
         level: nextLevel,
         last_seen: nowSec
@@ -329,7 +336,6 @@ export function sanitizeManagementUpdates(actor, targetUser, payload = {}) {
         }
     }
 
-    // Đảm bảo target tier không vượt quá giới hạn của actor nếu có thay đổi role
     const effectiveTargetTier = updates.role
         ? getRoleTier({ ...targetUser, role: updates.role })
         : getRoleTier(targetUser);
@@ -344,10 +350,6 @@ export function sanitizeManagementUpdates(actor, targetUser, payload = {}) {
  * Thực thi Ban ID / Unban ID theo quyền của actor
  */
 export async function applyBanIdAction(env, actor, targetUser, isBanned, reason = '') {
-    const actorTier = getRoleTier(actor);
-    if (actorTier === ROLE_TIERS.FOUNDER) {
-        return { ok: false, error: 'Người Sáng Lập không sử dụng chức năng Ban ID.' };
-    }
     const actorCfg = getRoleConfig(actor);
     if (!actorCfg.canBan) {
         return { ok: false, error: 'Cấp bậc của bạn không có quyền Ban ID.' };
