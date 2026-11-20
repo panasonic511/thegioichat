@@ -115,36 +115,47 @@ function parseTimestampToSeconds(raw) {
     return 0;
 }
 
-function isUserCurrentlyOnline(u, nowSec, activeSessionUserIds, currentUserId) {
+function isExplicitlyOffline(u) {
+    if (!u) return true;
+    if (u.is_online !== undefined && u.is_online !== null && String(u.is_online).trim() !== '') {
+        const raw = String(u.is_online).trim().toLowerCase();
+        if (raw === '0' || raw === 'false' || raw === 'off' || raw === 'offline') {
+            return true;
+        }
+    }
+    if (u.online_status !== undefined && u.online_status !== null) {
+        const st = String(u.online_status).trim().toLowerCase();
+        if (st === '0' || st === 'false' || st === 'off' || st === 'offline') {
+            return true;
+        }
+    }
+    return false;
+}
+
+function isUserCurrentlyOnline(u, nowSec, sessionInfo) {
     const uid = Number(u.id || 0);
     if (!uid) return false;
 
-    if (currentUserId && uid === Number(currentUserId)) {
-        return true;
+    if (isExplicitlyOffline(u)) {
+        return false;
     }
 
-    if (activeSessionUserIds && activeSessionUserIds.has(uid)) {
-        return true;
-    }
-
-    if (u.is_online !== undefined && u.is_online !== null && String(u.is_online).trim() !== '') {
-        const flag = Number(u.is_online);
-        if (flag === 0 || String(u.is_online).toLowerCase() === 'false' || String(u.is_online).toLowerCase() === 'off') {
-            return false;
-        }
-    }
-
-    const lastSeenSec = Math.max(
+    const lastActivitySec = Math.max(
         parseTimestampToSeconds(u.last_seen),
         parseTimestampToSeconds(u.last_active),
         parseTimestampToSeconds(u.updated_at)
     );
 
-    if (lastSeenSec > 0) {
-        return (nowSec - lastSeenSec) <= 300;
+    const withinFiveMinutes = lastActivitySec > 0 && (nowSec - lastActivitySec) <= 300;
+    if (!withinFiveMinutes) {
+        return false;
     }
 
-    return false;
+    if (sessionInfo && sessionInfo.hasAnySessionRows) {
+        return sessionInfo.activeUserIds.has(uid);
+    }
+
+    return true;
 }
 
 async function getFriendUserIds(env, currentUserId) {
@@ -184,21 +195,25 @@ async function getFriendUserIds(env, currentUserId) {
     return friendIds;
 }
 
-async function getActiveSessionUserIds(env, nowSec) {
-    const ids = new Set();
+async function getActiveSessionInfo(env, nowSec) {
+    const activeUserIds = new Set();
+    let hasAnySessionRows = false;
+
     try {
         const res = await env.DB.prepare(`SELECT user_id, expires_at, created_at FROM sessions`).all();
-        if (res && Array.isArray(res.results)) {
+        if (res && Array.isArray(res.results) && res.results.length > 0) {
+            hasAnySessionRows = true;
             for (const s of res.results) {
                 const uid = Number(s.user_id || 0);
                 if (!uid) continue;
                 const expSec = parseTimestampToSeconds(s.expires_at);
-                if (expSec > 0 && expSec < nowSec) continue;
-                ids.add(uid);
+                if (expSec > 0 && expSec <= nowSec) continue;
+                activeUserIds.add(uid);
             }
         }
     } catch (e) {}
-    return ids;
+
+    return { activeUserIds, hasAnySessionRows };
 }
 
 export async function getOnlineUsers(env, currentUser, currentPath = '/online') {
@@ -208,15 +223,23 @@ export async function getOnlineUsers(env, currentUser, currentPath = '/online') 
 
     if (currentUserId > 0) {
         try {
-            await env.DB.prepare(`UPDATE users SET last_seen = ?, current_location = ? WHERE id = ?`)
-                .bind(nowSec, activeLocationLabel, currentUserId)
-                .run();
+            await env.DB.prepare(`
+                UPDATE users
+                SET last_seen = ?, current_location = ?, is_online = 1
+                WHERE id = ?
+            `).bind(nowSec, activeLocationLabel, currentUserId).run();
         } catch (e) {
             try {
-                await env.DB.prepare(`UPDATE users SET last_seen = ? WHERE id = ?`)
-                    .bind(nowSec, currentUserId)
+                await env.DB.prepare(`UPDATE users SET last_seen = ?, current_location = ? WHERE id = ?`)
+                    .bind(nowSec, activeLocationLabel, currentUserId)
                     .run();
-            } catch (e2) {}
+            } catch (e2) {
+                try {
+                    await env.DB.prepare(`UPDATE users SET last_seen = ? WHERE id = ?`)
+                        .bind(nowSec, currentUserId)
+                        .run();
+                } catch (e3) {}
+            }
         }
     }
 
@@ -225,7 +248,8 @@ export async function getOnlineUsers(env, currentUser, currentPath = '/online') 
         const res = await env.DB.prepare(`
             SELECT id, username, display_name, avatar, border_color, avatar_glow,
                    name_color, name_glow, name_border, name_border_glow,
-                   active_icon, role, is_admin, gender, level, last_seen, current_location
+                   active_icon, role, is_admin, gender, level,
+                   last_seen, last_active, updated_at, is_online, current_location
             FROM users
             LIMIT 500
         `).all();
@@ -235,7 +259,7 @@ export async function getOnlineUsers(env, currentUser, currentPath = '/online') 
             const res2 = await env.DB.prepare(`
                 SELECT id, username, display_name, avatar, border_color, avatar_glow,
                        name_color, name_glow, name_border, name_border_glow,
-                       active_icon, role, is_admin, gender, level
+                       active_icon, role, is_admin, gender, level, last_seen, current_location
                 FROM users
                 LIMIT 500
             `).all();
@@ -245,27 +269,21 @@ export async function getOnlineUsers(env, currentUser, currentPath = '/online') 
         }
     }
 
-    const activeSessionUserIds = await getActiveSessionUserIds(env, nowSec);
+    const sessionInfo = await getActiveSessionInfo(env, nowSec);
 
-    const onlineUsers = rawUsers.filter(u =>
-        isUserCurrentlyOnline(u, nowSec, activeSessionUserIds, currentUserId)
-    );
-
-    if (currentUser && currentUser.id) {
-        const syncedSelf = {
-            ...currentUser,
-            current_location: activeLocationLabel
-        };
-        const existingIdx = onlineUsers.findIndex(u => Number(u.id) === currentUserId);
-        if (existingIdx >= 0) {
-            onlineUsers[existingIdx] = {
-                ...onlineUsers[existingIdx],
-                current_location: activeLocationLabel
-            };
-        } else {
-            onlineUsers.push(syncedSelf);
-        }
-    }
+    const onlineUsers = rawUsers
+        .map(u => {
+            if (currentUserId > 0 && Number(u.id || 0) === currentUserId) {
+                return {
+                    ...u,
+                    last_seen: nowSec,
+                    is_online: 1,
+                    current_location: activeLocationLabel
+                };
+            }
+            return u;
+        })
+        .filter(u => isUserCurrentlyOnline(u, nowSec, sessionInfo));
 
     onlineUsers.sort(compareUsersByRankAndLevel);
     return onlineUsers;
@@ -338,8 +356,8 @@ export async function handleOnline(request, env, user, renderLayout, url) {
     let rowsHtml = '';
     if (pageItems.length === 0) {
         const emptyMsg = tabParam === 'friends'
-            ? 'Hiện chưa có bạn bè nào đang trực tuyến.'
-            : 'Không có người dùng nào đang trực tuyến trong mục này.';
+            ? 'Hiện chưa có bạn bè nào đang trực tuyến trong 5 phút qua.'
+            : 'Không có người dùng nào đang trực tuyến trong 5 phút qua.';
         rowsHtml = `<div class="online-empty">${escapeHtml(emptyMsg)}</div>`;
     } else {
         rowsHtml = pageItems.map((uItem, idx) => {
@@ -356,14 +374,14 @@ export async function handleOnline(request, env, user, renderLayout, url) {
 
             const genderText = formatGenderLabel(uItem.gender);
             const locationText = formatLocationLabel(uItem, currentPath);
-            const isSelf = currentUserId === uid;
-            const mailHref = isSelf ? '/mail/box' : `/mail/chat?user=${uid}`;
+            const nickLabel = escapeHtml(uItem.display_name || uItem.username || `ID #${uid}`);
+            const mailHref = `/mail/chat?user=${uid}`;
 
             return `
                 <div class="online-user-row ${idx % 2 === 0 ? 'even' : 'odd'}">
                     <div class="online-user-left">
                         <a href="/profile?user=${uid}" class="online-avatar-link">
-                            <img src="${escapeHtml(avSrc)}" alt="${escapeHtml(uItem.display_name || uItem.username || '')}" style="${escapeHtml(avStyle)}">
+                            <img src="${escapeHtml(avSrc)}" alt="${nickLabel}" style="${escapeHtml(avStyle)}">
                         </a>
                         <div class="online-user-info">
                             <div class="online-name-row">
@@ -374,7 +392,12 @@ export async function handleOnline(request, env, user, renderLayout, url) {
                             <div class="online-meta-line">▸ Vị trí: <span class="online-val-gold">${escapeHtml(locationText)}</span></div>
                         </div>
                     </div>
-                    <a href="${escapeHtml(mailHref)}" class="online-mail-btn" title="Nhắn tin">✉️</a>
+                    <a href="${escapeHtml(mailHref)}" class="online-mail-btn" title="Nhắn tin cho ${nickLabel}" aria-label="Nhắn tin cho ${nickLabel}">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect x="2" y="4" width="20" height="16" rx="2.5"></rect>
+                            <path d="m22 6-10 7L2 6"></path>
+                        </svg>
+                    </a>
                 </div>
             `;
         }).join('');
@@ -547,21 +570,26 @@ export async function handleOnline(request, env, user, renderLayout, url) {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 34px;
-            height: 28px;
-            background: #11151c;
-            border: 1px solid #2b3340;
-            border-radius: 4px;
-            color: #cbd5e1;
-            font-size: 14px;
+            width: 42px;
+            height: 36px;
+            background: linear-gradient(180deg, #162436, #0f1724);
+            border: 1px solid #2b4c7e;
+            border-radius: 7px;
+            color: #38bdf8;
             text-decoration: none;
             flex-shrink: 0;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+            transition: transform 0.12s ease, background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
         }
         .online-mail-btn:hover {
-            background: #1a212c;
-            border-color: #4ade80;
-            color: #fff;
+            background: linear-gradient(180deg, #1d4ed8, #1e40af);
+            border-color: #60a5fa;
+            color: #ffffff;
+            transform: translateY(-1px);
             text-decoration: none;
+        }
+        .online-mail-btn:active {
+            transform: translateY(0);
         }
         .online-empty {
             padding: 24px 12px;
