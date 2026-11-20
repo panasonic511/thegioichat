@@ -322,7 +322,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
 
                 if (content.trim() !== '' || imageUrl.trim() !== '') {
                     const insertedPost = await env.DB.prepare(
-                        "INSERT INTO posts (user_id, content, image_url, created_at) VALUES (?, ?, ?, datetime('now')) RETURNING id"
+                        "INSERT INTO posts (user_id, content, image_url, created_at) VALUES (?, ?, ?, datetime('now')) RETURNING id, created_at"
                     ).bind(user.id, content, imageUrl).first();
 
                     if (imageUrl.trim() !== '' && insertedPost && insertedPost.id) {
@@ -335,6 +335,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                         return new Response(JSON.stringify({
                             success: true,
                             id: Number(insertedPost?.id || 0),
+                            createdAt: insertedPost?.created_at || 'Vừa xong',
                             imageUrl: normalizeMediaUrl(imageUrl || '')
                         }), {
                             headers: { 'Content-Type': 'application/json;charset=UTF-8' }
@@ -342,32 +343,59 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     }
                 }
             } else if (action === 'like_post') {
-                const postId = formData.get('post_id');
-                const existing = await env.DB.prepare(
-                    "SELECT id FROM post_likes WHERE post_id = ? AND user_id = ?"
-                ).bind(postId, user.id).first();
+                const postId = parseInt(formData.get('post_id'), 10);
+                if (!isNaN(postId) && postId > 0) {
+                    const existing = await env.DB.prepare(
+                        "SELECT id FROM post_likes WHERE post_id = ? AND user_id = ?"
+                    ).bind(postId, user.id).first();
 
-                if (existing) {
-                    await env.DB.prepare("DELETE FROM post_likes WHERE id = ?").bind(existing.id).run();
-                } else {
-                    await env.DB.prepare(
-                        "INSERT INTO post_likes (post_id, user_id) VALUES (?, ?)"
-                    ).bind(postId, user.id).run();
+                    let liked = false;
+                    if (existing) {
+                        await env.DB.prepare("DELETE FROM post_likes WHERE id = ?").bind(existing.id).run();
+                        liked = false;
+                    } else {
+                        await env.DB.prepare(
+                            "INSERT INTO post_likes (post_id, user_id) VALUES (?, ?)"
+                        ).bind(postId, user.id).run();
+                        liked = true;
+                    }
+
+                    const countRow = await env.DB.prepare(
+                        "SELECT COUNT(*) AS cnt FROM post_likes WHERE post_id = ?"
+                    ).bind(postId).first();
+
+                    if (request.headers.get('X-Requested-With') === 'XMLHttpRequest') {
+                        return new Response(JSON.stringify({
+                            success: true,
+                            postId,
+                            liked,
+                            likeCount: Number(countRow?.cnt || 0)
+                        }), {
+                            headers: { 'Content-Type': 'application/json;charset=UTF-8' }
+                        });
+                    }
                 }
             } else if (action === 'add_comment') {
-                const postId = formData.get('post_id');
+                const postId = parseInt(formData.get('post_id'), 10);
                 const commentText = String(formData.get('comment') || '').trim();
                 let insertedCommentId = 0;
-                if (commentText !== '') {
+                if (!isNaN(postId) && postId > 0 && commentText !== '') {
                     const insCmt = await env.DB.prepare(
                         "INSERT INTO post_comments (post_id, user_id, comment, created_at) VALUES (?, ?, ?, datetime('now')) RETURNING id"
                     ).bind(postId, user.id, commentText).first();
                     insertedCommentId = Number(insCmt?.id || 0);
                 }
+                const countRow = (!isNaN(postId) && postId > 0)
+                    ? await env.DB.prepare("SELECT COUNT(*) AS cnt FROM post_comments WHERE post_id = ?").bind(postId).first()
+                    : { cnt: 0 };
+
                 if (request.headers.get('X-Requested-With') === 'XMLHttpRequest') {
                     return new Response(JSON.stringify({
                         success: true,
-                        id: insertedCommentId
+                        id: insertedCommentId,
+                        postId,
+                        comment: commentText,
+                        commentCount: Number(countRow?.cnt || 0)
                     }), {
                         headers: { 'Content-Type': 'application/json;charset=UTF-8' }
                     });
@@ -732,7 +760,8 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     id: p.user_id
                 });
                 const likeCount = likeCountMap.get(p.id) || 0;
-                const heartColor = likedByMeSet.has(p.id) ? '#ff3333' : '#888';
+                const isLiked = likedByMeSet.has(p.id);
+                const heartColor = isLiked ? '#ff3333' : '#888';
                 const comments = commentsByPostMap.get(p.id) || [];
 
                 let commentsHtml = '';
@@ -768,7 +797,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 ` : '';
 
                 postsHtml += `
-                <div id="post-card-${p.id}" data-post-item="1" style="background: #121212; border: 1px solid #2c2c2c; border-radius: 6px; padding: 12px; margin-bottom: 12px;">
+                <div id="post-card-${p.id}" data-post-id="${p.id}" data-post-item="1" style="background: #121212; border: 1px solid #2c2c2c; border-radius: 6px; padding: 12px; margin-bottom: 12px;">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                         <div style="display: flex; align-items: center; gap: 10px;">
                             <div class="feed-post-avatar-wrap" style="min-width: 36px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
@@ -786,30 +815,30 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
 
                     <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #222; margin-top: 10px; padding-top: 8px;">
                         <div style="display: flex; align-items: center; gap: 14px;">
-                            <form onsubmit="submitAjax(event, this)" style="margin: 0;">
+                            <form onsubmit="submitLikeAjax(event, ${p.id})" style="margin: 0;">
                                 <input type="hidden" name="action" value="like_post">
                                 <input type="hidden" name="post_id" value="${p.id}">
-                                <button type="submit" style="background: none; border: none; color: ${heartColor}; cursor: pointer; font-size: 14px; padding: 0;">
-                                    ❤️ <span style="font-size: 11px; color: #ccc;" id="like-count-${p.id}">${likeCount}</span>
+                                <button type="submit" data-role="like-btn" data-liked="${isLiked ? '1' : '0'}" style="background: none; border: none; color: ${heartColor}; cursor: pointer; font-size: 14px; padding: 0;">
+                                    ❤️ <span style="font-size: 11px; color: #ccc;" data-role="like-count" id="like-count-${p.id}">${likeCount}</span>
                                 </button>
                             </form>
 
                             <button type="button" onclick="toggleCommentBox(${p.id})" style="background: none; border: none; color: #aaa; cursor: pointer; font-size: 13px; padding: 0; display: flex; align-items: center; gap: 4px;">
-                                💬 <span style="font-size: 11px;" id="comm-count-${p.id}">${comments.length}</span> bình luận
+                                💬 <span style="font-size: 11px;" data-role="comm-count" id="comm-count-${p.id}">${comments.length}</span> bình luận
                             </button>
                         </div>
                         <span style="font-size: 10px; color: #666;">Tương tác</span>
                     </div>
 
-                    <div style="margin-top: 6px;" id="comment-list-${p.id}">
+                    <div style="margin-top: 6px;" data-role="comment-list" id="comment-list-${p.id}">
                         ${commentsHtml}
                     </div>
 
-                    <div id="comment-box-${p.id}" style="display: none; margin-top: 8px;">
+                    <div data-role="comment-box" id="comment-box-${p.id}" style="display: none; margin-top: 8px;">
                         <form onsubmit="submitCommentAjax(event, ${p.id})" style="display: flex; gap: 6px;">
                             <input type="hidden" name="action" value="add_comment">
                             <input type="hidden" name="post_id" value="${p.id}">
-                            <input type="text" name="comment" id="comment-input-${p.id}" placeholder="Viết bình luận của bạn..." style="flex: 1; background: #0a0a0a; color: #fff; border: 1px solid #333; padding: 6px; font-size: 11px; border-radius: 4px;" required>
+                            <input type="text" name="comment" data-role="comment-input" id="comment-input-${p.id}" placeholder="Viết bình luận của bạn..." style="flex: 1; background: #0a0a0a; color: #fff; border: 1px solid #333; padding: 6px; font-size: 11px; border-radius: 4px;" required>
                             <button type="submit" style="background: #0055ff; color: #fff; border: none; padding: 6px 12px; font-size: 11px; border-radius: 4px; cursor: pointer;">Gửi</button>
                         </form>
                     </div>
@@ -977,6 +1006,12 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
         let currentStoryIndex = -1;
         let isSubmittingStory = false;
         let preparedStoryBlob = null;
+
+        function getPostCardEl(postId) {
+            const numId = Number(postId || 0);
+            if (!numId) return null;
+            return document.querySelector('#feed-posts-list [data-post-id="' + numId + '"]') || document.getElementById('post-card-' + numId);
+        }
 
         function setStoryProgress(pct, labelText) {
             const wrap = document.getElementById('story-progress-wrap');
@@ -1656,10 +1691,15 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
         }
 
         function toggleCommentBox(postId) {
-            const box = document.getElementById('comment-box-' + postId);
+            const numId = Number(postId || 0);
+            if (!numId) return;
+            const card = getPostCardEl(numId);
+            const box = (card && card.querySelector('[data-role="comment-box"]')) || document.getElementById('comment-box-' + numId);
+            const input = (card && card.querySelector('[data-role="comment-input"]')) || document.getElementById('comment-input-' + numId);
+            if (!box) return;
             if (box.style.display === 'none' || box.style.display === '') {
                 box.style.display = 'block';
-                document.getElementById('comment-input-' + postId).focus();
+                if (input) input.focus();
             } else {
                 box.style.display = 'none';
             }
@@ -1712,73 +1752,84 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             reader.readAsDataURL(file);
         }
 
-        async function submitAjax(event, form) {
+        async function submitLikeAjax(event, postId) {
             event.preventDefault();
-            const formData = new FormData(form);
-            const btn = form.querySelector('button');
+            const numId = Number(postId || 0);
+            if (!numId) return;
+
+            const card = getPostCardEl(numId);
+            const btn = (card && card.querySelector('[data-role="like-btn"]')) || event.target.querySelector('button');
+            const spanCount = (card && card.querySelector('[data-role="like-count"]')) || document.getElementById('like-count-' + numId);
+            if (!btn || !spanCount) return;
+
+            const prevLiked = btn.getAttribute('data-liked') === '1' || btn.style.color === 'rgb(255, 51, 51)';
+            const prevCount = parseInt(spanCount.innerText || '0', 10) || 0;
+            const nextLiked = !prevLiked;
+            const nextCount = Math.max(0, prevLiked ? prevCount - 1 : prevCount + 1);
+
+            btn.setAttribute('data-liked', nextLiked ? '1' : '0');
+            btn.style.color = nextLiked ? '#ff3333' : '#888';
+            spanCount.innerText = String(nextCount);
+
+            const formData = new FormData();
+            formData.append('action', 'like_post');
+            formData.append('post_id', String(numId));
+
             try {
                 const res = await fetch(window.location.href, {
                     method: 'POST',
                     headers: { 'X-Requested-With': 'XMLHttpRequest' },
                     body: formData
                 });
-                if (res.ok) {
-                    const spanCount = btn.querySelector('span:nth-child(2)');
-                    let count = parseInt(spanCount.innerText);
-                    if (btn.style.color === 'rgb(255, 51, 51)') {
-                        btn.style.color = '#888';
-                        spanCount.innerText = count - 1;
-                    } else {
-                        btn.style.color = '#ff3333';
-                        spanCount.innerText = count + 1;
-                    }
+                const data = await res.json().catch(() => null);
+                if (!res.ok || (data && data.success === false)) {
+                    throw new Error('Like failed');
+                }
+                if (data && typeof data.liked === 'boolean') {
+                    btn.setAttribute('data-liked', data.liked ? '1' : '0');
+                    btn.style.color = data.liked ? '#ff3333' : '#888';
+                }
+                if (data && typeof data.likeCount === 'number') {
+                    spanCount.innerText = String(data.likeCount);
                 }
             } catch (e) {
-                window.location.reload();
+                btn.setAttribute('data-liked', prevLiked ? '1' : '0');
+                btn.style.color = prevLiked ? '#ff3333' : '#888';
+                spanCount.innerText = String(prevCount);
             }
         }
 
         async function submitCommentAjax(event, postId) {
             event.preventDefault();
-            const input = document.getElementById('comment-input-' + postId);
+            const numId = Number(postId || 0);
+            if (!numId) return;
+
+            const card = getPostCardEl(numId);
+            const input = (card && card.querySelector('[data-role="comment-input"]')) || document.getElementById('comment-input-' + numId);
+            const commentList = (card && card.querySelector('[data-role="comment-list"]')) || document.getElementById('comment-list-' + numId);
+            const cntSpan = (card && card.querySelector('[data-role="comm-count"]')) || document.getElementById('comm-count-' + numId);
+
             const text = input ? input.value.trim() : '';
-            if (!text) return;
+            if (!text || !commentList) return;
 
             const esc = window.wapOptimistic ? window.wapOptimistic.escapeHtml : escapeHtml;
-            const formData = new FormData();
-            formData.append('action', 'add_comment');
-            formData.append('post_id', postId);
-            formData.append('comment', text);
+            const prevText = text;
+            const prevCount = cntSpan ? (parseInt(cntSpan.innerText || '0', 10) || 0) : 0;
 
             if (input) input.value = '';
-
-            const cntSpan = document.getElementById('comm-count-' + postId);
-            const prevCount = cntSpan ? parseInt(cntSpan.innerText || '0', 10) : 0;
             if (cntSpan) cntSpan.innerText = String(prevCount + 1);
 
-            const tempCommentHtml =
-                '<div style="font-size: 11px; margin-top: 4px; border-top: 1px solid #222; padding-top: 4px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">' +
-                    '<span style="display: inline-flex; align-items: center; gap: 3px; flex-wrap: wrap;">' + FEED_ACTOR_NAME_HTML + '</span>: ' +
-                    '<span style="color: #ddd;">' + esc(text) + '</span>' +
-                '</div>';
+            const itemEl = document.createElement('div');
+            itemEl.setAttribute('style', 'font-size: 11px; margin-top: 4px; border-top: 1px solid #222; padding-top: 4px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap;');
+            itemEl.innerHTML =
+                '<span style="display: inline-flex; align-items: center; gap: 3px; flex-wrap: wrap;">' + FEED_ACTOR_NAME_HTML + '</span>: ' +
+                '<span style="color: #ddd;">' + esc(text) + '</span>';
+            commentList.appendChild(itemEl);
 
-            if (window.wapOptimistic) {
-                await window.wapOptimistic.prepend({
-                    container: '#comment-list-' + postId,
-                    tempHtml: tempCommentHtml,
-                    url: window.location.href,
-                    fetchOptions: {
-                        method: 'POST',
-                        headers: { 'X-Requested-With': 'XMLHttpRequest' },
-                        body: formData
-                    },
-                    onError: function() {
-                        if (cntSpan) cntSpan.innerText = String(prevCount);
-                        if (input && !input.value) input.value = text;
-                    }
-                });
-                return;
-            }
+            const formData = new FormData();
+            formData.append('action', 'add_comment');
+            formData.append('post_id', String(numId));
+            formData.append('comment', text);
 
             try {
                 const res = await fetch(window.location.href, {
@@ -1786,9 +1837,17 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     headers: { 'X-Requested-With': 'XMLHttpRequest' },
                     body: formData
                 });
-                if (res.ok) window.location.reload();
+                const data = await res.json().catch(() => null);
+                if (!res.ok || (data && data.success === false)) {
+                    throw new Error('Comment failed');
+                }
+                if (data && typeof data.commentCount === 'number' && cntSpan) {
+                    cntSpan.innerText = String(data.commentCount);
+                }
             } catch (e) {
-                window.location.reload();
+                itemEl.remove();
+                if (cntSpan) cntSpan.innerText = String(prevCount);
+                if (input && !input.value) input.value = prevText;
             }
         }
 
@@ -1796,6 +1855,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             event.preventDefault();
             if (!confirm("Bạn có chắc chắn muốn xóa vĩnh viễn bài viết này không?")) return;
 
+            const numId = Number(postId || 0);
             const formData = new FormData(event.target);
             try {
                 const res = await fetch(window.location.href, {
@@ -1804,18 +1864,14 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     body: formData
                 });
                 if (res.ok) {
-                    const card = document.getElementById('post-card-' + postId);
+                    const card = getPostCardEl(numId) || document.getElementById('post-card-' + numId);
                     if (card) {
                         card.style.transition = 'opacity 0.3s ease';
                         card.style.opacity = '0';
                         setTimeout(() => card.remove(), 300);
-                    } else {
-                        window.location.reload();
                     }
                 }
-            } catch (e) {
-                window.location.reload();
-            }
+            } catch (e) {}
         }
 
         function buildFeedPostCardHtml(opts) {
@@ -1844,11 +1900,11 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 : '';
 
             const likeControlHtml = (postId > 0 && !isTemp)
-                ? '<form onsubmit="submitAjax(event, this)" style="margin: 0;">' +
+                ? '<form onsubmit="submitLikeAjax(event, ' + postId + ')" style="margin: 0;">' +
                     '<input type="hidden" name="action" value="like_post">' +
                     '<input type="hidden" name="post_id" value="' + postId + '">' +
-                    '<button type="submit" style="background: none; border: none; color: #888; cursor: pointer; font-size: 14px; padding: 0;">' +
-                      '❤️ <span style="font-size: 11px; color: #ccc;" id="like-count-' + postId + '">' + likeCount + '</span>' +
+                    '<button type="submit" data-role="like-btn" data-liked="0" style="background: none; border: none; color: #888; cursor: pointer; font-size: 14px; padding: 0;">' +
+                      '❤️ <span style="font-size: 11px; color: #ccc;" data-role="like-count" id="like-count-' + postId + '">' + likeCount + '</span>' +
                     '</button>' +
                   '</form>'
                 : '<span style="color: #888; font-size: 14px; display: inline-flex; align-items: center; gap: 4px;">' +
@@ -1857,25 +1913,25 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
 
             const commentBtnHtml = (postId > 0 && !isTemp)
                 ? '<button type="button" onclick="toggleCommentBox(' + postId + ')" style="background: none; border: none; color: #aaa; cursor: pointer; font-size: 13px; padding: 0; display: flex; align-items: center; gap: 4px;">' +
-                    '💬 <span style="font-size: 11px;" id="comm-count-' + postId + '">' + commentCount + '</span> bình luận' +
+                    '💬 <span style="font-size: 11px;" data-role="comm-count" id="comm-count-' + postId + '">' + commentCount + '</span> bình luận' +
                   '</button>'
                 : '<span style="color: #aaa; font-size: 13px; display: inline-flex; align-items: center; gap: 4px;">' +
                     '💬 <span style="font-size: 11px;">' + commentCount + '</span> bình luận' +
                   '</span>';
 
             const commentBoxHtml = (postId > 0 && !isTemp)
-                ? '<div style="margin-top: 6px;" id="comment-list-' + postId + '"></div>' +
-                  '<div id="comment-box-' + postId + '" style="display: none; margin-top: 8px;">' +
+                ? '<div style="margin-top: 6px;" data-role="comment-list" id="comment-list-' + postId + '"></div>' +
+                  '<div data-role="comment-box" id="comment-box-' + postId + '" style="display: none; margin-top: 8px;">' +
                     '<form onsubmit="submitCommentAjax(event, ' + postId + ')" style="display: flex; gap: 6px;">' +
                       '<input type="hidden" name="action" value="add_comment">' +
                       '<input type="hidden" name="post_id" value="' + postId + '">' +
-                      '<input type="text" name="comment" id="comment-input-' + postId + '" placeholder="Viết bình luận của bạn..." style="flex: 1; background: #0a0a0a; color: #fff; border: 1px solid #333; padding: 6px; font-size: 11px; border-radius: 4px;" required>' +
+                      '<input type="text" name="comment" data-role="comment-input" id="comment-input-' + postId + '" placeholder="Viết bình luận của bạn..." style="flex: 1; background: #0a0a0a; color: #fff; border: 1px solid #333; padding: 6px; font-size: 11px; border-radius: 4px;" required>' +
                       '<button type="submit" style="background: #0055ff; color: #fff; border: none; padding: 6px 12px; font-size: 11px; border-radius: 4px; cursor: pointer;">Gửi</button>' +
                     '</form>' +
                   '</div>'
                 : '<div style="margin-top: 6px;"></div>';
 
-            return '<div id="' + (postId > 0 ? ('post-card-' + postId) : '') + '" data-post-item="1" style="background: #121212; border: 1px solid #2c2c2c; border-radius: 6px; padding: 12px; margin-bottom: 12px;">' +
+            return '<div id="' + (postId > 0 ? ('post-card-' + postId) : '') + '"' + (postId > 0 ? (' data-post-id="' + postId + '"') : '') + ' data-post-item="1" style="background: #121212; border: 1px solid #2c2c2c; border-radius: 6px; padding: 12px; margin-bottom: 12px;">' +
                 '<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">' +
                     '<div style="display: flex; align-items: center; gap: 10px;">' +
                         '<div class="feed-post-avatar-wrap" style="min-width: 36px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">' +
@@ -1907,17 +1963,25 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             const imgInput = form.querySelector('input[name="image_url"]');
             const fileInput = form.querySelector('input[name="post_file"]');
             const statusEl = document.getElementById('post-compress-status');
+            const submitBtn = form.querySelector('button[type="submit"]');
             const textVal = textarea ? textarea.value.trim() : '';
             const imgVal = imgInput ? imgInput.value.trim() : '';
-            const hasFile = fileInput && fileInput.files && fileInput.files.length > 0;
+            const selectedFile = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
 
-            if (!textVal && !imgVal && !hasFile) return;
+            if (!textVal && !imgVal && !selectedFile) return;
+
+            let localPreviewUrl = imgVal;
+            let objectPreviewUrl = '';
+            if (!localPreviewUrl && selectedFile && typeof URL !== 'undefined' && URL.createObjectURL) {
+                objectPreviewUrl = URL.createObjectURL(selectedFile);
+                localPreviewUrl = objectPreviewUrl;
+            }
 
             const tempPostHtml = buildFeedPostCardHtml({
                 id: 0,
                 timeText: 'Vừa xong',
                 content: textVal,
-                imageUrl: imgVal,
+                imageUrl: localPreviewUrl,
                 likeCount: 0,
                 commentCount: 0,
                 canDelete: false,
@@ -1930,37 +1994,18 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             if (fileInput) fileInput.value = '';
             if (statusEl) statusEl.innerText = '';
 
-            if (window.wapOptimistic && !hasFile) {
-                await window.wapOptimistic.prepend({
-                    container: '#feed-posts-list',
-                    tempHtml: tempPostHtml,
-                    hideEmptySelectors: ['#feedEmptyNote'],
-                    url: window.location.href,
-                    fetchOptions: {
-                        method: 'POST',
-                        headers: { 'X-Requested-With': 'XMLHttpRequest' },
-                        body: formData
-                    },
-                    onSuccess: function(data, tempEl) {
-                        if (data && data.id) {
-                            tempEl.outerHTML = buildFeedPostCardHtml({
-                                id: Number(data.id),
-                                timeText: 'Vừa xong',
-                                content: textVal,
-                                imageUrl: data.imageUrl || imgVal,
-                                likeCount: 0,
-                                commentCount: 0,
-                                canDelete: FEED_CAN_DELETE_OWN,
-                                isTemp: false
-                            });
-                        }
-                    },
-                    onError: function() {
-                        if (textarea && !textarea.value) textarea.value = textVal;
-                    }
-                });
-                return;
+            const feedContainer = document.getElementById('feed-posts-list');
+            const emptyNote = document.getElementById('feedEmptyNote');
+            if (emptyNote) emptyNote.style.display = 'none';
+
+            const tempWrapper = document.createElement('div');
+            tempWrapper.innerHTML = tempPostHtml;
+            const tempEl = tempWrapper.firstElementChild;
+            if (feedContainer && tempEl) {
+                feedContainer.insertBefore(tempEl, feedContainer.firstChild);
             }
+
+            if (submitBtn) submitBtn.disabled = true;
 
             try {
                 const res = await fetch(window.location.href, {
@@ -1968,9 +2013,46 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     headers: { 'X-Requested-With': 'XMLHttpRequest' },
                     body: formData
                 });
-                if (res.ok) window.location.reload();
-            } catch (e) {
-                window.location.reload();
+                const data = await res.json().catch(() => null);
+                if (!res.ok || !data || data.success === false) {
+                    throw new Error((data && data.error) || 'Đăng bài thất bại');
+                }
+
+                const realId = Number(data.id || 0);
+                const finalImgUrl = data.imageUrl || imgVal || '';
+                if (tempEl && realId > 0) {
+                    const finalWrapper = document.createElement('div');
+                    finalWrapper.innerHTML = buildFeedPostCardHtml({
+                        id: realId,
+                        timeText: data.createdAt || 'Vừa xong',
+                        content: textVal,
+                        imageUrl: finalImgUrl,
+                        likeCount: 0,
+                        commentCount: 0,
+                        canDelete: FEED_CAN_DELETE_OWN,
+                        isTemp: false
+                    });
+                    if (finalWrapper.firstElementChild) {
+                        tempEl.replaceWith(finalWrapper.firstElementChild);
+                    }
+                }
+            } catch (err) {
+                if (tempEl) tempEl.remove();
+                if (emptyNote && feedContainer && feedContainer.querySelectorAll('[data-post-item="1"]').length === 0) {
+                    emptyNote.style.display = '';
+                }
+                if (textarea && !textarea.value) textarea.value = textVal;
+                if (statusEl) {
+                    statusEl.innerText = '❌ ' + (err && err.message ? err.message : 'Lỗi đăng bài');
+                    statusEl.style.color = '#ff5555';
+                }
+            } finally {
+                if (objectPreviewUrl && typeof URL !== 'undefined' && URL.revokeObjectURL) {
+                    setTimeout(() => {
+                        try { URL.revokeObjectURL(objectPreviewUrl); } catch (e) {}
+                    }, 1000);
+                }
+                if (submitBtn) submitBtn.disabled = false;
             }
         }
     </script>
