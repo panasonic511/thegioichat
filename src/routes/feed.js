@@ -35,37 +35,6 @@ function escapeHtml(str) {
         .replace(/'/g, '&#39;');
 }
 
-function buildRoleTitleHtml(uLike) {
-    const tier = getRoleTier(uLike);
-    const cfg = getRoleConfig(uLike);
-    const roleLabel = (cfg && cfg.label) ? String(cfg.label).trim() : String((uLike && uLike.role) || 'Thành Viên').trim();
-    if (!roleLabel) return '';
-
-    let color = '#94a3b8';
-    let bg = 'rgba(148, 163, 184, 0.12)';
-    let border = 'rgba(148, 163, 184, 0.32)';
-
-    if (tier === ROLE_TIERS.FOUNDER) {
-        color = '#ffd700';
-        bg = 'rgba(255, 215, 0, 0.16)';
-        border = 'rgba(255, 215, 0, 0.55)';
-    } else if (tier === ROLE_TIERS.SUPER_ADMIN) {
-        color = '#ff4d94';
-        bg = 'rgba(255, 77, 148, 0.16)';
-        border = 'rgba(255, 77, 148, 0.5)';
-    } else if (tier === ROLE_TIERS.ADMIN) {
-        color = '#ff5555';
-        bg = 'rgba(255, 85, 85, 0.16)';
-        border = 'rgba(255, 85, 85, 0.5)';
-    } else if (tier === ROLE_TIERS.MOD) {
-        color = '#38bdf8';
-        bg = 'rgba(56, 189, 248, 0.16)';
-        border = 'rgba(56, 189, 248, 0.5)';
-    }
-
-    return `<span class="role-tier-title" style="display:inline-flex;align-items:center;margin-left:4px;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:bold;line-height:1.25;color:${escapeAttr(color)};background:${escapeAttr(bg)};border:1px solid ${escapeAttr(border)};white-space:nowrap;">${escapeHtml(roleLabel)}</span>`;
-}
-
 function renderFeedUser(uLike) {
     const tier = getRoleTier(uLike);
     const cfg = getRoleConfig(uLike);
@@ -75,11 +44,6 @@ function renderFeedUser(uLike) {
     const fallbackName = escapeHtml((uLike && (uLike.display_name || uLike.username)) || 'Thành viên');
     if (!nameHtml.trim()) {
         nameHtml = `<span style="font-weight: bold; color: #fff;">${fallbackName}</span>`;
-    }
-
-    const roleTitleHtml = buildRoleTitleHtml(uLike);
-    if (roleTitleHtml && !nameHtml.includes('role-tier-title')) {
-        nameHtml = `${nameHtml}${roleTitleHtml}`;
     }
 
     const fallbackAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='50' height='50'><rect width='50' height='50' fill='%23333'/></svg>";
