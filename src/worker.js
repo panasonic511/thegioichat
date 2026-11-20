@@ -34,9 +34,62 @@ function isStaffOrAdminUser(u) {
     return isStaffRole(u);
 }
 
+function resolveBadgeRoleKey(safeUser) {
+    if (!safeUser) return '';
+    const rawRole = String(safeUser.role || '').trim().toLowerCase();
+    const uid = Number(safeUser.user_id || safeUser.id || 0);
+
+    if (
+        rawRole === 'người sáng lập' ||
+        rawRole === 'nguoi sang lap' ||
+        rawRole === 'founder' ||
+        uid === 1
+    ) {
+        return 'founder';
+    }
+
+    if (
+        rawRole === 'super admin' ||
+        rawRole === 'super_admin' ||
+        rawRole === 's.admin' ||
+        rawRole === 'sadmin' ||
+        rawRole === 'smod'
+    ) {
+        return 'super_admin';
+    }
+
+    if (
+        rawRole === 'admin' ||
+        rawRole === 'chủ wap' ||
+        rawRole === 'quản trị' ||
+        rawRole === 'quản lý' ||
+        rawRole === 'bqt'
+    ) {
+        return 'admin';
+    }
+
+    if (
+        rawRole === 'mod' ||
+        rawRole === 'điều hành viên'
+    ) {
+        return 'mod';
+    }
+
+    const norm = String(normalizeRoleKey(safeUser.role, safeUser.is_admin, uid) || '').toLowerCase();
+    if (norm === 'founder' || norm === 'super_admin' || norm === 'admin' || norm === 'mod') {
+        return norm;
+    }
+
+    if (Number(safeUser.is_admin || 0) === 1) {
+        return 'admin';
+    }
+
+    return '';
+}
+
 function getStaffAfterNickBadge(safeUser) {
     if (!safeUser) return '';
-    const roleKey = normalizeRoleKey(safeUser.role, safeUser.is_admin, safeUser.id);
+    const roleKey = resolveBadgeRoleKey(safeUser);
 
     if (roleKey === 'founder') {
         return `<span class="staff-nick-badge staff-badge-admin" title="Người Sáng Lập"><span class="badge-ico">👑</span>FOUNDER</span>`;
@@ -543,7 +596,7 @@ export default {
       if (path === '/mail/box') return await handleMailBox(request, env, user, renderLayout);
       if (path === '/mail/chat') return await handleMailChat(request, env, user, renderLayout, url);
       if (path === '/mail/notification') return await handleMailNotification(request, env, user, renderLayout);
-      if (path === '/users/feed') return await handleFeed(request, env, user, renderLayout);
+      if (path === '/users/feed') return await handleFeed(request, env, user, renderLayout, ctx);
       if (path === '/game') return await handleGame(request, env, user, renderLayout);
       if (path === '/admin') {
           if (!isStaffOrAdminUser(user)) {
