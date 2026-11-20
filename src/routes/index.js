@@ -1457,7 +1457,7 @@ export async function handleIndex(request, env, user, renderLayout) {
                         const okCol = (/^#[0-9a-fA-F]{3,8}$/.test(c) || /^[a-zA-Z]{3,20}$/.test(c)) ? c : '#4ade80';
                         return '<span style="color:' + okCol + ';font-weight:bold;">' + inner + '</span>';
                     })
-                    .replace(/\\n/g, '<br>');
+                    .replace(/\n/g, '<br>');
 
                 const optimisticCard = document.createElement('div');
                 optimisticCard.className = 'cchat-item is-new';
