@@ -874,10 +874,6 @@ export async function handleIndex(request, env, user, renderLayout) {
         <div class="cchat-subbar">
             <div class="cchat-link-group">
                 <button type="button" class="cchat-sub-link" onclick="cchatReloadList()">↻ Làm mới</button>
-                <span>·</span>
-                <button type="button" class="cchat-sub-link" onclick="cchatTogglePicker('color')">🎨 Bbcode Color</button>
-                <span>·</span>
-                <a href="/users/feed" class="cchat-sub-link">🎉 Bữa tiệc</a>
             </div>
             <div style="font-size: 11px; color: #94a3b8;">Nhấn Gửi để hiện ngay</div>
         </div>
