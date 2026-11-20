@@ -899,7 +899,7 @@ export async function handleIndex(request, env, user, renderLayout) {
                         <span>🎨</span>
                         <span>BBCode Color</span>
                     </button>
-                    <button type="button" class="cchat-clear-btn" onclick="cchatClearInput()" title="Xóa nội dung đang gõ">🗑️ Xóa</button>
+                    
                 </div>
 
                 <div id="cchatIconPicker" class="cchat-picker-panel">
