@@ -1,4 +1,3 @@
-JavaScript
 import { handleOnline } from './routes/online.js';
 import { handleMediaRequest } from './media_store.js';
 import { handleLogin, handleRegister } from './routes/auth.js';
