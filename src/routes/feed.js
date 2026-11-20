@@ -15,6 +15,8 @@ import {
 const STORY_TTL_SECONDS = 24 * 60 * 60;
 const MAX_ACTIVE_STORIES = 10;
 
+let schemaReadyForIsolate = false;
+
 function escapeAttr(str) {
     if (str === null || str === undefined) return '';
     return String(str)
@@ -97,7 +99,7 @@ function isStoryExpired(createdAtStr) {
 }
 
 async function ensureFeedSchema(env) {
-    if (!env || !env.DB) return;
+    if (!env || !env.DB || schemaReadyForIsolate) return;
     await env.DB.batch([
         env.DB.prepare(`
             CREATE TABLE IF NOT EXISTS posts (
@@ -170,6 +172,8 @@ async function ensureFeedSchema(env) {
     try { await env.DB.prepare("ALTER TABLE stories ADD COLUMN media_url TEXT").run(); } catch (e) {}
     try { await env.DB.prepare("ALTER TABLE stories ADD COLUMN thumb_url TEXT").run(); } catch (e) {}
     try { await env.DB.prepare("ALTER TABLE stories ADD COLUMN media_type TEXT DEFAULT 'image'").run(); } catch (e) {}
+
+    schemaReadyForIsolate = true;
 }
 
 async function cleanupExpiredAndOverflowMedia(request, env) {
@@ -238,17 +242,35 @@ function scheduleRetention(request, env, ctx) {
     return task;
 }
 
+function isAjaxRequest(request) {
+    const xrw = (request.headers.get('X-Requested-With') || '').toLowerCase();
+    const accept = (request.headers.get('Accept') || '').toLowerCase();
+    return xrw === 'xmlhttprequest' || accept.includes('application/json');
+}
+
+function jsonResponse(payload, status = 200) {
+    return new Response(JSON.stringify(payload), {
+        status,
+        headers: {
+            'Content-Type': 'application/json;charset=UTF-8',
+            'Cache-Control': 'no-store'
+        }
+    });
+}
+
 export async function handleFeed(request, env, user, renderLayout, ctx) {
     const urlObj = new URL(request.url);
     const tab = urlObj.searchParams.get('tab') || 'new';
     const page = parseInt(urlObj.searchParams.get('page')) || 1;
     const limit = 10;
     const offset = (page - 1) * limit;
+    const actorId = Number(user && user.id ? user.id : 0);
 
     if (request.method === 'POST') {
+        const ajax = isAjaxRequest(request);
         try {
             const formData = await request.formData();
-            const action = formData.get('action');
+            const action = String(formData.get('action') || '');
 
             if (action === 'upload_media_chunk') {
                 const uploadId = String(formData.get('upload_id') || '');
@@ -260,9 +282,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     chunkBlob,
                     ttlSeconds: 3600
                 });
-                return new Response(JSON.stringify({ success: true, ...savedChunk }), {
-                    headers: { 'Content-Type': 'application/json;charset=UTF-8' }
-                });
+                return jsonResponse({ success: true, ...savedChunk });
             }
 
             if (action === 'finalize_media_upload') {
@@ -282,16 +302,14 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     totalChunks,
                     existingUrl,
                     folder,
-                    userId: user.id,
+                    userId: actorId,
                     mimeType,
                     ttlSeconds: ttl
                 });
 
-                return new Response(JSON.stringify({
+                return jsonResponse({
                     success: true,
                     ...mergedStep
-                }), {
-                    headers: { 'Content-Type': 'application/json;charset=UTF-8' }
                 });
             }
 
@@ -306,7 +324,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 if (postFile && typeof postFile === 'object' && postFile.size > 0) {
                     const saved = await saveMediaAsset(request, env, {
                         folder: 'posts',
-                        userId: user.id,
+                        userId: actorId,
                         file: postFile,
                         ttlSeconds: 30 * 24 * 60 * 60
                     });
@@ -314,7 +332,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 } else if (rawImageUrl.startsWith('data:')) {
                     const saved = await saveMediaAsset(request, env, {
                         folder: 'posts',
-                        userId: user.id,
+                        userId: actorId,
                         dataUrl: rawImageUrl,
                         ttlSeconds: 30 * 24 * 60 * 60
                     });
@@ -322,33 +340,41 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 }
 
                 if (content.trim() !== '' || imageUrl.trim() !== '') {
-                    const insertedPost = await env.DB.prepare(
+                    let insertedPost = await env.DB.prepare(
                         "INSERT INTO posts (user_id, content, image_url, created_at) VALUES (?, ?, ?, datetime('now')) RETURNING id, created_at"
-                    ).bind(user.id, content, imageUrl).first();
+                    ).bind(actorId, content, imageUrl).first();
 
-                    if (imageUrl.trim() !== '' && insertedPost && insertedPost.id) {
+                    if (!insertedPost || !insertedPost.id) {
+                        const lastRow = await env.DB.prepare(
+                            "SELECT id, created_at FROM posts WHERE user_id = ? ORDER BY id DESC LIMIT 1"
+                        ).bind(actorId).first();
+                        if (lastRow && lastRow.id) insertedPost = lastRow;
+                    }
+
+                    const postId = Number(insertedPost?.id || 0);
+                    if (imageUrl.trim() !== '' && postId > 0) {
                         await env.DB.prepare(
                             "INSERT INTO media_assets (user_id, owner_type, owner_id, media_type, media_url, thumb_url, duration_sec, created_at) VALUES (?, 'post', ?, 'image', ?, ?, 0, datetime('now'))"
-                        ).bind(user.id, insertedPost.id, imageUrl.trim(), imageUrl.trim()).run();
+                        ).bind(actorId, postId, imageUrl.trim(), imageUrl.trim()).run();
                     }
 
-                    if (request.headers.get('X-Requested-With') === 'XMLHttpRequest') {
-                        return new Response(JSON.stringify({
+                    if (ajax) {
+                        return jsonResponse({
                             success: true,
-                            id: Number(insertedPost?.id || 0),
+                            id: postId,
                             createdAt: insertedPost?.created_at || 'Vừa xong',
                             imageUrl: normalizeMediaUrl(imageUrl || '')
-                        }), {
-                            headers: { 'Content-Type': 'application/json;charset=UTF-8' }
                         });
                     }
+                } else if (ajax) {
+                    return jsonResponse({ success: false, error: 'Vui lòng nhập nội dung hoặc chọn ảnh' }, 400);
                 }
             } else if (action === 'like_post') {
                 const postId = parseInt(formData.get('post_id'), 10);
                 if (!isNaN(postId) && postId > 0) {
                     const existing = await env.DB.prepare(
                         "SELECT id FROM post_likes WHERE post_id = ? AND user_id = ?"
-                    ).bind(postId, user.id).first();
+                    ).bind(postId, actorId).first();
 
                     let liked = false;
                     if (existing) {
@@ -357,7 +383,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     } else {
                         await env.DB.prepare(
                             "INSERT INTO post_likes (post_id, user_id) VALUES (?, ?)"
-                        ).bind(postId, user.id).run();
+                        ).bind(postId, actorId).run();
                         liked = true;
                     }
 
@@ -365,40 +391,43 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                         "SELECT COUNT(*) AS cnt FROM post_likes WHERE post_id = ?"
                     ).bind(postId).first();
 
-                    if (request.headers.get('X-Requested-With') === 'XMLHttpRequest') {
-                        return new Response(JSON.stringify({
+                    if (ajax) {
+                        return jsonResponse({
                             success: true,
                             postId,
                             liked,
                             likeCount: Number(countRow?.cnt || 0)
-                        }), {
-                            headers: { 'Content-Type': 'application/json;charset=UTF-8' }
                         });
                     }
+                } else if (ajax) {
+                    return jsonResponse({ success: false, error: 'Bài viết không hợp lệ' }, 400);
                 }
             } else if (action === 'add_comment') {
                 const postId = parseInt(formData.get('post_id'), 10);
                 const commentText = String(formData.get('comment') || '').trim();
                 let insertedCommentId = 0;
                 if (!isNaN(postId) && postId > 0 && commentText !== '') {
-                    const insCmt = await env.DB.prepare(
+                    let insCmt = await env.DB.prepare(
                         "INSERT INTO post_comments (post_id, user_id, comment, created_at) VALUES (?, ?, ?, datetime('now')) RETURNING id"
-                    ).bind(postId, user.id, commentText).first();
+                    ).bind(postId, actorId, commentText).first();
+                    if (!insCmt || !insCmt.id) {
+                        insCmt = await env.DB.prepare(
+                            "SELECT id FROM post_comments WHERE post_id = ? AND user_id = ? ORDER BY id DESC LIMIT 1"
+                        ).bind(postId, actorId).first();
+                    }
                     insertedCommentId = Number(insCmt?.id || 0);
                 }
                 const countRow = (!isNaN(postId) && postId > 0)
                     ? await env.DB.prepare("SELECT COUNT(*) AS cnt FROM post_comments WHERE post_id = ?").bind(postId).first()
                     : { cnt: 0 };
 
-                if (request.headers.get('X-Requested-With') === 'XMLHttpRequest') {
-                    return new Response(JSON.stringify({
+                if (ajax) {
+                    return jsonResponse({
                         success: true,
                         id: insertedCommentId,
                         postId,
                         comment: commentText,
                         commentCount: Number(countRow?.cnt || 0)
-                    }), {
-                        headers: { 'Content-Type': 'application/json;charset=UTF-8' }
                     });
                 }
             } else if (action === 'create_story') {
@@ -414,7 +443,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 if (hasFile) {
                     const saved = await saveMediaAsset(request, env, {
                         folder: 'stories',
-                        userId: user.id,
+                        userId: actorId,
                         file: uploadedFile,
                         ttlSeconds: STORY_TTL_SECONDS
                     });
@@ -426,7 +455,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     if (rawMediaUrl.startsWith('data:')) {
                         const saved = await saveMediaAsset(request, env, {
                             folder: 'stories',
-                            userId: user.id,
+                            userId: actorId,
                             dataUrl: rawMediaUrl,
                             ttlSeconds: STORY_TTL_SECONDS
                         });
@@ -444,7 +473,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     if (rawThumb.startsWith('data:')) {
                         const savedThumb = await saveMediaAsset(request, env, {
                             folder: 'story_thumbs',
-                            userId: user.id,
+                            userId: actorId,
                             dataUrl: rawThumb,
                             ttlSeconds: STORY_TTL_SECONDS
                         });
@@ -463,12 +492,12 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
 
                     const insertedStory = await env.DB.prepare(
                         "INSERT INTO stories (user_id, image_url, media_url, thumb_url, media_type, caption, created_at) VALUES (?, ?, ?, ?, ?, '', datetime('now')) RETURNING id"
-                    ).bind(user.id, imageColVal, mediaUrl, thumbFinal, detectedType).first();
+                    ).bind(actorId, imageColVal, mediaUrl, thumbFinal, detectedType).first();
 
                     if (insertedStory && insertedStory.id) {
                         await env.DB.prepare(
                             "INSERT INTO media_assets (user_id, owner_type, owner_id, media_type, media_url, thumb_url, duration_sec, created_at) VALUES (?, 'story', ?, ?, ?, ?, ?, datetime('now'))"
-                        ).bind(user.id, insertedStory.id, detectedType, mediaUrl, thumbFinal, durationSec).run();
+                        ).bind(actorId, insertedStory.id, detectedType, mediaUrl, thumbFinal, durationSec).run();
                     }
 
                     await scheduleRetention(request, env, ctx);
@@ -534,17 +563,12 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 }
             }
 
-            if (request.headers.get('X-Requested-With') === 'XMLHttpRequest') {
-                return new Response(JSON.stringify({ success: true }), {
-                    headers: { 'Content-Type': 'application/json;charset=UTF-8' }
-                });
+            if (ajax) {
+                return jsonResponse({ success: true });
             }
         } catch (e) {
-            if (request.headers.get('X-Requested-With') === 'XMLHttpRequest') {
-                return new Response(JSON.stringify({ success: false, error: e.message }), {
-                    status: 500,
-                    headers: { 'Content-Type': 'application/json;charset=UTF-8' }
-                });
+            if (ajax) {
+                return jsonResponse({ success: false, error: e && e.message ? e.message : 'Lỗi máy chủ' }, 500);
             }
         }
     } else {
@@ -566,10 +590,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
 
                     if (!row || isStoryExpired(row.created_at)) {
                         await scheduleRetention(request, env, ctx);
-                        return new Response(JSON.stringify({ success: false, expired: true }), {
-                            status: 404,
-                            headers: { 'Content-Type': 'application/json;charset=UTF-8' }
-                        });
+                        return jsonResponse({ success: false, expired: true }, 404);
                     }
 
                     return new Response(JSON.stringify({
@@ -585,10 +606,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                         }
                     });
                 } catch (e) {
-                    return new Response(JSON.stringify({ success: false, error: e.message }), {
-                        status: 500,
-                        headers: { 'Content-Type': 'application/json;charset=UTF-8' }
-                    });
+                    return jsonResponse({ success: false, error: e.message }, 500);
                 }
             }
         }
@@ -719,11 +737,11 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
     let posts = [];
     try {
         const countStmt = tab === 'following'
-            ? env.DB.prepare("SELECT COUNT(*) as total FROM posts WHERE user_id IN (SELECT following_id FROM follows WHERE follower_id = ?)").bind(user.id)
+            ? env.DB.prepare("SELECT COUNT(*) as total FROM posts WHERE user_id IN (SELECT following_id FROM follows WHERE follower_id = ?)").bind(actorId)
             : env.DB.prepare("SELECT COUNT(*) as total FROM posts");
 
         const postsStmt = tab === 'following'
-            ? env.DB.prepare(postsQuery).bind(user.id, limit, offset)
+            ? env.DB.prepare(postsQuery).bind(actorId, limit, offset)
             : env.DB.prepare(postsQuery).bind(limit, offset);
 
         const [countRes, postsRes] = await env.DB.batch([countStmt, postsStmt]);
@@ -767,7 +785,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 for (const lk of ((likesRes && likesRes.results) || [])) {
                     const lkPostId = Number(lk.post_id);
                     likeCountMap.set(lkPostId, (likeCountMap.get(lkPostId) || 0) + 1);
-                    if (Number(lk.user_id) === Number(user.id)) {
+                    if (Number(lk.user_id) === actorId) {
                         likedByMeSet.add(lkPostId);
                     }
                 }
@@ -1039,6 +1057,10 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
         const FEED_CAN_DELETE_OWN = true;
         const FEED_POST_ENDPOINT = '${feedEndpointPath}';
         const FEED_CURRENT_TAB = '${escapeAttr(tab)}';
+        const FEED_AJAX_HEADERS = {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
+        };
         let currentStoryIndex = -1;
         let isSubmittingStory = false;
         let preparedStoryBlob = null;
@@ -1384,7 +1406,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
 
                 await fetchWithRetry(FEED_POST_ENDPOINT, {
                     method: 'POST',
-                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    headers: FEED_AJAX_HEADERS,
                     body: fd
                 }, 5);
             }
@@ -1411,7 +1433,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
 
                 const stepRes = await fetchWithRetry(FEED_POST_ENDPOINT, {
                     method: 'POST',
-                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    headers: FEED_AJAX_HEADERS,
                     body: finFd
                 }, 5);
 
@@ -1564,7 +1586,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             try {
                 await fetch(FEED_POST_ENDPOINT, {
                     method: 'POST',
-                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    headers: FEED_AJAX_HEADERS,
                     body: formData
                 });
                 window.location.reload();
@@ -1698,7 +1720,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
 
                 await fetchWithRetry(FEED_POST_ENDPOINT, {
                     method: 'POST',
-                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    headers: FEED_AJAX_HEADERS,
                     body: formData
                 }, 5);
 
@@ -1814,18 +1836,18 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             try {
                 const res = await fetch(FEED_POST_ENDPOINT, {
                     method: 'POST',
-                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    headers: FEED_AJAX_HEADERS,
                     body: formData
                 });
                 const data = await res.json().catch(() => null);
-                if (!res.ok || (data && data.success === false)) {
+                if (!res.ok || !data || data.success === false) {
                     throw new Error('Like failed');
                 }
-                if (data && typeof data.liked === 'boolean') {
+                if (typeof data.liked === 'boolean') {
                     btn.setAttribute('data-liked', data.liked ? '1' : '0');
                     btn.style.color = data.liked ? '#ff3333' : '#888';
                 }
-                if (data && typeof data.likeCount === 'number') {
+                if (typeof data.likeCount === 'number') {
                     spanCount.innerText = String(data.likeCount);
                 }
             } catch (e) {
@@ -1870,14 +1892,14 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             try {
                 const res = await fetch(FEED_POST_ENDPOINT, {
                     method: 'POST',
-                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    headers: FEED_AJAX_HEADERS,
                     body: formData
                 });
                 const data = await res.json().catch(() => null);
-                if (!res.ok || (data && data.success === false)) {
+                if (!res.ok || !data || data.success === false) {
                     throw new Error('Comment failed');
                 }
-                if (data && typeof data.commentCount === 'number' && cntSpan) {
+                if (typeof data.commentCount === 'number' && cntSpan) {
                     cntSpan.innerText = String(data.commentCount);
                 }
             } catch (e) {
@@ -1896,7 +1918,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             try {
                 const res = await fetch(FEED_POST_ENDPOINT, {
                     method: 'POST',
-                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    headers: FEED_AJAX_HEADERS,
                     body: formData
                 });
                 if (res.ok) {
@@ -2049,7 +2071,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             try {
                 const res = await fetch(FEED_POST_ENDPOINT, {
                     method: 'POST',
-                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    headers: FEED_AJAX_HEADERS,
                     body: formData
                 });
                 const data = await res.json().catch(() => null);
