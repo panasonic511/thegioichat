@@ -66,8 +66,8 @@ export async function handleLogin(request, env) {
             <div class="box-title">🔒 Đăng nhập hệ thống</div>
             <div class="box-content">
                 <form method="POST" action="/login">
-                    <label class="form-label">Tên tài khoản / ID / Gmail:</label>
-                    <input class="form-input" type="text" name="username" required placeholder="Nhập tên đăng nhập hoặc email...">
+                    <label class="form-label">Tên tài khoản / ID:</label>
+                    <input class="form-input" type="text" name="username" required placeholder="Nhập tên đăng nhập hoặc ID...">
 
                     <label class="form-label">Nhập mật khẩu:</label>
                     <input class="form-input" type="password" name="password" required placeholder="Nhập mật khẩu...">
@@ -98,9 +98,9 @@ export async function handleLogin(request, env) {
         const password = String(formData.get('password') || '');
 
         const user = await env.DB.prepare(
-            "SELECT * FROM users WHERE (username = ? OR email = ? OR CAST(id AS TEXT) = ?) AND password = ?"
+            "SELECT * FROM users WHERE (username = ? OR CAST(id AS TEXT) = ?) AND password = ?"
         )
-            .bind(username, username, username, password)
+            .bind(username, username, password)
             .first();
 
         if (!user) {
