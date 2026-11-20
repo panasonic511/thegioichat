@@ -24,7 +24,7 @@ export async function handleRegister(request, env) {
                 .container { max-width: 500px; margin: 20px auto; background: #111; border: 1px solid #333; border-radius: 4px; overflow: hidden; }
                 .box-title { background: #1a1a1a; color: #00ff00; padding: 8px 12px; font-weight: bold; border-bottom: 1px solid #333; }
                 .box-body { padding: 15px; font-size: 13px; }
-                input[type="text"], input[type="password"], input[type="email"], select { background: #000; color: #00ff00; border: 1px solid #444; padding: 8px; width: 100%; box-sizing: border-box; margin-bottom: 10px; }
+                input[type="text"], input[type="password"], select { background: #000; color: #00ff00; border: 1px solid #444; padding: 8px; width: 100%; box-sizing: border-box; margin-bottom: 10px; }
                 button { background: #0055ff; color: #fff; border: none; padding: 10px; width: 100%; font-weight: bold; cursor: pointer; border-radius: 3px; }
                 button:hover { background: #0033cc; }
                 .footer { text-align: center; padding: 15px; font-size: 11px; color: #666; border-top: 1px solid #222; background: #050505; margin-top: 30px; }
@@ -48,9 +48,6 @@ export async function handleRegister(request, env) {
 
                         <label style="color:#00ff00;">Tên hiển thị:<span style="color:red">*</span></label>
                         <input type="text" name="display_name" required placeholder="Tên mọi người nhìn thấy trên wap...">
-
-                        <label style="color:#00ff00;">E-mail:<span style="color:red">*</span></label>
-                        <input type="email" name="email" required placeholder="Email dùng để lấy lại mật khẩu...">
 
                         <label style="color:#00ff00;">Mật khẩu:<span style="color:red">*</span></label>
                         <input type="password" name="password" required placeholder="Từ 6 đến 32 ký tự...">
@@ -79,11 +76,10 @@ export async function handleRegister(request, env) {
         const formData = await request.formData();
         const username = String(formData.get('username') ?? '').trim();
         const displayName = String(formData.get('display_name') ?? '').trim();
-        const email = String(formData.get('email') ?? '').trim().toLowerCase();
         const password = String(formData.get('password') ?? '');
         const gender = String(formData.get('gender') ?? 'Nam').trim() || 'Nam';
 
-        if (!username || !displayName || !email || !password) {
+        if (!username || !displayName || !password) {
             return new Response(`Vui lòng nhập đầy đủ các trường bắt buộc! <a href="/register">Quay lại đăng ký</a>`, {
                 status: 400,
                 headers: { 'Content-Type': 'text/html;charset=UTF-8' }
@@ -93,8 +89,8 @@ export async function handleRegister(request, env) {
         try {
             // Mặc định tài khoản mới đăng ký có Level 1 và 1000 Xu
             await env.DB.prepare(
-                "INSERT INTO users (username, display_name, email, password, gender, role, level, coins) VALUES (?, ?, ?, ?, ?, 'Thành Viên', 1, 1000)"
-            ).bind(username, displayName, email, password, gender).run();
+                "INSERT INTO users (username, display_name, password, gender, role, level, coins) VALUES (?, ?, ?, ?, 'Thành Viên', 1, 1000)"
+            ).bind(username, displayName, password, gender).run();
 
             return new Response(`Đăng ký thành công! <a href="/login">Bấm vào đây để đăng nhập</a>`, {
                 headers: { 'Content-Type': 'text/html;charset=UTF-8' }
@@ -102,7 +98,7 @@ export async function handleRegister(request, env) {
         } catch (e) {
             const errMsg = String(e?.message || e || '');
             if (errMsg.includes('UNIQUE constraint failed') || errMsg.includes('SQLITE_CONSTRAINT_UNIQUE')) {
-                return new Response(`Tên đăng nhập hoặc Email đã tồn tại! <a href="/register">Quay lại đăng ký</a>`, {
+                return new Response(`Tên đăng nhập đã tồn tại! <a href="/register">Quay lại đăng ký</a>`, {
                     status: 400,
                     headers: { 'Content-Type': 'text/html;charset=UTF-8' }
                 });
@@ -115,10 +111,3 @@ export async function handleRegister(request, env) {
         }
     }
 }
-```[cite: 24]
-
-### Kiểm tra sau khi cập nhật
-* Thử submit form `/register` với đầy đủ thông tin và thử cố tình bỏ trống `email` (qua curl/POST trực tiếp)[cite: 24].
-* **Dấu hiệu thành công:** khi có `email` hợp lệ và chưa trùng thì tạo tài khoản thành công; khi thiếu `email` thì trả về thông báo nhập thiếu trường thay vì văng lỗi `D1_ERROR: NOT NULL constraint failed: users.email`[cite: 23].
-
-Lưu ý thêm: trong ảnh stack trace có dòng `at async handleRegister (worker.js:1139:22)`[cite: 23]—nếu bạn đang gộp `handleRegister` chung vào file `worker.js` thay vì tách ở `routes/register.js`, hãy nhớ thay đúng hàm `handleRegister` tại `worker.js` nhé. Bạn có đang đặt `handleRegister` trực tiếp trong `worker.js` không?
