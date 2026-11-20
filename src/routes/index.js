@@ -1,6 +1,15 @@
 import { handleLogin } from './auth.js';
 import { renderUser } from '../worker.js';
 
+function escapeHtml(str) {
+    return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 async function safeCount(db, sql, params = []) {
     try {
         const row = await db.prepare(sql).bind(...params).first();
@@ -47,6 +56,20 @@ export async function handleIndex(request, env, user, renderLayout) {
         `).all();
     } catch (e) {}
 
+    let recentFeeds = [];
+    try {
+        const fRows = await env.DB.prepare(`
+            SELECT feeds.id, feeds.user_id, feeds.content, feeds.created_at,
+                   users.display_name, users.username, users.role, users.is_admin, users.active_icon,
+                   users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.border_color, users.avatar_glow, users.avatar
+            FROM feeds
+            LEFT JOIN users ON feeds.user_id = users.id
+            ORDER BY feeds.id DESC
+            LIMIT 3
+        `).all();
+        recentFeeds = fRows?.results || [];
+    } catch (e) {}
+
     let totalUsers = 1, totalFeeds = 0, recentUsers = [];
     try {
         const uCount = await env.DB.prepare("SELECT COUNT(*) as total FROM users").first();
@@ -56,7 +79,7 @@ export async function handleIndex(request, env, user, renderLayout) {
         const rUsers = await env.DB.prepare(`
             SELECT id, username, display_name, role, is_admin, active_icon,
                    name_color, name_glow, name_border, name_border_glow, border_color, avatar_glow, avatar
-            FROM users ORDER BY id DESC LIMIT 5
+            FROM users ORDER BY id DESC LIMIT 6
         `).all();
         recentUsers = rUsers.results || [];
     } catch (e) {}
@@ -105,6 +128,48 @@ export async function handleIndex(request, env, user, renderLayout) {
     const dateStr = `${String(vnTime.getDate()).padStart(2, '0')}/${String(vnTime.getMonth() + 1).padStart(2, '0')}/${vnTime.getFullYear()}`;
     const timeDisplay = `${hours}:${minutes}`;
     const dateDisplay = `${dayName} - ${dateStr}`;
+
+    const announcementList = announcements?.results || [];
+    const announcementHtml = announcementList.length > 0
+        ? announcementList.map(item => {
+            const itemUI = renderUser(item);
+            return `
+            <div style="padding: 8px 6px; border-bottom: 1px dashed #222; text-align: center;">
+                <div style="color: #ffcc66; font-weight: bold; margin-bottom: 4px;">${escapeHtml(item.content || '')}</div>
+                <div style="font-size: 12px; color: #999;">${itemUI.nameHtml}</div>
+            </div>`;
+        }).join('')
+        : `
+        <div style="padding: 8px 6px; text-align: center;">
+            <div style="color: #e5e7eb; font-weight: bold; margin-bottom: 3px;">${timeDisplay} - ${dayName}</div>
+            <div style="color: #9ca3af; font-size: 12px; margin-bottom: 6px;">••••• ${dateStr} •••••</div>
+            <div style="font-weight: bold; font-size: 13px; letter-spacing: 0.3px;">
+                <span style="color: #ff9933;">CHÀO MỪNG ĐẾN VỚI</span>
+                <span style="color: #38bdf8;">THẾ GIỚI CHAT</span>
+            </div>
+            <div style="color: #4ade80; font-weight: bold; font-size: 12px; margin-top: 2px;">CHÚC MỌI NGƯỜI ONLINE VUI VẺ</div>
+        </div>`;
+
+    const memberFeedHtml = recentFeeds.length > 0
+        ? recentFeeds.map(f => {
+            const fUI = renderUser(f);
+            const isSelf = Number(f.user_id) === Number(user.id);
+            return `
+            <div style="padding: 8px 6px; border-top: 1px solid #222; text-align: center;">
+                <div style="color: #ff80bf; font-weight: bold; margin-bottom: 3px;">${escapeHtml(f.content || '')}</div>
+                <div style="font-size: 12px; color: #aaa;">
+                    ${fUI.nameHtml}
+                    ${isSelf ? ` · <a href="/users/feed" style="color: #ffcc00;">Thay đổi</a>` : ''}
+                </div>
+            </div>`;
+        }).join('')
+        : `
+        <div style="padding: 8px 6px; border-top: 1px solid #222; text-align: center;">
+            <div style="color: #f472b6; font-weight: bold; margin-bottom: 3px;">Chia sẻ trạng thái đầu tiên của bạn trên bảng tin!</div>
+            <div style="font-size: 12px; color: #aaa;">
+                ${currentUserUI.nameHtml} · <a href="/users/feed" style="color: #ffcc00;">Đăng bảng tin</a>
+            </div>
+        </div>`;
 
     const content = `
     <!-- Khung thông tin cá nhân ngoài Trang chủ -->
@@ -192,26 +257,22 @@ export async function handleIndex(request, env, user, renderLayout) {
     <div class="box">
         <div class="box-title">👥 Thành viên thật (${totalUsers})</div>
         <div class="box-content" style="font-size: 14px;">
-            ${recentUsers.map(u => {
+            ${recentUsers.length > 0 ? recentUsers.map(u => {
                 const uUI = renderUser(u);
                 return `<span style="display:inline-block; margin-right:10px; margin-bottom:6px;">${uUI.nameHtml}</span>`;
-            }).join(' · ')}
+            }).join(' · ') : '<span style="color:#888;">Chưa có thành viên nào.</span>'}
         </div>
     </div>
 
     <!-- Thông báo hệ thống -->
     <div class="box">
-        <div class="box-title">📢 Thông báo</div>
-        <div class="box-content" style="font-size: 14px;">
-            ${announcements.results.length === 0 ? '<div style="color: #888; text-align: center; padding: 6px;">Chưa có thông báo nào.</div>' :
-                announcements.results.map(item => {
-                    const itemUI = renderUser(item);
-                    return `
-                    <div style="margin-bottom: 8px; line-height: 1.6;">
-                        ${itemUI.nameHtml}
-                        <div style="color: #fff; margin-top: 3px;">${item.content || ''}</div>
-                    </div>`;
-                }).join('')}
+        <div class="box-title" style="justify-content: space-between;">
+            <span>📢 Thông báo</span>
+            <a href="/" style="font-size: 12px; color: #ff9933; font-weight: bold; text-decoration: none;">↻ Làm mới</a>
+        </div>
+        <div class="box-content" style="font-size: 13px; padding: 8px 10px;">
+            ${announcementHtml}
+            ${memberFeedHtml}
         </div>
     </div>
     `;
