@@ -41,7 +41,8 @@ function renderFeedUser(uLike) {
     const rendered = renderUser(uLike || {}) || {};
     let nameHtml = String(rendered.nameHtml || '');
 
-    const fallbackName = escapeHtml((uLike && (uLike.display_name || uLike.username)) || 'Thành viên');
+    const rawName = (uLike && (uLike.display_name || uLike.username || uLike.name)) || '';
+    const fallbackName = escapeHtml(rawName || 'Thành viên');
     if (!nameHtml.trim()) {
         nameHtml = `<span style="font-weight: bold; color: #fff;">${fallbackName}</span>`;
     }
@@ -675,26 +676,41 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
     let postsQuery = '';
     if (tab === 'trending') {
         postsQuery = `
-            SELECT posts.*, users.*,
+            SELECT posts.id AS post_id,
+                   posts.user_id AS post_user_id,
+                   posts.content AS post_content,
+                   posts.image_url AS post_image_url,
+                   posts.created_at AS post_created_at,
+                   users.*,
                    (SELECT COUNT(*) FROM post_likes WHERE post_id = posts.id) +
                    (SELECT COUNT(*) FROM post_comments WHERE post_id = posts.id) as total_interactions
             FROM posts
-            JOIN users ON posts.user_id = users.id
+            LEFT JOIN users ON posts.user_id = users.id
             ORDER BY total_interactions DESC, posts.id DESC LIMIT ? OFFSET ?
         `;
     } else if (tab === 'following') {
         postsQuery = `
-            SELECT posts.*, users.*
+            SELECT posts.id AS post_id,
+                   posts.user_id AS post_user_id,
+                   posts.content AS post_content,
+                   posts.image_url AS post_image_url,
+                   posts.created_at AS post_created_at,
+                   users.*
             FROM posts
-            JOIN users ON posts.user_id = users.id
+            LEFT JOIN users ON posts.user_id = users.id
             WHERE posts.user_id IN (SELECT following_id FROM follows WHERE follower_id = ?)
             ORDER BY posts.id DESC LIMIT ? OFFSET ?
         `;
     } else {
         postsQuery = `
-            SELECT posts.*, users.*
+            SELECT posts.id AS post_id,
+                   posts.user_id AS post_user_id,
+                   posts.content AS post_content,
+                   posts.image_url AS post_image_url,
+                   posts.created_at AS post_created_at,
+                   users.*
             FROM posts
-            JOIN users ON posts.user_id = users.id
+            LEFT JOIN users ON posts.user_id = users.id
             ORDER BY posts.id DESC LIMIT ? OFFSET ?
         `;
     }
@@ -723,7 +739,9 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
         if (posts.length === 0) {
             postsHtml = '<div id="feedEmptyNote" style="text-align: center; color: #777; padding: 20px;">Chưa có bài viết nào trong mục này.</div>';
         } else {
-            const postIds = posts.map(p => p.id).filter(id => id !== undefined && id !== null);
+            const postIds = posts
+                .map(p => Number(p.post_id !== undefined ? p.post_id : p.id))
+                .filter(id => !isNaN(id) && id > 0);
             const likeCountMap = new Map();
             const likedByMeSet = new Set();
             const commentsByPostMap = new Map();
@@ -733,7 +751,12 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 const [likesRes, commentsRes] = await env.DB.batch([
                     env.DB.prepare(`SELECT post_id, user_id FROM post_likes WHERE post_id IN (${placeholders})`).bind(...postIds),
                     env.DB.prepare(`
-                        SELECT post_comments.*, users.*
+                        SELECT post_comments.id AS comment_id,
+                               post_comments.post_id AS comment_post_id,
+                               post_comments.user_id AS comment_user_id,
+                               post_comments.comment AS comment_body,
+                               post_comments.created_at AS comment_created_at,
+                               users.*
                         FROM post_comments
                         LEFT JOIN users ON post_comments.user_id = users.id
                         WHERE post_id IN (${placeholders})
@@ -742,62 +765,72 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 ]);
 
                 for (const lk of ((likesRes && likesRes.results) || [])) {
-                    likeCountMap.set(lk.post_id, (likeCountMap.get(lk.post_id) || 0) + 1);
+                    const lkPostId = Number(lk.post_id);
+                    likeCountMap.set(lkPostId, (likeCountMap.get(lkPostId) || 0) + 1);
                     if (Number(lk.user_id) === Number(user.id)) {
-                        likedByMeSet.add(lk.post_id);
+                        likedByMeSet.add(lkPostId);
                     }
                 }
 
                 for (const cm of ((commentsRes && commentsRes.results) || [])) {
-                    if (!commentsByPostMap.has(cm.post_id)) commentsByPostMap.set(cm.post_id, []);
-                    commentsByPostMap.get(cm.post_id).push(cm);
+                    const cmPostId = Number(cm.comment_post_id !== undefined ? cm.comment_post_id : cm.post_id);
+                    if (!commentsByPostMap.has(cmPostId)) commentsByPostMap.set(cmPostId, []);
+                    commentsByPostMap.get(cmPostId).push(cm);
                 }
             }
 
             for (let p of posts) {
+                const realPostId = Number(p.post_id !== undefined ? p.post_id : p.id);
+                const authorUserId = Number(p.post_user_id !== undefined ? p.post_user_id : p.user_id);
+                const postContent = p.post_content !== undefined ? p.post_content : p.content;
+                const postImageUrl = p.post_image_url !== undefined ? p.post_image_url : p.image_url;
+                const postCreatedAt = p.post_created_at !== undefined ? p.post_created_at : p.created_at;
+
                 const rUser = renderFeedUser({
                     ...p,
-                    id: p.user_id
+                    id: authorUserId
                 });
-                const likeCount = likeCountMap.get(p.id) || 0;
-                const isLiked = likedByMeSet.has(p.id);
+                const likeCount = likeCountMap.get(realPostId) || 0;
+                const isLiked = likedByMeSet.has(realPostId);
                 const heartColor = isLiked ? '#ff3333' : '#888';
-                const comments = commentsByPostMap.get(p.id) || [];
+                const comments = commentsByPostMap.get(realPostId) || [];
 
                 let commentsHtml = '';
                 comments.forEach(c => {
+                    const cUserId = Number(c.comment_user_id !== undefined ? c.comment_user_id : c.user_id);
+                    const cBody = c.comment_body !== undefined ? c.comment_body : c.comment;
                     const rCommentUser = renderFeedUser({
                         ...c,
-                        id: c.user_id
+                        id: cUserId
                     });
                     commentsHtml += `
                         <div style="font-size: 11px; margin-top: 4px; border-top: 1px solid #222; padding-top: 4px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">
-                            <span style="display: inline-flex; align-items: center; gap: 3px; flex-wrap: wrap;">${rCommentUser.nameHtml}</span>: <span style="color: #ddd;">${escapeHtml(c.comment)}</span>
+                            <span style="display: inline-flex; align-items: center; gap: 3px; flex-wrap: wrap;">${rCommentUser.nameHtml}</span>: <span style="color: #ddd;">${escapeHtml(cBody)}</span>
                         </div>
                     `;
                 });
 
-                const imgSrc = normalizeMediaUrl(p.image_url);
+                const imgSrc = normalizeMediaUrl(postImageUrl);
                 const imageTag = imgSrc
                     ? `<div style="margin-top: 8px; background: #000; text-align: center; border-radius: 4px; overflow: hidden;"><img src="${escapeAttr(imgSrc)}" loading="lazy" style="width: 100%; max-height: 450px; object-fit: contain; display: block; margin: 0 auto;"></div>`
                     : '';
 
                 const canDelete = canDeleteContent(user, {
-                    id: p.user_id,
-                    user_id: p.user_id,
+                    id: authorUserId,
+                    user_id: authorUserId,
                     role: p.role,
                     is_admin: p.is_admin
                 });
                 const deleteBtnHtml = canDelete ? `
-                    <form onsubmit="deletePostAjax(event, ${p.id})" style="margin: 0;">
+                    <form onsubmit="deletePostAjax(event, ${realPostId})" style="margin: 0;">
                         <input type="hidden" name="action" value="delete_post">
-                        <input type="hidden" name="post_id" value="${p.id}">
+                        <input type="hidden" name="post_id" value="${realPostId}">
                         <button type="submit" style="background: none; border: none; color: #ff5555; cursor: pointer; font-size: 11px;" title="Xóa bài viết">🗑️ Xóa</button>
                     </form>
                 ` : '';
 
                 postsHtml += `
-                <div id="post-card-${p.id}" data-post-id="${p.id}" data-post-item="1" style="background: #121212; border: 1px solid #2c2c2c; border-radius: 6px; padding: 12px; margin-bottom: 12px;">
+                <div id="post-card-${realPostId}" data-post-id="${realPostId}" data-post-item="1" style="background: #121212; border: 1px solid #2c2c2c; border-radius: 6px; padding: 12px; margin-bottom: 12px;">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                         <div style="display: flex; align-items: center; gap: 10px;">
                             <div class="feed-post-avatar-wrap" style="min-width: 36px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
@@ -805,40 +838,40 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                             </div>
                             <div>
                                 <div style="display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">${rUser.nameHtml}</div>
-                                <div style="font-size: 10px; color: #888; margin-top: 2px;">${escapeHtml(p.created_at || '')}</div>
+                                <div style="font-size: 10px; color: #888; margin-top: 2px;">${escapeHtml(postCreatedAt || '')}</div>
                             </div>
                         </div>
                         ${deleteBtnHtml}
                     </div>
-                    <div style="color: #ddd; font-size: 13px; word-break: break-word; white-space: pre-wrap; margin-bottom: 6px;">${escapeHtml(p.content || '')}</div>
+                    <div style="color: #ddd; font-size: 13px; word-break: break-word; white-space: pre-wrap; margin-bottom: 6px;">${escapeHtml(postContent || '')}</div>
                     ${imageTag}
 
                     <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #222; margin-top: 10px; padding-top: 8px;">
                         <div style="display: flex; align-items: center; gap: 14px;">
-                            <form onsubmit="submitLikeAjax(event, ${p.id})" style="margin: 0;">
+                            <form onsubmit="submitLikeAjax(event, ${realPostId})" style="margin: 0;">
                                 <input type="hidden" name="action" value="like_post">
-                                <input type="hidden" name="post_id" value="${p.id}">
+                                <input type="hidden" name="post_id" value="${realPostId}">
                                 <button type="submit" data-role="like-btn" data-liked="${isLiked ? '1' : '0'}" style="background: none; border: none; color: ${heartColor}; cursor: pointer; font-size: 14px; padding: 0;">
-                                    ❤️ <span style="font-size: 11px; color: #ccc;" data-role="like-count" id="like-count-${p.id}">${likeCount}</span>
+                                    ❤️ <span style="font-size: 11px; color: #ccc;" data-role="like-count" id="like-count-${realPostId}">${likeCount}</span>
                                 </button>
                             </form>
 
-                            <button type="button" onclick="toggleCommentBox(${p.id})" style="background: none; border: none; color: #aaa; cursor: pointer; font-size: 13px; padding: 0; display: flex; align-items: center; gap: 4px;">
-                                💬 <span style="font-size: 11px;" data-role="comm-count" id="comm-count-${p.id}">${comments.length}</span> bình luận
+                            <button type="button" onclick="toggleCommentBox(${realPostId})" style="background: none; border: none; color: #aaa; cursor: pointer; font-size: 13px; padding: 0; display: flex; align-items: center; gap: 4px;">
+                                💬 <span style="font-size: 11px;" data-role="comm-count" id="comm-count-${realPostId}">${comments.length}</span> bình luận
                             </button>
                         </div>
                         <span style="font-size: 10px; color: #666;">Tương tác</span>
                     </div>
 
-                    <div style="margin-top: 6px;" data-role="comment-list" id="comment-list-${p.id}">
+                    <div style="margin-top: 6px;" data-role="comment-list" id="comment-list-${realPostId}">
                         ${commentsHtml}
                     </div>
 
-                    <div data-role="comment-box" id="comment-box-${p.id}" style="display: none; margin-top: 8px;">
-                        <form onsubmit="submitCommentAjax(event, ${p.id})" style="display: flex; gap: 6px;">
+                    <div data-role="comment-box" id="comment-box-${realPostId}" style="display: none; margin-top: 8px;">
+                        <form onsubmit="submitCommentAjax(event, ${realPostId})" style="display: flex; gap: 6px;">
                             <input type="hidden" name="action" value="add_comment">
-                            <input type="hidden" name="post_id" value="${p.id}">
-                            <input type="text" name="comment" data-role="comment-input" id="comment-input-${p.id}" placeholder="Viết bình luận của bạn..." style="flex: 1; background: #0a0a0a; color: #fff; border: 1px solid #333; padding: 6px; font-size: 11px; border-radius: 4px;" required>
+                            <input type="hidden" name="post_id" value="${realPostId}">
+                            <input type="text" name="comment" data-role="comment-input" id="comment-input-${realPostId}" placeholder="Viết bình luận của bạn..." style="flex: 1; background: #0a0a0a; color: #fff; border: 1px solid #333; padding: 6px; font-size: 11px; border-radius: 4px;" required>
                             <button type="submit" style="background: #0055ff; color: #fff; border: none; padding: 6px 12px; font-size: 11px; border-radius: 4px; cursor: pointer;">Gửi</button>
                         </form>
                     </div>
@@ -872,6 +905,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
     const currentActorRender = renderFeedUser(user);
     const currentActorNameJson = JSON.stringify(currentActorRender.nameHtml);
     const currentActorAvatarJson = JSON.stringify(currentActorRender.avatarHtml);
+    const feedEndpointPath = escapeAttr(urlObj.pathname || '/users/feed');
 
     const content = `
     <style>
@@ -1003,6 +1037,8 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
         const FEED_ACTOR_NAME_HTML = ${currentActorNameJson};
         const FEED_ACTOR_AVATAR_HTML = ${currentActorAvatarJson};
         const FEED_CAN_DELETE_OWN = true;
+        const FEED_POST_ENDPOINT = '${feedEndpointPath}';
+        const FEED_CURRENT_TAB = '${escapeAttr(tab)}';
         let currentStoryIndex = -1;
         let isSubmittingStory = false;
         let preparedStoryBlob = null;
@@ -1346,7 +1382,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 fd.append('chunk_index', String(i));
                 fd.append('chunk', chunkBlob);
 
-                await fetchWithRetry(window.location.href, {
+                await fetchWithRetry(FEED_POST_ENDPOINT, {
                     method: 'POST',
                     headers: { 'X-Requested-With': 'XMLHttpRequest' },
                     body: fd
@@ -1373,7 +1409,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 finFd.append('folder', folder);
                 finFd.append('mime_type', mimeType || blob.type || 'video/mp4');
 
-                const stepRes = await fetchWithRetry(window.location.href, {
+                const stepRes = await fetchWithRetry(FEED_POST_ENDPOINT, {
                     method: 'POST',
                     headers: { 'X-Requested-With': 'XMLHttpRequest' },
                     body: finFd
@@ -1526,7 +1562,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             formData.append('story_id', item.id);
 
             try {
-                await fetch(window.location.href, {
+                await fetch(FEED_POST_ENDPOINT, {
                     method: 'POST',
                     headers: { 'X-Requested-With': 'XMLHttpRequest' },
                     body: formData
@@ -1660,7 +1696,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     formData.delete('story_file');
                 }
 
-                await fetchWithRetry(window.location.href, {
+                await fetchWithRetry(FEED_POST_ENDPOINT, {
                     method: 'POST',
                     headers: { 'X-Requested-With': 'XMLHttpRequest' },
                     body: formData
@@ -1776,7 +1812,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             formData.append('post_id', String(numId));
 
             try {
-                const res = await fetch(window.location.href, {
+                const res = await fetch(FEED_POST_ENDPOINT, {
                     method: 'POST',
                     headers: { 'X-Requested-With': 'XMLHttpRequest' },
                     body: formData
@@ -1832,7 +1868,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             formData.append('comment', text);
 
             try {
-                const res = await fetch(window.location.href, {
+                const res = await fetch(FEED_POST_ENDPOINT, {
                     method: 'POST',
                     headers: { 'X-Requested-With': 'XMLHttpRequest' },
                     body: formData
@@ -1858,7 +1894,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             const numId = Number(postId || 0);
             const formData = new FormData(event.target);
             try {
-                const res = await fetch(window.location.href, {
+                const res = await fetch(FEED_POST_ENDPOINT, {
                     method: 'POST',
                     headers: { 'X-Requested-With': 'XMLHttpRequest' },
                     body: formData
@@ -1992,7 +2028,10 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             if (textarea) textarea.value = '';
             if (imgInput) imgInput.value = '';
             if (fileInput) fileInput.value = '';
-            if (statusEl) statusEl.innerText = '';
+            if (statusEl) {
+                statusEl.innerText = 'Đang đăng...';
+                statusEl.style.color = '#ffcc00';
+            }
 
             const feedContainer = document.getElementById('feed-posts-list');
             const emptyNote = document.getElementById('feedEmptyNote');
@@ -2008,7 +2047,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             if (submitBtn) submitBtn.disabled = true;
 
             try {
-                const res = await fetch(window.location.href, {
+                const res = await fetch(FEED_POST_ENDPOINT, {
                     method: 'POST',
                     headers: { 'X-Requested-With': 'XMLHttpRequest' },
                     body: formData
@@ -2035,6 +2074,12 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     if (finalWrapper.firstElementChild) {
                         tempEl.replaceWith(finalWrapper.firstElementChild);
                     }
+                }
+                if (statusEl) {
+                    statusEl.innerText = FEED_CURRENT_TAB === 'following'
+                        ? '✅ Đã đăng (xem ở tab Mới nhất nếu chưa theo dõi)'
+                        : '✅ Đã đăng lên bảng tin';
+                    statusEl.style.color = '#00ff00';
                 }
             } catch (err) {
                 if (tempEl) tempEl.remove();
