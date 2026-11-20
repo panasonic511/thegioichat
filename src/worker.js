@@ -1,3 +1,4 @@
+JavaScript
 import { handleOnline } from './routes/online.js';
 import { handleMediaRequest } from './media_store.js';
 import { handleLogin, handleRegister } from './routes/auth.js';
@@ -225,6 +226,112 @@ function renderLayout(title, content, user) {
     ` : `
         <a href="/login" class="top-menu-item"><span class="top-menu-icon">🔑</span><span>Đăng nhập</span></a>
         <a href="/register" class="top-menu-item"><span class="top-menu-icon">📝</span><span>Đăng ký</span></a>
+    `;
+
+    const optimisticHelperHtml = `
+        <script>
+        (function() {
+            if (window.wapOptimistic) return;
+
+            function escapeHtml(str) {
+                return String(str ?? '')
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            }
+
+            async function prependOptimistic(opts) {
+                const container = typeof opts.container === 'string'
+                    ? document.querySelector(opts.container)
+                    : opts.container;
+                if (!container) return { ok: false, error: 'Không tìm thấy danh sách.' };
+
+                const emptySelectors = Array.isArray(opts.hideEmptySelectors) ? opts.hideEmptySelectors : [];
+                const hiddenEls = [];
+                emptySelectors.forEach(function(sel) {
+                    container.querySelectorAll(sel).forEach(function(el) {
+                        if (el.style.display !== 'none') {
+                            el.setAttribute('data-prev-display', el.style.display || '');
+                            el.style.display = 'none';
+                            hiddenEls.push(el);
+                        }
+                    });
+                });
+
+                const tempEl = document.createElement('div');
+                tempEl.className = 'wap-opt-item is-optimistic';
+                tempEl.setAttribute('data-optimistic', '1');
+                tempEl.innerHTML = opts.tempHtml || '';
+
+                container.prepend(tempEl);
+
+                if (opts.maxItems && opts.maxItems > 0) {
+                    const items = Array.from(container.children).filter(function(el) {
+                        return el !== tempEl && !el.hasAttribute('data-prev-display');
+                    });
+                    for (let i = opts.maxItems - 1; i < items.length; i++) {
+                        items[i].remove();
+                    }
+                }
+
+                const restoreEmpty = function() {
+                    hiddenEls.forEach(function(el) {
+                        el.style.display = el.getAttribute('data-prev-display') || '';
+                        el.removeAttribute('data-prev-display');
+                    });
+                };
+
+                try {
+                    const res = await fetch(opts.url, Object.assign({
+                        method: 'POST'
+                    }, opts.fetchOptions || {}));
+
+                    let data = null;
+                    try {
+                        data = await res.json();
+                    } catch (e) {
+                        data = null;
+                    }
+
+                    if (!res.ok || !data || data.ok === false || data.success === false) {
+                        tempEl.remove();
+                        if (!container.querySelector('.wap-opt-item, [data-post-item], [id^="post-card-"]')) {
+                            restoreEmpty();
+                        }
+                        if (typeof opts.onError === 'function') {
+                            opts.onError(data || { error: 'Yêu cầu thất bại.' }, tempEl);
+                        }
+                        return { ok: false, data };
+                    }
+
+                    if (typeof opts.onSuccess === 'function') {
+                        opts.onSuccess(data, tempEl);
+                    } else {
+                        tempEl.classList.remove('is-optimistic');
+                        if (data.id) tempEl.setAttribute('data-id', String(data.id));
+                    }
+
+                    return { ok: true, data, element: tempEl };
+                } catch (err) {
+                    tempEl.remove();
+                    if (!container.querySelector('.wap-opt-item, [data-post-item], [id^="post-card-"]')) {
+                        restoreEmpty();
+                    }
+                    if (typeof opts.onError === 'function') {
+                        opts.onError({ error: 'Lỗi kết nối mạng.' }, tempEl);
+                    }
+                    return { ok: false, error: err };
+                }
+            }
+
+            window.wapOptimistic = {
+                escapeHtml: escapeHtml,
+                prepend: prependOptimistic
+            };
+        })();
+        </script>
     `;
 
     const floatingBubbleHtml = user ? `
@@ -493,6 +600,7 @@ function renderLayout(title, content, user) {
     </div>
     <div class="top-menu-wrapper"><div class="top-menu-bar">${menuBarHtml}</div></div>
     <div class="container">${content}</div>
+    ${optimisticHelperHtml}
     ${floatingBubbleHtml}
     <div class="footer">
         <div><a href="/">Home</a> · <a href="/terms">Điều khoản</a> · <a href="/contact">Liên hệ</a> ${user ? '· <a href="/logout">Đăng xuất</a>' : ''}</div>
