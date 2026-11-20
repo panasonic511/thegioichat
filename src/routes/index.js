@@ -1,9 +1,6 @@
 import { handleLogin } from './auth.js';
 import { renderUser } from '../worker.js';
 
-const THREE_DAYS_SEC = 3 * 24 * 60 * 60;
-const PAGE_SIZE = 9;
-
 function escapeHtml(str) {
     return String(str ?? '')
         .replace(/&/g, '&amp;')
@@ -18,56 +15,6 @@ function isSafeColor(color) {
     if (/^#[0-9a-fA-F]{3,8}$/.test(c)) return c;
     if (/^[a-zA-Z]{3,20}$/.test(c)) return c;
     return '#4ade80';
-}
-
-function getStaffRank(u) {
-    if (!u) return 0;
-    const rawRole = String(u.role || '').trim().toLowerCase();
-    const uid = Number(u.user_id || u.id || 0);
-    const isAdminFlag = Number(u.is_admin || 0);
-
-    if (
-        rawRole === 'người sáng lập' ||
-        rawRole === 'nguoi sang lap' ||
-        rawRole === 'founder' ||
-        uid === 1
-    ) {
-        return 4;
-    }
-    if (
-        rawRole === 'super admin' ||
-        rawRole === 'super_admin' ||
-        rawRole === 's.admin' ||
-        rawRole === 'sadmin' ||
-        rawRole === 'smod'
-    ) {
-        return 3;
-    }
-    if (
-        rawRole === 'admin' ||
-        rawRole === 'chủ wap' ||
-        rawRole === 'quản trị' ||
-        rawRole === 'quản lý' ||
-        rawRole === 'bqt' ||
-        isAdminFlag === 1
-    ) {
-        return 2;
-    }
-    if (rawRole === 'mod' || rawRole === 'điều hành viên') {
-        return 1;
-    }
-    return 0;
-}
-
-function canModerateDelete(actorUser, targetUser) {
-    const actorRank = getStaffRank(actorUser);
-    if (actorRank <= 0) return false;
-    const targetRank = getStaffRank(targetUser);
-    if (targetRank > actorRank) return false;
-    if (targetRank === actorRank && actorRank >= 2 && Number(actorUser?.id || 0) !== Number(targetUser?.user_id || targetUser?.id || 0)) {
-        return false;
-    }
-    return true;
 }
 
 function renderBbcodeAndIcons(rawText) {
@@ -123,103 +70,25 @@ async function ensureChatTable(db) {
     } catch (e) {}
 }
 
-async function purgeExpiredChatMessages(db, nowSec) {
+async function fetchChatMessages(db, afterId = 0, limit = 25) {
     await ensureChatTable(db);
     try {
-        const cutoff = nowSec - THREE_DAYS_SEC;
-        await db.prepare("DELETE FROM community_chat WHERE created_at < ?").bind(cutoff).run();
-    } catch (e) {}
-}
-
-async function computeRealWapCTop(db, targetUser) {
-    const uid = Number(targetUser?.user_id || targetUser?.id || 0);
-    const baseLevel = Number(targetUser?.level || 0);
-    if (!uid) return Math.max(0, baseLevel);
-
-    let realScore = 0;
-    let foundAnyRealMetric = false;
-
-    const metricQueries = [
-        "SELECT COUNT(*) AS cnt FROM feeds WHERE user_id = ?",
-        "SELECT COUNT(*) AS cnt FROM posts WHERE user_id = ?",
-        "SELECT COUNT(*) AS cnt FROM post_comments WHERE user_id = ?",
-        "SELECT COUNT(*) AS cnt FROM wall_post_comments WHERE user_id = ?",
-        "SELECT COUNT(*) AS cnt FROM community_chat WHERE user_id = ?"
-    ];
-
-    for (const sql of metricQueries) {
-        try {
-            const row = await db.prepare(sql).bind(uid).first();
-            if (row && row.cnt !== undefined && row.cnt !== null) {
-                realScore += Number(row.cnt || 0);
-                foundAnyRealMetric = true;
-            }
-        } catch (e) {}
-    }
-
-    try {
-        const uRow = await db.prepare("SELECT level, online_minutes, online_time FROM users WHERE id = ?").bind(uid).first();
-        if (uRow) {
-            const mins = Number(uRow.online_minutes ?? uRow.online_time ?? 0);
-            const lvl = Number(uRow.level ?? 0);
-            if (mins > 0) {
-                realScore += Math.floor(mins / 10);
-                foundAnyRealMetric = true;
-            }
-            if (!foundAnyRealMetric && lvl > 0) {
-                realScore = lvl;
-                foundAnyRealMetric = true;
-            }
+        if (afterId > 0) {
+            const rows = await db.prepare(`
+                SELECT c.id, c.user_id, c.content, c.created_at,
+                       u.display_name, u.username, u.role, u.is_admin, u.active_icon,
+                       u.name_color, u.name_glow, u.name_border, u.name_border_glow,
+                       u.border_color, u.avatar_glow, u.avatar, u.gender, u.level, u.coins, u.status_text
+                FROM community_chat c
+                LEFT JOIN users u ON c.user_id = u.id
+                WHERE c.id > ?
+                ORDER BY c.id ASC
+                LIMIT ?
+            `).bind(afterId, limit).all();
+            return rows?.results || [];
         }
-    } catch (e) {}
 
-    return foundAnyRealMetric ? realScore : baseLevel;
-}
-
-async function attachRealCTopToMessages(db, messages) {
-    if (!Array.isArray(messages) || messages.length === 0) return [];
-    const cache = new Map();
-    const out = [];
-    for (const m of messages) {
-        const uid = Number(m.user_id || 0);
-        let ctopVal = cache.get(uid);
-        if (ctopVal === undefined) {
-            ctopVal = await computeRealWapCTop(db, m);
-            cache.set(uid, ctopVal);
-        }
-        out.push({ ...m, ctop_real: ctopVal });
-    }
-    return out;
-}
-
-function formatWapCurrentTime(tsSec) {
-    const sec = Number(tsSec || Math.floor(Date.now() / 1000));
-    const vnDate = new Date(sec * 1000 + 7 * 3600 * 1000);
-    const hh = String(vnDate.getUTCHours()).padStart(2, '0');
-    const mm = String(vnDate.getUTCMinutes()).padStart(2, '0');
-    const dd = String(vnDate.getUTCDate()).padStart(2, '0');
-    const mo = String(vnDate.getUTCMonth() + 1).padStart(2, '0');
-    return `${hh}:${mm} ${dd}/${mo}`;
-}
-
-async function fetchChatPage(db, page = 1, pageSize = PAGE_SIZE) {
-    const nowSec = Math.floor(Date.now() / 1000);
-    await purgeExpiredChatMessages(db, nowSec);
-
-    const safePage = Math.max(1, Number(page || 1));
-    let totalCount = 0;
-    try {
-        const cntRow = await db.prepare("SELECT COUNT(*) AS total FROM community_chat").first();
-        totalCount = Number(cntRow?.total || 0);
-    } catch (e) {}
-
-    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-    const clampedPage = Math.min(safePage, totalPages);
-    const offset = (clampedPage - 1) * pageSize;
-
-    let rows = [];
-    try {
-        const res = await db.prepare(`
+        const rows = await db.prepare(`
             SELECT c.id, c.user_id, c.content, c.created_at,
                    u.display_name, u.username, u.role, u.is_admin, u.active_icon,
                    u.name_color, u.name_glow, u.name_border, u.name_border_glow,
@@ -227,63 +96,41 @@ async function fetchChatPage(db, page = 1, pageSize = PAGE_SIZE) {
             FROM community_chat c
             LEFT JOIN users u ON c.user_id = u.id
             ORDER BY c.id DESC
-            LIMIT ? OFFSET ?
-        `).bind(pageSize, offset).all();
-        rows = res?.results || [];
-    } catch (e) {}
-
-    const enriched = await attachRealCTopToMessages(db, rows);
-    return {
-        messages: enriched,
-        page: clampedPage,
-        totalPages,
-        totalCount,
-        nowSec
-    };
-}
-
-function buildPaginationHtml(page, totalPages) {
-    if (totalPages <= 1) return '';
-    const parts = [];
-    const prevPage = Math.max(1, page - 1);
-    const nextPage = Math.min(totalPages, page + 1);
-
-    parts.push(
-        `<button type="button" class="cchat-page-btn ${page <= 1 ? 'disabled' : ''}" ${page <= 1 ? 'disabled' : ''} onclick="cchatGoPage(${prevPage})">&lt;</button>`
-    );
-
-    const startP = Math.max(1, page - 2);
-    const endP = Math.min(totalPages, startP + 4);
-    for (let p = startP; p <= endP; p++) {
-        parts.push(
-            `<button type="button" class="cchat-page-btn ${p === page ? 'active' : ''}" onclick="cchatGoPage(${p})">${p}</button>`
-        );
+            LIMIT ?
+        `).bind(limit).all();
+        return (rows?.results || []).reverse();
+    } catch (e) {
+        return [];
     }
-
-    parts.push(
-        `<button type="button" class="cchat-page-btn ${page >= totalPages ? 'disabled' : ''}" ${page >= totalPages ? 'disabled' : ''} onclick="cchatGoPage(${nextPage})">&gt;</button>`
-    );
-
-    return `<div class="cchat-pagination" id="cchatPagination">${parts.join('')}</div>`;
 }
 
-function buildChatItemHtml(msg, currentUser, isJustSent = false) {
+function formatTimeAgoVn(tsSec) {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const diff = Math.max(0, nowSec - Number(tsSec || nowSec));
+    if (diff < 30) return 'Vừa xong';
+    if (diff < 60) return `${diff} giây trước`;
+    const mins = Math.floor(diff / 60);
+    if (mins < 60) return `${mins} phút trước`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours} giờ trước`;
+    const days = Math.floor(hours / 24);
+    return `${days} ngày trước`;
+}
+
+function buildChatItemHtml(msg) {
     const ui = renderUser(msg);
     const smallAvatar = String(ui.avatarHtml || '').replace(
         'style="',
         'style="width:36px;height:36px;display:block;'
     );
-    const wapTimeText = formatWapCurrentTime(msg.created_at);
-    const timeLabel = isJustSent ? `Vừa xong · ${wapTimeText}` : wapTimeText;
+    const timeLabel = formatTimeAgoVn(msg.created_at);
     const formattedBody = renderBbcodeAndIcons(msg.content || '');
-    const ctopVal = Number(msg.ctop_real ?? msg.level ?? 0).toLocaleString();
+    const lvl = Number(msg.level || 1);
     const coins = Number(msg.coins || 0).toLocaleString();
-    const senderId = Number(msg.user_id || 0);
     const moodStatus = msg.status_text ? `<div class="cchat-status">» Status: ${escapeHtml(msg.status_text)}</div>` : '';
-    const showDelete = canModerateDelete(currentUser, msg);
 
     return `
-    <div class="cchat-item ${isJustSent ? 'is-new' : ''}" data-msg-id="${Number(msg.id || 0)}" data-user-id="${senderId}" data-username="${escapeHtml(msg.username || msg.display_name || '')}">
+    <div class="cchat-item" data-msg-id="${Number(msg.id || 0)}" data-username="${escapeHtml(msg.username || msg.display_name || '')}">
         <div class="cchat-row-top">
             <div class="cchat-user-meta">
                 <div class="cchat-ava">${smallAvatar}</div>
@@ -292,13 +139,11 @@ function buildChatItemHtml(msg, currentUser, isJustSent = false) {
                         ${ui.nameHtml}
                         <span class="cchat-time">· ${escapeHtml(timeLabel)}</span>
                     </div>
-                    <div class="cchat-stats">C.top: <b>${ctopVal}</b> · Xu: <b>${coins}</b></div>
+                    <div class="cchat-stats">C.top: <b>${lvl}</b> · Xu: <b>${coins}</b></div>
                 </div>
             </div>
             <div class="cchat-actions">
-                <a href="/mail/chat?user=${senderId}" class="cchat-pm-btn" title="Nhắn tin riêng (PM)">PM</a>
                 <button type="button" class="cchat-mini-btn" onclick="cchatMentionUser(this)" title="Tag thành viên">Tag</button>
-                ${showDelete ? `<button type="button" class="cchat-del-btn" onclick="cchatDeleteMsg(this)" title="Xóa tin nhắn">Xóa</button>` : ''}
             </div>
         </div>
         <div class="cchat-body">${formattedBody}</div>
@@ -344,90 +189,37 @@ export async function handleIndex(request, env, user, renderLayout) {
     const isAjaxChat = url.searchParams.get('ajax_chat') === '1' || request.headers.get('X-Community-Chat') === '1';
 
     if (isAjaxChat && request.method === 'GET') {
-        const page = Math.max(1, Number(url.searchParams.get('page') || 1));
-        const pageData = await fetchChatPage(env.DB, page, PAGE_SIZE);
-        const itemsHtml = pageData.messages.map(m => buildChatItemHtml(m, user, false)).join('');
-        const paginationHtml = buildPaginationHtml(pageData.page, pageData.totalPages);
-        const maxId = pageData.messages.reduce((acc, m) => Math.max(acc, Number(m.id || 0)), 0);
+        const afterId = Math.max(0, Number(url.searchParams.get('after_id') || 0));
+        const mode = url.searchParams.get('mode') || 'poll';
+        const list = mode === 'reload'
+            ? await fetchChatMessages(env.DB, 0, 25)
+            : await fetchChatMessages(env.DB, afterId, 25);
+
+        const itemsHtml = list.map(buildChatItemHtml).join('');
+        const maxId = list.reduce((acc, m) => Math.max(acc, Number(m.id || 0)), afterId);
 
         return new Response(JSON.stringify({
             ok: true,
-            page: pageData.page,
-            total_pages: pageData.totalPages,
-            total_count: pageData.totalCount,
+            mode,
             last_id: maxId,
-            items_html: itemsHtml,
-            pagination_html: paginationHtml
+            items_html: itemsHtml
         }), {
             headers: { 'Content-Type': 'application/json;charset=UTF-8', 'Cache-Control': 'no-store' }
         });
     }
 
     if (isAjaxChat && request.method === 'POST') {
-        let payload = {};
+        let contentText = '';
         try {
-            payload = await request.json();
+            const body = await request.json();
+            contentText = String(body?.content ?? '').trim();
         } catch (e) {
             try {
                 const fd = await request.formData();
-                payload = {
-                    action: fd.get('action'),
-                    msg_id: fd.get('msg_id'),
-                    content: fd.get('content')
-                };
+                contentText = String(fd.get('content') ?? '').trim();
             } catch (e2) {}
         }
 
-        const action = String(payload?.action || 'send').trim();
-        const nowSec = Math.floor(Date.now() / 1000);
-        await purgeExpiredChatMessages(env.DB, nowSec);
-
-        if (action === 'delete') {
-            const msgId = Number(payload?.msg_id || 0);
-            if (!msgId) {
-                return new Response(JSON.stringify({ ok: false, error: 'Thiếu mã tin nhắn cần xóa.' }), {
-                    status: 400,
-                    headers: { 'Content-Type': 'application/json;charset=UTF-8' }
-                });
-            }
-
-            const targetRow = await env.DB.prepare(`
-                SELECT c.id, c.user_id, u.role, u.is_admin
-                FROM community_chat c
-                LEFT JOIN users u ON c.user_id = u.id
-                WHERE c.id = ?
-            `).bind(msgId).first();
-
-            if (!targetRow) {
-                return new Response(JSON.stringify({ ok: false, error: 'Tin nhắn không tồn tại hoặc đã bị xóa.' }), {
-                    status: 404,
-                    headers: { 'Content-Type': 'application/json;charset=UTF-8' }
-                });
-            }
-
-            if (!canModerateDelete(user, targetRow)) {
-                return new Response(JSON.stringify({ ok: false, error: 'Bạn không thể xóa tin nhắn của quản trị viên cấp bậc cao hơn!' }), {
-                    status: 403,
-                    headers: { 'Content-Type': 'application/json;charset=UTF-8' }
-                });
-            }
-
-            await env.DB.prepare("DELETE FROM community_chat WHERE id = ?").bind(msgId).run();
-            const pageData = await fetchChatPage(env.DB, Number(payload?.page || 1), PAGE_SIZE);
-
-            return new Response(JSON.stringify({
-                ok: true,
-                deleted_id: msgId,
-                page: pageData.page,
-                total_pages: pageData.totalPages,
-                items_html: pageData.messages.map(m => buildChatItemHtml(m, user, false)).join(''),
-                pagination_html: buildPaginationHtml(pageData.page, pageData.totalPages)
-            }), {
-                headers: { 'Content-Type': 'application/json;charset=UTF-8', 'Cache-Control': 'no-store' }
-            });
-        }
-
-        let contentText = String(payload?.content ?? '').trim();
         if (!contentText) {
             return new Response(JSON.stringify({ ok: false, error: 'Vui lòng nhập nội dung tin nhắn.' }), {
                 status: 400,
@@ -439,11 +231,12 @@ export async function handleIndex(request, env, user, renderLayout) {
             contentText = contentText.slice(0, 600);
         }
 
+        await ensureChatTable(env.DB);
+        const nowSec = Math.floor(Date.now() / 1000);
+
         const inserted = await env.DB.prepare(
             "INSERT INTO community_chat (user_id, content, created_at) VALUES (?, ?, ?) RETURNING id, user_id, content, created_at"
         ).bind(Number(user.id), contentText, nowSec).first();
-
-        const realCtop = await computeRealWapCTop(env.DB, user);
 
         const msgRecord = {
             id: inserted?.id || Date.now(),
@@ -465,14 +258,13 @@ export async function handleIndex(request, env, user, renderLayout) {
             gender: user.gender,
             level: user.level,
             coins: user.coins,
-            status_text: user.status_text,
-            ctop_real: realCtop
+            status_text: user.status_text
         };
 
         return new Response(JSON.stringify({
             ok: true,
             id: Number(msgRecord.id),
-            item_html: buildChatItemHtml(msgRecord, user, true)
+            item_html: buildChatItemHtml(msgRecord)
         }), {
             headers: { 'Content-Type': 'application/json;charset=UTF-8', 'Cache-Control': 'no-store' }
         });
@@ -510,12 +302,11 @@ export async function handleIndex(request, env, user, renderLayout) {
         totalFeeds = fCount?.total || 0;
     } catch (e) {}
 
-    const initialPageData = await fetchChatPage(env.DB, 1, PAGE_SIZE);
-    const initialLastId = initialPageData.messages.reduce((acc, m) => Math.max(acc, Number(m.id || 0)), 0);
-    const initialChatHtml = initialPageData.messages.length > 0
-        ? initialPageData.messages.map(m => buildChatItemHtml(m, user, false)).join('')
+    const chatMessages = await fetchChatMessages(env.DB, 0, 20);
+    const initialLastId = chatMessages.reduce((acc, m) => Math.max(acc, Number(m.id || 0)), 0);
+    const initialChatHtml = chatMessages.length > 0
+        ? chatMessages.map(buildChatItemHtml).join('')
         : `<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào. Hãy là người mở màn chát cộng đồng!</div>`;
-    const initialPaginationHtml = buildPaginationHtml(initialPageData.page, initialPageData.totalPages);
 
     const nowSec = Math.floor(Date.now() / 1000);
     let partyCount = 0;
@@ -751,6 +542,20 @@ export async function handleIndex(request, env, user, renderLayout) {
             color: #4ade80;
             background: #19222c;
         }
+        .cchat-clear-btn {
+            margin-left: auto;
+            background: #181214;
+            color: #fca5a5;
+            border: 1px solid #3b2328;
+            border-radius: 5px;
+            padding: 6px 9px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .cchat-clear-btn:hover {
+            background: #2b171b;
+            color: #fff;
+        }
         .cchat-picker-panel {
             display: none;
             margin-top: 8px;
@@ -816,7 +621,7 @@ export async function handleIndex(request, env, user, renderLayout) {
             min-height: 16px;
         }
         .cchat-stream {
-            max-height: 520px;
+            max-height: 430px;
             overflow-y: auto;
             padding: 8px;
             display: flex;
@@ -831,12 +636,12 @@ export async function handleIndex(request, env, user, renderLayout) {
             padding: 8px 10px;
         }
         .cchat-item.is-new {
-            animation: cchatSlideIn 0.2s ease-out;
+            animation: cchatSlideIn 0.25s ease-out;
             border-color: #38bdf8;
             border-left-color: #38bdf8;
         }
         @keyframes cchatSlideIn {
-            0% { opacity: 0; transform: translateY(-5px); }
+            0% { opacity: 0; transform: translateY(-6px); }
             100% { opacity: 1; transform: translateY(0); }
         }
         @keyframes cchatFadeIn {
@@ -878,28 +683,6 @@ export async function handleIndex(request, env, user, renderLayout) {
             font-size: 11px;
             color: #94a3b8;
         }
-        .cchat-actions {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            flex-shrink: 0;
-        }
-        .cchat-pm-btn {
-            background: #132238;
-            color: #7dd3fc;
-            border: 1px solid #254672;
-            border-radius: 4px;
-            padding: 2px 7px;
-            font-size: 11px;
-            font-weight: bold;
-            text-decoration: none;
-            display: inline-block;
-        }
-        .cchat-pm-btn:hover {
-            background: #1d3557;
-            color: #fff;
-            text-decoration: none;
-        }
         .cchat-mini-btn {
             background: #161c26;
             color: #cbd5e1;
@@ -913,20 +696,6 @@ export async function handleIndex(request, env, user, renderLayout) {
         .cchat-mini-btn:hover {
             border-color: #38bdf8;
             color: #38bdf8;
-        }
-        .cchat-del-btn {
-            background: #291216;
-            color: #fca5a5;
-            border: 1px solid #5c212b;
-            border-radius: 4px;
-            padding: 2px 7px;
-            font-size: 11px;
-            font-weight: bold;
-            cursor: pointer;
-        }
-        .cchat-del-btn:hover {
-            background: #471720;
-            color: #fff;
         }
         .cchat-body {
             margin-top: 7px;
@@ -946,40 +715,6 @@ export async function handleIndex(request, env, user, renderLayout) {
             color: #888;
             padding: 16px 8px;
             font-size: 13px;
-        }
-        .cchat-pagination {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 5px;
-            padding: 8px 10px 10px 10px;
-            border-top: 1px solid #1c222b;
-            flex-wrap: wrap;
-        }
-        .cchat-page-btn {
-            min-width: 28px;
-            height: 26px;
-            padding: 0 7px;
-            background: #121720;
-            color: #cbd5e1;
-            border: 1px solid #2a3342;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: bold;
-            cursor: pointer;
-        }
-        .cchat-page-btn:hover:not(:disabled) {
-            border-color: #38bdf8;
-            color: #fff;
-        }
-        .cchat-page-btn.active {
-            background: #2563eb;
-            border-color: #3b82f6;
-            color: #fff;
-        }
-        .cchat-page-btn.disabled, .cchat-page-btn:disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
         }
         .wap-anim-ico {
             display: inline-block;
@@ -1127,21 +862,20 @@ export async function handleIndex(request, env, user, renderLayout) {
     </div>
 
     <!-- Chát cộng đồng -->
-    <div class="box cchat-box" id="communityChatBox" data-last-id="${initialLastId}" data-page="${initialPageData.page}" data-total-pages="${initialPageData.totalPages}">
+    <div class="box cchat-box" id="communityChatBox" data-last-id="${initialLastId}">
         <div class="cchat-header">
             <div class="cchat-title-wrap">
                 <span class="cchat-live-dot"></span>
                 <span>💬 Chát cộng đồng</span>
             </div>
-            <span style="font-size: 11px; color: #94a3b8;">Tự làm mới mỗi 3 ngày</span>
+            
         </div>
 
         <div class="cchat-subbar">
             <div class="cchat-link-group">
-                <button type="button" class="cchat-sub-link" onclick="cchatGoPage(1)">↻ Làm mới</button>
-                <span>·</span>
-                <button type="button" class="cchat-sub-link" onclick="cchatTogglePicker('color')">BBCode Color</button>
+                <button type="button" class="cchat-sub-link" onclick="cchatReloadList()">↻ Làm mới</button>
             </div>
+            
         </div>
 
         <div class="cchat-form-area">
@@ -1165,6 +899,7 @@ export async function handleIndex(request, env, user, renderLayout) {
                         <span>🎨</span>
                         <span>BBCode Color</span>
                     </button>
+                    
                 </div>
 
                 <div id="cchatIconPicker" class="cchat-picker-panel">
@@ -1190,14 +925,10 @@ export async function handleIndex(request, env, user, renderLayout) {
         <div class="cchat-stream" id="cchatStream">
             ${initialChatHtml}
         </div>
-        <div id="cchatPaginationWrap">
-            ${initialPaginationHtml}
-        </div>
     </div>
 
     <script>
         (function() {
-            const PAGE_SIZE = ${PAGE_SIZE};
             const WAP_ICONS = [
                 { code: '[smile]', emo: '😄', anim: 'ico-bounce', name: 'Vui vẻ' },
                 { code: '[lol]', emo: '😂', anim: 'ico-shake', name: 'Cười lớn' },
@@ -1227,7 +958,6 @@ export async function handleIndex(request, env, user, renderLayout) {
 
             const boxEl = document.getElementById('communityChatBox');
             const streamEl = document.getElementById('cchatStream');
-            const pagWrapEl = document.getElementById('cchatPaginationWrap');
             const inputEl = document.getElementById('cchatInput');
             const sendBtnEl = document.getElementById('cchatSendBtn');
             const statusEl = document.getElementById('cchatStatusMsg');
@@ -1238,15 +968,7 @@ export async function handleIndex(request, env, user, renderLayout) {
             const colorBtnEl = document.getElementById('cchatColorBtn');
 
             let isSending = false;
-            let isBusy = false;
-
-            function getCurrentPage() {
-                return Math.max(1, Number(boxEl ? (boxEl.getAttribute('data-page') || 1) : 1));
-            }
-
-            function setCurrentPage(p) {
-                if (boxEl) boxEl.setAttribute('data-page', String(Math.max(1, Number(p || 1))));
-            }
+            let isPolling = false;
 
             function getLastId() {
                 return Number(boxEl ? (boxEl.getAttribute('data-last-id') || 0) : 0);
@@ -1267,14 +989,6 @@ export async function handleIndex(request, env, user, renderLayout) {
             function updateCounter() {
                 if (!inputEl || !counterEl) return;
                 counterEl.textContent = inputEl.value.length + ' / 600';
-            }
-
-            function trimPageOneToLimit() {
-                if (!streamEl || getCurrentPage() !== 1) return;
-                const items = Array.from(streamEl.querySelectorAll('.cchat-item'));
-                for (let i = PAGE_SIZE; i < items.length; i++) {
-                    items[i].remove();
-                }
             }
 
             function insertAtCursor(snippet, selectOffsetStart, selectOffsetEnd) {
@@ -1342,6 +1056,14 @@ export async function handleIndex(request, env, user, renderLayout) {
                 if (colorBtnEl) colorBtnEl.classList.toggle('active', showColor);
             };
 
+            window.cchatClearInput = function() {
+                if (!inputEl) return;
+                inputEl.value = '';
+                updateCounter();
+                setStatus('', false);
+                inputEl.focus();
+            };
+
             window.cchatMentionUser = function(btnEl) {
                 const row = btnEl ? btnEl.closest('.cchat-item') : null;
                 const uname = row ? (row.getAttribute('data-username') || '') : '';
@@ -1349,77 +1071,25 @@ export async function handleIndex(request, env, user, renderLayout) {
                 insertAtCursor('@' + uname + ' ');
             };
 
-            window.cchatDeleteMsg = async function(btnEl) {
-                const row = btnEl ? btnEl.closest('.cchat-item') : null;
-                const msgId = Number(row ? (row.getAttribute('data-msg-id') || 0) : 0);
-                if (!msgId || isBusy) return;
-                if (!confirm('Xóa tin nhắn này khỏi chát cộng đồng?')) return;
+            function appendItemsHtml(itemsHtml, highlightNew) {
+                if (!itemsHtml || !streamEl) return;
+                const emptyNote = document.getElementById('cchatEmptyNote');
+                if (emptyNote) emptyNote.remove();
 
-                isBusy = true;
-                if (btnEl) btnEl.disabled = true;
-                setStatus('Đang xóa tin nhắn...', false);
+                const temp = document.createElement('div');
+                temp.innerHTML = itemsHtml;
+                const nodes = Array.from(temp.children);
 
-                try {
-                    const res = await fetch('/?ajax_chat=1', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Community-Chat': '1'
-                        },
-                        body: JSON.stringify({
-                            action: 'delete',
-                            msg_id: msgId,
-                            page: getCurrentPage()
-                        })
-                    });
-                    const data = await res.json();
-                    if (!res.ok || !data.ok) {
-                        setStatus(data.error || 'Không thể xóa tin nhắn.', true);
-                        if (btnEl) btnEl.disabled = false;
-                    } else {
-                        setCurrentPage(data.page || 1);
-                        if (streamEl) {
-                            streamEl.innerHTML = data.items_html || '<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào.</div>';
-                        }
-                        if (pagWrapEl) {
-                            pagWrapEl.innerHTML = data.pagination_html || '';
-                        }
-                        setStatus('Đã xóa tin nhắn.', false);
-                        setTimeout(function() { setStatus('', false); }, 1500);
+                nodes.forEach(function(node) {
+                    const idAttr = Number(node.getAttribute('data-msg-id') || 0);
+                    if (idAttr > 0 && streamEl.querySelector('[data-msg-id="' + idAttr + '"]')) {
+                        return;
                     }
-                } catch (e) {
-                    setStatus('Lỗi kết nối khi xóa tin nhắn.', true);
-                    if (btnEl) btnEl.disabled = false;
-                } finally {
-                    isBusy = false;
-                }
-            };
-
-            window.cchatGoPage = async function(targetPage) {
-                if (isBusy || !streamEl) return;
-                isBusy = true;
-                const p = Math.max(1, Number(targetPage || 1));
-                setStatus('Đang tải trang ' + p + '...', false);
-                try {
-                    const res = await fetch('/?ajax_chat=1&page=' + p + '&_t=' + Date.now(), {
-                        headers: { 'X-Community-Chat': '1' }
-                    });
-                    if (res.ok) {
-                        const data = await res.json();
-                        if (data.ok) {
-                            setCurrentPage(data.page || p);
-                            streamEl.innerHTML = data.items_html || '<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào.</div>';
-                            if (pagWrapEl) pagWrapEl.innerHTML = data.pagination_html || '';
-                            if (data.last_id) setLastId(data.last_id);
-                            setStatus('', false);
-                        }
-                    }
-                } catch (e) {
-                    setStatus('Không thể chuyển trang.', true);
-                } finally {
-                    isBusy = false;
-                }
-            };
+                    if (highlightNew) node.classList.add('is-new');
+                    streamEl.prepend(node);
+                    if (idAttr > 0) setLastId(idAttr);
+                });
+            }
 
             window.cchatSubmitForm = async function(ev) {
                 if (ev) ev.preventDefault();
@@ -1434,61 +1104,7 @@ export async function handleIndex(request, env, user, renderLayout) {
 
                 isSending = true;
                 if (sendBtnEl) sendBtnEl.disabled = true;
-
-                const emptyNote = document.getElementById('cchatEmptyNote');
-                if (emptyNote) emptyNote.remove();
-
-                const tempClientId = 'tmp_' + Date.now();
-                const nowLocal = new Date();
-                const nowVn = new Date(nowLocal.getTime() + nowLocal.getTimezoneOffset() * 60000 + 7 * 3600000);
-                const hh = String(nowVn.getHours()).padStart(2, '0');
-                const mm = String(nowVn.getMinutes()).padStart(2, '0');
-                const dd = String(nowVn.getDate()).padStart(2, '0');
-                const mo = String(nowVn.getMonth() + 1).padStart(2, '0');
-
-                const safePreview = text
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;')
-                    .replace(/'/g, '&#39;')
-                    .replace(/\[color=([^\]]+)\]([\s\S]*?)\[\/color\]/gi, function(_, col, inner) {
-                        const c = String(col || '').trim();
-                        const okCol = (/^#[0-9a-fA-F]{3,8}$/.test(c) || /^[a-zA-Z]{3,20}$/.test(c)) ? c : '#4ade80';
-                        return '<span style="color:' + okCol + ';font-weight:bold;">' + inner + '</span>';
-                    })
-                    .replace(/\n/g, '<br>');
-
-                const optimisticCard = document.createElement('div');
-                optimisticCard.className = 'cchat-item is-new';
-                optimisticCard.setAttribute('data-temp-id', tempClientId);
-                optimisticCard.innerHTML =
-                    '<div class="cchat-row-top">' +
-                        '<div class="cchat-user-meta">' +
-                            '<div class="cchat-info">' +
-                                '<div class="cchat-nick-line">' +
-                                    '<b>' + escapeLocalName(${JSON.stringify(String(user.display_name || user.username || 'Bạn'))}) + '</b>' +
-                                    '<span class="cchat-time">· Vừa xong · ' + hh + ':' + mm + ' ' + dd + '/' + mo + '</span>' +
-                                '</div>' +
-                            '</div>' +
-                        '</div>' +
-                    '</div>' +
-                    '<div class="cchat-body">' + safePreview + '</div>';
-
-                if (getCurrentPage() === 1 && streamEl) {
-                    streamEl.prepend(optimisticCard);
-                    trimPageOneToLimit();
-                }
-
-                inputEl.value = '';
-                updateCounter();
-                setStatus('', false);
-
-                function escapeLocalName(s) {
-                    return String(s || '').replace(/[&<>"']/g, function(ch) {
-                        return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch];
-                    });
-                }
+                setStatus('Đang gửi...', false);
 
                 try {
                     const res = await fetch('/?ajax_chat=1', {
@@ -1501,29 +1117,16 @@ export async function handleIndex(request, env, user, renderLayout) {
                     });
                     const data = await res.json();
                     if (!res.ok || !data.ok) {
-                        optimisticCard.remove();
                         setStatus(data.error || 'Không thể gửi tin nhắn.', true);
                     } else {
-                        if (getCurrentPage() !== 1) {
-                            optimisticCard.remove();
-                            await window.cchatGoPage(1);
-                        } else if (data.item_html && streamEl) {
-                            const temp = document.createElement('div');
-                            temp.innerHTML = data.item_html;
-                            const realNode = temp.firstElementChild;
-                            if (realNode) {
-                                optimisticCard.replaceWith(realNode);
-                                trimPageOneToLimit();
-                            } else {
-                                optimisticCard.remove();
-                            }
-                        } else {
-                            optimisticCard.remove();
-                        }
+                        appendItemsHtml(data.item_html, true);
                         if (data.id) setLastId(data.id);
+                        inputEl.value = '';
+                        updateCounter();
+                        setStatus('Đã gửi tin nhắn!', false);
+                        setTimeout(function() { setStatus('', false); }, 1800);
                     }
                 } catch (err) {
-                    optimisticCard.remove();
                     setStatus('Lỗi kết nối khi gửi tin nhắn.', true);
                 } finally {
                     isSending = false;
@@ -1532,27 +1135,46 @@ export async function handleIndex(request, env, user, renderLayout) {
                 return false;
             };
 
-            async function pollLatestPage() {
-                if (isBusy || isSending || getCurrentPage() !== 1 || !streamEl) return;
-                isBusy = true;
+            window.cchatReloadList = async function() {
+                if (isPolling || !streamEl) return;
+                isPolling = true;
+                setStatus('Đang cập nhật...', false);
                 try {
-                    const res = await fetch('/?ajax_chat=1&page=1&_t=' + Date.now(), {
+                    const res = await fetch('/?ajax_chat=1&mode=reload&_t=' + Date.now(), {
                         headers: { 'X-Community-Chat': '1' }
                     });
                     if (res.ok) {
                         const data = await res.json();
-                        if (data.ok && typeof data.items_html === 'string') {
-                            const nextLastId = Number(data.last_id || 0);
-                            if (nextLastId !== getLastId() || streamEl.querySelectorAll('.cchat-item').length !== (data.items_html.match(/class="cchat-item/g) || []).length) {
-                                streamEl.innerHTML = data.items_html || '<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào.</div>';
-                                if (pagWrapEl) pagWrapEl.innerHTML = data.pagination_html || '';
-                                if (nextLastId > 0) boxEl.setAttribute('data-last-id', String(nextLastId));
-                            }
+                        if (data.ok) {
+                            streamEl.innerHTML = data.items_html || '<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào.</div>';
+                            if (data.last_id) setLastId(data.last_id);
+                            setStatus('', false);
                         }
                     }
                 } catch (e) {
                 } finally {
-                    isBusy = false;
+                    isPolling = false;
+                }
+            };
+
+            async function pollNewMessages() {
+                if (isPolling || isSending) return;
+                isPolling = true;
+                try {
+                    const lastId = getLastId();
+                    const res = await fetch('/?ajax_chat=1&mode=poll&after_id=' + lastId + '&_t=' + Date.now(), {
+                        headers: { 'X-Community-Chat': '1' }
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.ok && data.items_html) {
+                            appendItemsHtml(data.items_html, true);
+                        }
+                        if (data.last_id) setLastId(data.last_id);
+                    }
+                } catch (e) {
+                } finally {
+                    isPolling = false;
                 }
             }
 
@@ -1567,7 +1189,7 @@ export async function handleIndex(request, env, user, renderLayout) {
             }
 
             renderPickers();
-            setInterval(pollLatestPage, 5000);
+            setInterval(pollNewMessages, 4000);
         })();
     </script>
     `;
