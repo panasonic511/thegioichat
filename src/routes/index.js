@@ -874,6 +874,8 @@ export async function handleIndex(request, env, user, renderLayout) {
             <div class="cchat-link-group">
                 <button type="button" class="cchat-sub-link" onclick="cchatReloadList()">↻ Làm mới</button>
             </div>
+            <div style="font-size: 11px; color: #94a3b8;">Nhấn Gửi để hiện ngay</div>
+        </div>
 
         <div class="cchat-form-area">
             <form id="cchatForm" onsubmit="return cchatSubmitForm(event);">
@@ -881,7 +883,7 @@ export async function handleIndex(request, env, user, renderLayout) {
                     <span>Nội dung tin nhắn:</span>
                     <span id="cchatCharCount">0 / 600</span>
                 </div>
-                <textarea id="cchatInput" class="cchat-textarea" placeholder="Nhập nội dung trò chuyện cùng mọi người"></textarea>
+                <textarea id="cchatInput" class="cchat-textarea" placeholder="Nhập nội dung trò chuyện cùng mọi người...></textarea>
 
                 <div class="cchat-toolbar">
                     <button type="submit" id="cchatSendBtn" class="cchat-send-btn">
