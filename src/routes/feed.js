@@ -330,6 +330,16 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                             "INSERT INTO media_assets (user_id, owner_type, owner_id, media_type, media_url, thumb_url, duration_sec, created_at) VALUES (?, 'post', ?, 'image', ?, ?, 0, datetime('now'))"
                         ).bind(user.id, insertedPost.id, imageUrl.trim(), imageUrl.trim()).run();
                     }
+
+                    if (request.headers.get('X-Requested-With') === 'XMLHttpRequest') {
+                        return new Response(JSON.stringify({
+                            success: true,
+                            id: Number(insertedPost?.id || 0),
+                            imageUrl: normalizeMediaUrl(imageUrl || '')
+                        }), {
+                            headers: { 'Content-Type': 'application/json;charset=UTF-8' }
+                        });
+                    }
                 }
             } else if (action === 'like_post') {
                 const postId = formData.get('post_id');
@@ -347,10 +357,20 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             } else if (action === 'add_comment') {
                 const postId = formData.get('post_id');
                 const commentText = String(formData.get('comment') || '').trim();
+                let insertedCommentId = 0;
                 if (commentText !== '') {
-                    await env.DB.prepare(
-                        "INSERT INTO post_comments (post_id, user_id, comment, created_at) VALUES (?, ?, ?, datetime('now'))"
-                    ).bind(postId, user.id, commentText).run();
+                    const insCmt = await env.DB.prepare(
+                        "INSERT INTO post_comments (post_id, user_id, comment, created_at) VALUES (?, ?, ?, datetime('now')) RETURNING id"
+                    ).bind(postId, user.id, commentText).first();
+                    insertedCommentId = Number(insCmt?.id || 0);
+                }
+                if (request.headers.get('X-Requested-With') === 'XMLHttpRequest') {
+                    return new Response(JSON.stringify({
+                        success: true,
+                        id: insertedCommentId
+                    }), {
+                        headers: { 'Content-Type': 'application/json;charset=UTF-8' }
+                    });
                 }
             } else if (action === 'create_story') {
                 const uploadedFile = formData.get('story_file');
@@ -673,7 +693,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
     let postsHtml = '';
     try {
         if (posts.length === 0) {
-            postsHtml = '<div style="text-align: center; color: #777; padding: 20px;">Chưa có bài viết nào trong mục này.</div>';
+            postsHtml = '<div id="feedEmptyNote" style="text-align: center; color: #777; padding: 20px;">Chưa có bài viết nào trong mục này.</div>';
         } else {
             const postIds = posts.map(p => p.id).filter(id => id !== undefined && id !== null);
             const likeCountMap = new Map();
@@ -748,7 +768,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 ` : '';
 
                 postsHtml += `
-                <div id="post-card-${p.id}" style="background: #121212; border: 1px solid #2c2c2c; border-radius: 6px; padding: 12px; margin-bottom: 12px;">
+                <div id="post-card-${p.id}" data-post-item="1" style="background: #121212; border: 1px solid #2c2c2c; border-radius: 6px; padding: 12px; margin-bottom: 12px;">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                         <div style="display: flex; align-items: center; gap: 10px;">
                             <div class="feed-post-avatar-wrap" style="min-width: 36px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
@@ -820,6 +840,8 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
     const newColor = (tab === 'new') ? '#00ff00' : '#aaa';
     const trendingColor = (tab === 'trending') ? '#00ff00' : '#aaa';
     const followingColor = (tab === 'following') ? '#00ff00' : '#aaa';
+    const currentActorRender = renderFeedUser(user);
+    const currentActorNameJson = JSON.stringify(currentActorRender.nameHtml);
 
     const content = `
     <style>
@@ -948,6 +970,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
         const MAX_STORY_BYTES = 3 * 1024 * 1024;
         const CHUNK_SIZE_BYTES = 1048576;
         const MERGE_BATCH_SIZE = 4;
+        const FEED_ACTOR_NAME_HTML = ${currentActorNameJson};
         let currentStoryIndex = -1;
         let isSubmittingStory = false;
         let preparedStoryBlob = null;
@@ -1715,13 +1738,44 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
         async function submitCommentAjax(event, postId) {
             event.preventDefault();
             const input = document.getElementById('comment-input-' + postId);
-            const text = input.value.trim();
+            const text = input ? input.value.trim() : '';
             if (!text) return;
 
+            const esc = window.wapOptimistic ? window.wapOptimistic.escapeHtml : escapeHtml;
             const formData = new FormData();
             formData.append('action', 'add_comment');
             formData.append('post_id', postId);
             formData.append('comment', text);
+
+            if (input) input.value = '';
+
+            const cntSpan = document.getElementById('comm-count-' + postId);
+            const prevCount = cntSpan ? parseInt(cntSpan.innerText || '0', 10) : 0;
+            if (cntSpan) cntSpan.innerText = String(prevCount + 1);
+
+            const tempCommentHtml =
+                '<div style="font-size: 11px; margin-top: 4px; border-top: 1px solid #222; padding-top: 4px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">' +
+                    '<span style="display: inline-flex; align-items: center; gap: 3px; flex-wrap: wrap;">' + FEED_ACTOR_NAME_HTML + '</span>: ' +
+                    '<span style="color: #ddd;">' + esc(text) + '</span>' +
+                '</div>';
+
+            if (window.wapOptimistic) {
+                await window.wapOptimistic.prepend({
+                    container: '#comment-list-' + postId,
+                    tempHtml: tempCommentHtml,
+                    url: window.location.href,
+                    fetchOptions: {
+                        method: 'POST',
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                        body: formData
+                    },
+                    onError: function() {
+                        if (cntSpan) cntSpan.innerText = String(prevCount);
+                        if (input && !input.value) input.value = text;
+                    }
+                });
+                return;
+            }
 
             try {
                 const res = await fetch(window.location.href, {
@@ -1729,9 +1783,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     headers: { 'X-Requested-With': 'XMLHttpRequest' },
                     body: formData
                 });
-                if (res.ok) {
-                    window.location.reload();
-                }
+                if (res.ok) window.location.reload();
             } catch (e) {
                 window.location.reload();
             }
@@ -1765,16 +1817,68 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
 
         async function submitPostAjax(event, form) {
             event.preventDefault();
+            const textarea = form.querySelector('textarea[name="content"]');
+            const imgInput = form.querySelector('input[name="image_url"]');
+            const fileInput = form.querySelector('input[name="post_file"]');
+            const statusEl = document.getElementById('post-compress-status');
+            const textVal = textarea ? textarea.value.trim() : '';
+            const imgVal = imgInput ? imgInput.value.trim() : '';
+            const hasFile = fileInput && fileInput.files && fileInput.files.length > 0;
+
+            if (!textVal && !imgVal && !hasFile) return;
+
+            const esc = window.wapOptimistic ? window.wapOptimistic.escapeHtml : escapeHtml;
+            const previewImg = imgVal ? '<div style="margin-top: 8px; background: #000; text-align: center; border-radius: 4px; overflow: hidden;"><img src="' + esc(imgVal) + '" style="width: 100%; max-height: 450px; object-fit: contain; display: block; margin: 0 auto;"></div>' : '';
+
+            const tempPostHtml =
+                '<div style="background: #121212; border: 1px solid #2c2c2c; border-radius: 6px; padding: 12px; margin-bottom: 12px;">' +
+                    '<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">' +
+                        '<div>' +
+                            '<div style="display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">' + FEED_ACTOR_NAME_HTML + '</div>' +
+                            '<div style="font-size: 10px; color: #888; margin-top: 2px;">Vừa xong</div>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div style="color: #ddd; font-size: 13px; word-break: break-word; white-space: pre-wrap; margin-bottom: 6px;">' + esc(textVal) + '</div>' +
+                    previewImg +
+                '</div>';
+
             const formData = new FormData(form);
+            if (textarea) textarea.value = '';
+            if (imgInput) imgInput.value = '';
+            if (fileInput) fileInput.value = '';
+            if (statusEl) statusEl.innerText = '';
+
+            if (window.wapOptimistic && !hasFile) {
+                await window.wapOptimistic.prepend({
+                    container: '#feed-posts-list',
+                    tempHtml: tempPostHtml,
+                    hideEmptySelectors: ['#feedEmptyNote'],
+                    url: window.location.href,
+                    fetchOptions: {
+                        method: 'POST',
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                        body: formData
+                    },
+                    onSuccess: function(data, tempEl) {
+                        if (data && data.id) {
+                            tempEl.id = 'post-card-' + data.id;
+                            tempEl.setAttribute('data-post-item', '1');
+                        }
+                    },
+                    onError: function() {
+                        if (textarea && !textarea.value) textarea.value = textVal;
+                    }
+                });
+                return;
+            }
+
             try {
                 const res = await fetch(window.location.href, {
                     method: 'POST',
                     headers: { 'X-Requested-With': 'XMLHttpRequest' },
                     body: formData
                 });
-                if (res.ok) {
-                    window.location.reload();
-                }
+                if (res.ok) window.location.reload();
             } catch (e) {
                 window.location.reload();
             }
@@ -1783,7 +1887,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
 
     <div class="box">
         <div class="box-title">📰 Bảng tin cộng đồng</div>
-        <div class="box-content">
+        <div class="box-content" id="feed-posts-list">
             ${postsHtml}
             ${paginationHtml}
         </div>
