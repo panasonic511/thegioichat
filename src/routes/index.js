@@ -868,15 +868,12 @@ export async function handleIndex(request, env, user, renderLayout) {
                 <span class="cchat-live-dot"></span>
                 <span>💬 Chát cộng đồng</span>
             </div>
-            <span style="font-size: 11px; color: #86efac;">Trực tiếp</span>
         </div>
 
         <div class="cchat-subbar">
             <div class="cchat-link-group">
                 <button type="button" class="cchat-sub-link" onclick="cchatReloadList()">↻ Làm mới</button>
             </div>
-            <div style="font-size: 11px; color: #94a3b8;">Nhấn Gửi để hiện ngay</div>
-        </div>
 
         <div class="cchat-form-area">
             <form id="cchatForm" onsubmit="return cchatSubmitForm(event);">
@@ -884,7 +881,7 @@ export async function handleIndex(request, env, user, renderLayout) {
                     <span>Nội dung tin nhắn:</span>
                     <span id="cchatCharCount">0 / 600</span>
                 </div>
-                <textarea id="cchatInput" class="cchat-textarea" placeholder="Nhập nội dung trò chuyện cùng mọi người... (Hỗ trợ icon động & [color=...]...[/color])"></textarea>
+                <textarea id="cchatInput" class="cchat-textarea" placeholder="Nhập nội dung trò chuyện cùng mọi người"></textarea>
 
                 <div class="cchat-toolbar">
                     <button type="submit" id="cchatSendBtn" class="cchat-send-btn">
@@ -899,7 +896,6 @@ export async function handleIndex(request, env, user, renderLayout) {
                         <span>🎨</span>
                         <span>BBCode Color</span>
                     </button>
-                    <button type="button" class="cchat-clear-btn" onclick="cchatClearInput()" title="Xóa nội dung đang gõ">🗑️ Xóa</button>
                 </div>
 
                 <div id="cchatIconPicker" class="cchat-picker-panel">
