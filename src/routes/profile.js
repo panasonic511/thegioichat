@@ -852,12 +852,15 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             }
         }
 
-        async function submitCommentAjax(ev) {
+async function submitCommentAjax(ev) {
             ev.preventDefault();
             const postId = Number(document.getElementById('comment-popup-post-id')?.value || activeCommentPostId || 0);
             const inputEl = document.getElementById('comment-popup-input');
             const btnEl = document.getElementById('comment-popup-submit-btn');
             const errEl = document.getElementById('comment-popup-error');
+            const listEl = document.getElementById('comment-popup-list');
+            const postCountSpan = document.getElementById('post-comment-count-' + postId);
+            const countBadge = document.getElementById('comment-popup-count');
             const text = (inputEl?.value || '').trim();
 
             if (!postId || !text) return;
@@ -866,6 +869,29 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 errEl.textContent = '';
             }
             if (btnEl) btnEl.disabled = true;
+
+            const prevCount = postCountSpan ? Number(postCountSpan.textContent || 0) : ((WALL_COMMENTS_DATA[postId] || []).length);
+            const optimisticComment = {
+                id: 'opt_' + Date.now(),
+                userId: Number(${Number(user.id || 0)}),
+                nameHtml: ${JSON.stringify(renderUser(user).nameHtml)},
+                avatarSrc: ${JSON.stringify((user.avatar && !String(user.avatar).includes('7gXvS6v')) ? user.avatar : '')} || FALLBACK_AVATAR,
+                avatarStyle: ${JSON.stringify(renderUser(user).avatarStyle || 'border-radius: 50%; object-fit: cover;')},
+                content: text,
+                timeAgo: 'Vừa xong'
+            };
+
+            if (!Array.isArray(WALL_COMMENTS_DATA[postId])) {
+                WALL_COMMENTS_DATA[postId] = [];
+            }
+            WALL_COMMENTS_DATA[postId].unshift(optimisticComment);
+            if (postCountSpan) postCountSpan.textContent = String(prevCount + 1);
+            if (countBadge) countBadge.textContent = String(prevCount + 1);
+            if (inputEl) {
+                inputEl.value = '';
+                inputEl.focus();
+            }
+            renderCommentListInPopup(postId);
 
             try {
                 const body = new URLSearchParams();
@@ -888,22 +914,22 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                     throw new Error(data.error || 'Không thể gửi bình luận!');
                 }
 
-                if (!Array.isArray(WALL_COMMENTS_DATA[postId])) {
-                    WALL_COMMENTS_DATA[postId] = [];
-                }
-                WALL_COMMENTS_DATA[postId].unshift(data.comment);
+                WALL_COMMENTS_DATA[postId] = WALL_COMMENTS_DATA[postId].map(function(item) {
+                    return item.id === optimisticComment.id ? data.comment : item;
+                });
 
-                const postCountSpan = document.getElementById('post-comment-count-' + postId);
                 if (postCountSpan && typeof data.totalComments === 'number') {
                     postCountSpan.textContent = String(data.totalComments);
                 }
-
-                if (inputEl) {
-                    inputEl.value = '';
-                    inputEl.focus();
-                }
                 renderCommentListInPopup(postId);
             } catch (err) {
+                WALL_COMMENTS_DATA[postId] = (WALL_COMMENTS_DATA[postId] || []).filter(function(item) {
+                    return item.id !== optimisticComment.id;
+                });
+                if (postCountSpan) postCountSpan.textContent = String(prevCount);
+                if (countBadge) countBadge.textContent = String(prevCount);
+                if (listEl) renderCommentListInPopup(postId);
+                if (inputEl && !inputEl.value) inputEl.value = text;
                 if (errEl) {
                     errEl.textContent = '❌ ' + (err.message || 'Lỗi gửi bình luận');
                     errEl.style.display = 'block';
