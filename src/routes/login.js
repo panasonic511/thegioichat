@@ -34,8 +34,8 @@ export async function handleLogin(request, env) {
                 <div class="box-title">🔒 Đăng nhập</div>
                 <div class="box-body">
                     <form method="POST" action="/login">
-                        <label style="color:#00ff00;">Tên tài khoản / ID / Gmail:</label>
-                        <input type="text" name="username" required placeholder="Nhập tên đăng nhập hoặc email...">
+                        <label style="color:#00ff00;">Tên tài khoản / ID:</label>
+                        <input type="text" name="username" required placeholder="Nhập tên đăng nhập hoặc ID...">
                         
                         <label style="color:#00ff00;">Nhập mật khẩu:</label>
                         <input type="password" name="password" required placeholder="Nhập mật khẩu...">
@@ -63,12 +63,14 @@ export async function handleLogin(request, env) {
 
     if (request.method === 'POST') {
         const formData = await request.formData();
-        const username = formData.get('username');
-        const password = formData.get('password');
+        const username = String(formData.get('username') ?? '').trim();
+        const password = String(formData.get('password') ?? '');
 
-        // Truy vấn kiểm tra cơ sở dữ liệu D1
-        const user = await env.DB.prepare("SELECT * FROM users WHERE (username = ? OR email = ?) AND password = ?")
-            .bind(username, username, password)
+        const numericId = /^\d+$/.test(username) ? Number(username) : -1;
+
+        // Truy vấn kiểm tra cơ sở dữ liệu D1 theo username hoặc id
+        const user = await env.DB.prepare("SELECT * FROM users WHERE (username = ? OR id = ?) AND password = ?")
+            .bind(username, numericId, password)
             .first();
 
         if (!user) {
