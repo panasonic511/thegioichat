@@ -50,13 +50,13 @@ function renderFeedUser(uLike) {
     const tier = getRoleTier(uLike);
     const normalizedRole = getCanonicalRoleLabel(uLike);
 
-    // Giữ nguyên dữ liệu gốc của user để renderUser xử lý đúng style nick, khung và hiệu ứng avatar
+    // Truyền thẳng object user gốc vào renderUser để giữ đầy đủ mọi icon cấp bậc & style kế tên nick
     const rendered = renderUser(uLike || {}) || {};
     let nameHtml = String(rendered.nameHtml || '');
 
-    // Dọn badge cấp bậc lặp lại nếu có ngay sau thẻ badge
+    // Chỉ xóa chữ cấp bậc thừa bị chèn rời ngay sau thẻ badge nếu có, giữ nguyên mọi thẻ icon/badge
     nameHtml = nameHtml.replace(
-        /(<span\b[^>]*class="[^"]*(?:staff-nick-badge|role-badge|user-role|nick-badge)[^"]*"[^>]*>[\s\S]*?<\/span>)\s*(?:FOUNDER|S\.ADMIN|SUPER ADMIN|ADMIN|MOD|NGƯỜI SÁNG LẬP|THÀNH VIÊN)\b/gi,
+        /(<span\b[^>]*class="[^"]*(?:staff-nick-badge|role-badge|nick-badge)[^"]*"[^>]*>[\s\S]*?<\/span>)\s*(?:FOUNDER|S\.ADMIN|SUPER ADMIN|ADMIN|MOD)\b/gi,
         '$1'
     );
 
@@ -65,28 +65,9 @@ function renderFeedUser(uLike) {
         nameHtml = `<span style="font-weight: bold; color: #fff;">${fallbackName}</span>`;
     }
 
-    const fallbackAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='50' height='50'><rect width='50' height='50' fill='%23333'/></svg>";
-    const rawAvatarUrl = normalizeMediaUrl((uLike && uLike.avatar) || '') || fallbackAvatar;
-    const avatarStyle = String(rendered.avatarStyle || 'border-radius: 50%; border: 2px solid #00ff00; object-fit: cover;');
-
-    // Nếu renderUser có trả avatarHtml thì giữ nguyên, đồng thời đảm bảo kích thước gọn cho feed; nếu thiếu thì dựng từ avatarStyle
-    let avatarHtml = String(rendered.avatarHtml || '').trim();
-    if (avatarHtml) {
-        avatarHtml = `<span class="feed-avatar-wrap" style="display: inline-flex; align-items: center; justify-content: center; position: relative; flex-shrink: 0;">${avatarHtml}</span>`;
-    } else {
-        avatarHtml = `
-            <span class="feed-avatar-wrap" style="display: inline-flex; align-items: center; justify-content: center; position: relative; flex-shrink: 0;">
-                <img src="${escapeAttr(rawAvatarUrl)}" alt="${fallbackName}" loading="lazy" style="width: 36px; height: 36px; ${escapeAttr(avatarStyle)}">
-            </span>
-        `;
-    }
-
     return {
         ...rendered,
         nameHtml,
-        avatarHtml,
-        avatarUrl: rawAvatarUrl,
-        avatarStyle,
         tier,
         roleLabel: normalizedRole
     };
@@ -580,8 +561,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                    COALESCE(ma.thumb_url, stories.thumb_url, stories.image_url) AS resolved_thumb_url,
                    COALESCE(ma.media_type, stories.media_type, 'image') AS resolved_media_type,
                    COALESCE(ma.media_url, stories.media_url, stories.image_url) AS resolved_media_url,
-                   users.username, users.display_name, users.avatar, users.role, users.is_admin, users.active_icon,
-                   users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.border_color, users.avatar_glow
+                   users.*
             FROM stories
             LEFT JOIN media_assets ma ON ma.owner_type = 'story' AND ma.owner_id = stories.id
             LEFT JOIN users ON stories.user_id = users.id
@@ -595,22 +575,11 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
         const viewerItems = stories.map((s, idx) => {
             const detectedType = s.resolved_media_type === 'video' ? 'video' : 'image';
             const rStoryUser = renderFeedUser({
-                id: s.user_id,
-                username: s.username,
-                display_name: s.display_name,
-                avatar: s.avatar,
-                role: s.role,
-                is_admin: s.is_admin,
-                active_icon: s.active_icon,
-                name_color: s.name_color,
-                name_glow: s.name_glow,
-                name_border: s.name_border,
-                name_border_glow: s.name_border_glow,
-                border_color: s.border_color,
-                avatar_glow: s.avatar_glow
+                ...s,
+                id: s.user_id
             });
             const sName = s.display_name || s.username || 'Thành viên';
-            const sAvatar = rStoryUser.avatarUrl || fallbackAvatar;
+            const sAvatar = s.avatar || fallbackAvatar;
             return {
                 index: idx,
                 id: s.id,
@@ -618,7 +587,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 name: sName,
                 nameHtml: rStoryUser.nameHtml,
                 avatar: sAvatar,
-                avatarStyle: rStoryUser.avatarStyle,
+                avatarStyle: rStoryUser.avatarStyle || 'border-radius: 50%; border: 2px solid #00ff00; object-fit: cover;',
                 mediaUrl: normalizeMediaUrl(s.resolved_media_url || ''),
                 mediaType: detectedType,
                 createdAt: s.created_at || 'Vừa xong',
@@ -645,29 +614,14 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             const isVid = s.resolved_media_type === 'video';
             const thumbSrc = normalizeMediaUrl(s.resolved_thumb_url) || (isVid ? fallbackVideoThumb : '');
             const sName = s.display_name || s.username || 'Thành viên';
-            const rMiniUser = renderFeedUser({
-                id: s.user_id,
-                username: s.username,
-                display_name: s.display_name,
-                avatar: s.avatar,
-                role: s.role,
-                is_admin: s.is_admin,
-                active_icon: s.active_icon,
-                name_color: s.name_color,
-                name_glow: s.name_glow,
-                name_border: s.name_border,
-                name_border_glow: s.name_border_glow,
-                border_color: s.border_color,
-                avatar_glow: s.avatar_glow
-            });
-            const sAvatar = rMiniUser.avatarUrl || fallbackAvatar;
+            const sAvatar = s.avatar || fallbackAvatar;
             const bgStyle = thumbSrc
                 ? `background: url('${escapeAttr(thumbSrc)}') center/cover no-repeat;`
                 : 'background: #141414;';
 
             storiesHtml += `
                 <div onclick="openStoryViewer(${idx})" style="min-width: 68px; height: 110px; ${bgStyle} border-radius: 8px; position: relative; border: 1px solid #444; flex-shrink: 0; overflow: hidden; padding: 4px; display: flex; flex-direction: column; justify-content: space-between; cursor: pointer;">
-                    <img src="${escapeAttr(sAvatar)}" loading="lazy" style="position:relative;z-index:2;width: 24px; height: 24px; ${escapeAttr(rMiniUser.avatarStyle)}">
+                    <img src="${escapeAttr(sAvatar)}" loading="lazy" style="position:relative;z-index:2;width: 22px; height: 22px; border-radius: 50%; border: 1px solid #00ff00; object-fit: cover;">
                     <div style="position:relative;z-index:2;font-size: 8px; color: #fff; background: rgba(0,0,0,0.68); padding: 2px; border-radius: 3px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${isVid ? '🎬 ' : ''}${escapeAttr(sName)}</div>
                 </div>
             `;
@@ -680,8 +634,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
     let postsQuery = '';
     if (tab === 'trending') {
         postsQuery = `
-            SELECT posts.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow,
-                   users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role, users.is_admin,
+            SELECT posts.*, users.*,
                    (SELECT COUNT(*) FROM post_likes WHERE post_id = posts.id) +
                    (SELECT COUNT(*) FROM post_comments WHERE post_id = posts.id) as total_interactions
             FROM posts
@@ -690,8 +643,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
         `;
     } else if (tab === 'following') {
         postsQuery = `
-            SELECT posts.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow,
-                   users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role, users.is_admin
+            SELECT posts.*, users.*
             FROM posts
             JOIN users ON posts.user_id = users.id
             WHERE posts.user_id IN (SELECT following_id FROM follows WHERE follower_id = ?)
@@ -699,8 +651,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
         `;
     } else {
         postsQuery = `
-            SELECT posts.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow,
-                   users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role, users.is_admin
+            SELECT posts.*, users.*
             FROM posts
             JOIN users ON posts.user_id = users.id
             ORDER BY posts.id DESC LIMIT ? OFFSET ?
@@ -741,8 +692,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 const [likesRes, commentsRes] = await env.DB.batch([
                     env.DB.prepare(`SELECT post_id, user_id FROM post_likes WHERE post_id IN (${placeholders})`).bind(...postIds),
                     env.DB.prepare(`
-                        SELECT post_comments.*, users.username, users.display_name, users.avatar, users.border_color, users.avatar_glow,
-                               users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.active_icon, users.role, users.is_admin
+                        SELECT post_comments.*, users.*
                         FROM post_comments
                         LEFT JOIN users ON post_comments.user_id = users.id
                         WHERE post_id IN (${placeholders})
@@ -779,8 +729,8 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                         id: c.user_id
                     });
                     commentsHtml += `
-                        <div style="font-size: 11px; margin-top: 4px; border-top: 1px solid #222; padding-top: 4px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                            ${rCommentUser.nameHtml}: <span style="color: #ddd;">${escapeHtml(c.comment)}</span>
+                        <div style="font-size: 11px; margin-top: 4px; border-top: 1px solid #222; padding-top: 4px; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+                            <span style="display: inline-flex; align-items: center; gap: 3px; flex-wrap: wrap;">${rCommentUser.nameHtml}</span>: <span style="color: #ddd;">${escapeHtml(c.comment)}</span>
                         </div>
                     `;
                 });
@@ -808,11 +758,11 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 <div id="post-card-${p.id}" style="background: #121212; border: 1px solid #2c2c2c; border-radius: 6px; padding: 12px; margin-bottom: 12px;">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                         <div style="display: flex; align-items: center; gap: 10px;">
-                            <div style="min-width: 36px; display: inline-flex; align-items: center; justify-content: center; overflow: visible;">
-                                ${rUser.avatarHtml}
+                            <div style="width: 36px; height: 36px; min-width: 36px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                                ${rUser.avatarHtml.replace(/style="[^"]*"/gi, 'style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;"')}
                             </div>
                             <div>
-                                <div style="display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap;">${rUser.nameHtml}</div>
+                                <div style="display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">${rUser.nameHtml}</div>
                                 <div style="font-size: 10px; color: #888; margin-top: 2px;">${escapeHtml(p.created_at || '')}</div>
                             </div>
                         </div>
@@ -879,14 +829,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
     const followingColor = (tab === 'following') ? '#00ff00' : '#aaa';
 
     const content = `
-    <style>
-        .feed-avatar-wrap img {
-            width: 36px;
-            height: 36px;
-            object-fit: cover;
-            display: block;
-        }
-    </style>
     <div class="box">
         <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
             <span>📰 Bảng tin cộng đồng</span>
@@ -958,8 +900,8 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
                 <img id="sv-avatar" src="" style="width: 38px; height: 38px; border-radius: 50%; border: 2px solid #00ff00; object-fit: cover; flex-shrink: 0;">
                 <div style="min-width: 0;">
-                    <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                        <span id="sv-name" style="color: #fff; font-weight: bold; font-size: 14px; text-shadow: 0 1px 4px #000;"></span>
+                    <div style="display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+                        <span id="sv-name" style="color: #fff; font-weight: bold; font-size: 14px; text-shadow: 0 1px 4px #000; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;"></span>
                     </div>
                     <div style="font-size: 11px; color: #ccc; text-shadow: 0 1px 3px #000;">
                         <span id="sv-time"></span>
