@@ -47,24 +47,11 @@ function renderFeedUser(uLike) {
     const rendered = renderUser(enrichedUser) || {};
     let nameHtml = String(rendered.nameHtml || '');
 
-    const badgeLabel = tier === ROLE_TIERS.FOUNDER
-        ? 'FOUNDER'
-        : (tier === ROLE_TIERS.SUPER_ADMIN
-            ? 'S.ADMIN'
-            : (tier === ROLE_TIERS.ADMIN
-                ? 'ADMIN'
-                : (tier === ROLE_TIERS.MOD ? 'MOD' : '')));
-
-    if (badgeLabel) {
-        if (/<span\b[^>]*class="[^"]*(?:role|badge|staff)[^"]*"[^>]*>[\s\S]*?<\/span>/i.test(nameHtml)) {
-            nameHtml = nameHtml.replace(
-                /(<span\b[^>]*class="[^"]*(?:role|badge|staff)[^"]*"[^>]*>)[\s\S]*?(<\/span>)/i,
-                `$1${escapeAttr(badgeLabel)}$2`
-            );
-        } else {
-            nameHtml = nameHtml.replace(/\b(MOD|ADMIN|S\.ADMIN|SUPER ADMIN|FOUNDER)\b/gi, badgeLabel);
-        }
-    }
+    // Xóa các text badge bị chèn lặp ngay sau thẻ đóng của badge staff
+    nameHtml = nameHtml.replace(
+        /(<span\b[^>]*class="[^"]*staff-nick-badge[^"]*"[^>]*>[\s\S]*?<\/span>)\s*(?:FOUNDER|S\.ADMIN|SUPER ADMIN|ADMIN|MOD)\b/gi,
+        '$1'
+    );
 
     return {
         ...rendered,
@@ -72,6 +59,27 @@ function renderFeedUser(uLike) {
         tier,
         roleLabel: normalizedRole
     };
+}
+
+function canDeleteContent(actor, ownerUserLike) {
+    const actorId = Number(actor && actor.id ? actor.id : 0);
+    const ownerId = Number(
+        ownerUserLike && (ownerUserLike.user_id !== undefined ? ownerUserLike.user_id : ownerUserLike.id)
+            ? (ownerUserLike.user_id !== undefined ? ownerUserLike.user_id : ownerUserLike.id)
+            : 0
+    );
+
+    if (actorId > 0 && ownerId > 0 && actorId === ownerId) {
+        return true;
+    }
+
+    const actorTier = getRoleTier(actor);
+    if (actorTier < ROLE_TIERS.MOD) {
+        return false;
+    }
+
+    const ownerTier = getRoleTier(ownerUserLike);
+    return actorTier > ownerTier;
 }
 
 function isStoryExpired(createdAtStr) {
@@ -230,8 +238,6 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
     const page = parseInt(urlObj.searchParams.get('page')) || 1;
     const limit = 10;
     const offset = (page - 1) * limit;
-    const currentUserTier = getRoleTier(user);
-    const isCurrentStaffOrAdmin = currentUserTier >= ROLE_TIERS.MOD;
 
     if (request.method === 'POST') {
         try {
@@ -417,13 +423,22 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 const storyId = formData.get('story_id');
                 const targetStory = await env.DB.prepare(`
                     SELECT stories.user_id, stories.image_url, stories.media_url, stories.thumb_url,
-                           ma.media_url AS ma_media_url, ma.thumb_url AS ma_thumb_url
+                           ma.media_url AS ma_media_url, ma.thumb_url AS ma_thumb_url,
+                           users.id AS owner_id, users.role AS owner_role, users.is_admin AS owner_is_admin
                     FROM stories
                     LEFT JOIN media_assets ma ON ma.owner_type = 'story' AND ma.owner_id = stories.id
+                    LEFT JOIN users ON stories.user_id = users.id
                     WHERE stories.id = ?
                 `).bind(storyId).first();
 
-                if (targetStory && (isCurrentStaffOrAdmin || Number(targetStory.user_id) === Number(user.id))) {
+                const ownerObj = targetStory ? {
+                    id: targetStory.owner_id || targetStory.user_id,
+                    user_id: targetStory.user_id,
+                    role: targetStory.owner_role,
+                    is_admin: targetStory.owner_is_admin
+                } : null;
+
+                if (targetStory && canDeleteContent(user, ownerObj)) {
                     for (const u of [
                         targetStory.image_url, targetStory.media_url, targetStory.thumb_url,
                         targetStory.ma_media_url, targetStory.ma_thumb_url
@@ -438,13 +453,22 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             } else if (action === 'delete_post') {
                 const postId = formData.get('post_id');
                 const targetPost = await env.DB.prepare(`
-                    SELECT posts.user_id, posts.image_url, ma.media_url AS ma_media_url
+                    SELECT posts.user_id, posts.image_url, ma.media_url AS ma_media_url,
+                           users.id AS owner_id, users.role AS owner_role, users.is_admin AS owner_is_admin
                     FROM posts
                     LEFT JOIN media_assets ma ON ma.owner_type = 'post' AND ma.owner_id = posts.id
+                    LEFT JOIN users ON posts.user_id = users.id
                     WHERE posts.id = ?
                 `).bind(postId).first();
 
-                if (targetPost && (isCurrentStaffOrAdmin || Number(targetPost.user_id) === Number(user.id))) {
+                const ownerObj = targetPost ? {
+                    id: targetPost.owner_id || targetPost.user_id,
+                    user_id: targetPost.user_id,
+                    role: targetPost.owner_role,
+                    is_admin: targetPost.owner_is_admin
+                } : null;
+
+                if (targetPost && canDeleteContent(user, ownerObj)) {
                     await deleteMediaAsset(request, env, targetPost.image_url);
                     await deleteMediaAsset(request, env, targetPost.ma_media_url);
                     await env.DB.batch([
@@ -567,7 +591,12 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 mediaUrl: normalizeMediaUrl(s.resolved_media_url || ''),
                 mediaType: detectedType,
                 createdAt: s.created_at || 'Vừa xong',
-                canDelete: Boolean(isCurrentStaffOrAdmin || (s.user_id && Number(s.user_id) === Number(user.id)))
+                canDelete: canDeleteContent(user, {
+                    id: s.user_id,
+                    user_id: s.user_id,
+                    role: s.role,
+                    is_admin: s.is_admin
+                })
             };
         });
         storyViewerDataJson = JSON.stringify(viewerItems).replace(/</g, '\\u003c');
@@ -715,7 +744,12 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     ? `<div style="margin-top: 8px; background: #000; text-align: center; border-radius: 4px; overflow: hidden;"><img src="${escapeAttr(imgSrc)}" loading="lazy" style="width: 100%; max-height: 450px; object-fit: contain; display: block; margin: 0 auto;"></div>`
                     : '';
 
-                const canDelete = isCurrentStaffOrAdmin || Number(p.user_id) === Number(user.id);
+                const canDelete = canDeleteContent(user, {
+                    id: p.user_id,
+                    user_id: p.user_id,
+                    role: p.role,
+                    is_admin: p.is_admin
+                });
                 const deleteBtnHtml = canDelete ? `
                     <form onsubmit="deletePostAjax(event, ${p.id})" style="margin: 0;">
                         <input type="hidden" name="action" value="delete_post">
