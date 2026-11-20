@@ -842,6 +842,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
     const followingColor = (tab === 'following') ? '#00ff00' : '#aaa';
     const currentActorRender = renderFeedUser(user);
     const currentActorNameJson = JSON.stringify(currentActorRender.nameHtml);
+    const currentActorAvatarJson = JSON.stringify(currentActorRender.avatarHtml);
 
     const content = `
     <style>
@@ -971,6 +972,8 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
         const CHUNK_SIZE_BYTES = 1048576;
         const MERGE_BATCH_SIZE = 4;
         const FEED_ACTOR_NAME_HTML = ${currentActorNameJson};
+        const FEED_ACTOR_AVATAR_HTML = ${currentActorAvatarJson};
+        const FEED_CAN_DELETE_OWN = true;
         let currentStoryIndex = -1;
         let isSubmittingStory = false;
         let preparedStoryBlob = null;
@@ -1815,6 +1818,89 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             }
         }
 
+        function buildFeedPostCardHtml(opts) {
+            const esc = window.wapOptimistic ? window.wapOptimistic.escapeHtml : escapeHtml;
+            const postId = Number(opts.id || 0);
+            const authorNameHtml = opts.authorNameHtml || FEED_ACTOR_NAME_HTML;
+            const authorAvatarHtml = opts.authorAvatarHtml || FEED_ACTOR_AVATAR_HTML;
+            const timeText = opts.timeText || 'Vừa xong';
+            const contentText = opts.content || '';
+            const imageUrl = opts.imageUrl || '';
+            const likeCount = Number(opts.likeCount || 0);
+            const commentCount = Number(opts.commentCount || 0);
+            const canDelete = Boolean(opts.canDelete);
+            const isTemp = Boolean(opts.isTemp);
+
+            const imageTag = imageUrl
+                ? '<div style="margin-top: 8px; background: #000; text-align: center; border-radius: 4px; overflow: hidden;"><img src="' + esc(imageUrl) + '" loading="lazy" style="width: 100%; max-height: 450px; object-fit: contain; display: block; margin: 0 auto;"></div>'
+                : '';
+
+            const deleteBtnHtml = (canDelete && postId > 0 && !isTemp)
+                ? '<form onsubmit="deletePostAjax(event, ' + postId + ')" style="margin: 0;">' +
+                    '<input type="hidden" name="action" value="delete_post">' +
+                    '<input type="hidden" name="post_id" value="' + postId + '">' +
+                    '<button type="submit" style="background: none; border: none; color: #ff5555; cursor: pointer; font-size: 11px;" title="Xóa bài viết">🗑️ Xóa</button>' +
+                  '</form>'
+                : '';
+
+            const likeControlHtml = (postId > 0 && !isTemp)
+                ? '<form onsubmit="submitAjax(event, this)" style="margin: 0;">' +
+                    '<input type="hidden" name="action" value="like_post">' +
+                    '<input type="hidden" name="post_id" value="' + postId + '">' +
+                    '<button type="submit" style="background: none; border: none; color: #888; cursor: pointer; font-size: 14px; padding: 0;">' +
+                      '❤️ <span style="font-size: 11px; color: #ccc;" id="like-count-' + postId + '">' + likeCount + '</span>' +
+                    '</button>' +
+                  '</form>'
+                : '<span style="color: #888; font-size: 14px; display: inline-flex; align-items: center; gap: 4px;">' +
+                    '❤️ <span style="font-size: 11px; color: #ccc;">' + likeCount + '</span>' +
+                  '</span>';
+
+            const commentBtnHtml = (postId > 0 && !isTemp)
+                ? '<button type="button" onclick="toggleCommentBox(' + postId + ')" style="background: none; border: none; color: #aaa; cursor: pointer; font-size: 13px; padding: 0; display: flex; align-items: center; gap: 4px;">' +
+                    '💬 <span style="font-size: 11px;" id="comm-count-' + postId + '">' + commentCount + '</span> bình luận' +
+                  '</button>'
+                : '<span style="color: #aaa; font-size: 13px; display: inline-flex; align-items: center; gap: 4px;">' +
+                    '💬 <span style="font-size: 11px;">' + commentCount + '</span> bình luận' +
+                  '</span>';
+
+            const commentBoxHtml = (postId > 0 && !isTemp)
+                ? '<div style="margin-top: 6px;" id="comment-list-' + postId + '"></div>' +
+                  '<div id="comment-box-' + postId + '" style="display: none; margin-top: 8px;">' +
+                    '<form onsubmit="submitCommentAjax(event, ' + postId + ')" style="display: flex; gap: 6px;">' +
+                      '<input type="hidden" name="action" value="add_comment">' +
+                      '<input type="hidden" name="post_id" value="' + postId + '">' +
+                      '<input type="text" name="comment" id="comment-input-' + postId + '" placeholder="Viết bình luận của bạn..." style="flex: 1; background: #0a0a0a; color: #fff; border: 1px solid #333; padding: 6px; font-size: 11px; border-radius: 4px;" required>' +
+                      '<button type="submit" style="background: #0055ff; color: #fff; border: none; padding: 6px 12px; font-size: 11px; border-radius: 4px; cursor: pointer;">Gửi</button>' +
+                    '</form>' +
+                  '</div>'
+                : '<div style="margin-top: 6px;"></div>';
+
+            return '<div id="' + (postId > 0 ? ('post-card-' + postId) : '') + '" data-post-item="1" style="background: #121212; border: 1px solid #2c2c2c; border-radius: 6px; padding: 12px; margin-bottom: 12px;">' +
+                '<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">' +
+                    '<div style="display: flex; align-items: center; gap: 10px;">' +
+                        '<div class="feed-post-avatar-wrap" style="min-width: 36px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">' +
+                            authorAvatarHtml +
+                        '</div>' +
+                        '<div>' +
+                            '<div style="display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">' + authorNameHtml + '</div>' +
+                            '<div style="font-size: 10px; color: #888; margin-top: 2px;">' + esc(timeText) + '</div>' +
+                        '</div>' +
+                    '</div>' +
+                    deleteBtnHtml +
+                '</div>' +
+                '<div style="color: #ddd; font-size: 13px; word-break: break-word; white-space: pre-wrap; margin-bottom: 6px;">' + esc(contentText) + '</div>' +
+                imageTag +
+                '<div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #222; margin-top: 10px; padding-top: 8px;">' +
+                    '<div style="display: flex; align-items: center; gap: 14px;">' +
+                        likeControlHtml +
+                        commentBtnHtml +
+                    '</div>' +
+                    '<span style="font-size: 10px; color: #666;">Tương tác</span>' +
+                '</div>' +
+                commentBoxHtml +
+            '</div>';
+        }
+
         async function submitPostAjax(event, form) {
             event.preventDefault();
             const textarea = form.querySelector('textarea[name="content"]');
@@ -1827,20 +1913,16 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
 
             if (!textVal && !imgVal && !hasFile) return;
 
-            const esc = window.wapOptimistic ? window.wapOptimistic.escapeHtml : escapeHtml;
-            const previewImg = imgVal ? '<div style="margin-top: 8px; background: #000; text-align: center; border-radius: 4px; overflow: hidden;"><img src="' + esc(imgVal) + '" style="width: 100%; max-height: 450px; object-fit: contain; display: block; margin: 0 auto;"></div>' : '';
-
-            const tempPostHtml =
-                '<div style="background: #121212; border: 1px solid #2c2c2c; border-radius: 6px; padding: 12px; margin-bottom: 12px;">' +
-                    '<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">' +
-                        '<div>' +
-                            '<div style="display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">' + FEED_ACTOR_NAME_HTML + '</div>' +
-                            '<div style="font-size: 10px; color: #888; margin-top: 2px;">Vừa xong</div>' +
-                        '</div>' +
-                    '</div>' +
-                    '<div style="color: #ddd; font-size: 13px; word-break: break-word; white-space: pre-wrap; margin-bottom: 6px;">' + esc(textVal) + '</div>' +
-                    previewImg +
-                '</div>';
+            const tempPostHtml = buildFeedPostCardHtml({
+                id: 0,
+                timeText: 'Vừa xong',
+                content: textVal,
+                imageUrl: imgVal,
+                likeCount: 0,
+                commentCount: 0,
+                canDelete: false,
+                isTemp: true
+            });
 
             const formData = new FormData(form);
             if (textarea) textarea.value = '';
@@ -1861,8 +1943,16 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                     },
                     onSuccess: function(data, tempEl) {
                         if (data && data.id) {
-                            tempEl.id = 'post-card-' + data.id;
-                            tempEl.setAttribute('data-post-item', '1');
+                            tempEl.outerHTML = buildFeedPostCardHtml({
+                                id: Number(data.id),
+                                timeText: 'Vừa xong',
+                                content: textVal,
+                                imageUrl: data.imageUrl || imgVal,
+                                likeCount: 0,
+                                commentCount: 0,
+                                canDelete: FEED_CAN_DELETE_OWN,
+                                isTemp: false
+                            });
                         }
                     },
                     onError: function() {
