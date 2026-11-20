@@ -35,41 +35,70 @@ function escapeHtml(str) {
         .replace(/'/g, '&#39;');
 }
 
-function getCanonicalRoleLabel(uLike) {
-    if (!uLike) return 'Thành Viên';
+function buildRoleTitleHtml(uLike) {
     const tier = getRoleTier(uLike);
-    if (tier === ROLE_TIERS.FOUNDER) return 'Người Sáng Lập';
-    if (tier === ROLE_TIERS.SUPER_ADMIN) return 'Super Admin';
-    if (tier === ROLE_TIERS.ADMIN) return 'Admin';
-    if (tier === ROLE_TIERS.MOD) return 'Mod';
     const cfg = getRoleConfig(uLike);
-    return (cfg && cfg.label) ? cfg.label : (uLike.role || 'Thành Viên');
+    const roleLabel = (cfg && cfg.label) ? String(cfg.label).trim() : String((uLike && uLike.role) || 'Thành Viên').trim();
+    if (!roleLabel) return '';
+
+    let color = '#94a3b8';
+    let bg = 'rgba(148, 163, 184, 0.12)';
+    let border = 'rgba(148, 163, 184, 0.32)';
+
+    if (tier === ROLE_TIERS.FOUNDER) {
+        color = '#ffd700';
+        bg = 'rgba(255, 215, 0, 0.16)';
+        border = 'rgba(255, 215, 0, 0.55)';
+    } else if (tier === ROLE_TIERS.SUPER_ADMIN) {
+        color = '#ff4d94';
+        bg = 'rgba(255, 77, 148, 0.16)';
+        border = 'rgba(255, 77, 148, 0.5)';
+    } else if (tier === ROLE_TIERS.ADMIN) {
+        color = '#ff5555';
+        bg = 'rgba(255, 85, 85, 0.16)';
+        border = 'rgba(255, 85, 85, 0.5)';
+    } else if (tier === ROLE_TIERS.MOD) {
+        color = '#38bdf8';
+        bg = 'rgba(56, 189, 248, 0.16)';
+        border = 'rgba(56, 189, 248, 0.5)';
+    }
+
+    return `<span class="role-tier-title" style="display:inline-flex;align-items:center;margin-left:4px;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:bold;line-height:1.25;color:${escapeAttr(color)};background:${escapeAttr(bg)};border:1px solid ${escapeAttr(border)};white-space:nowrap;">${escapeHtml(roleLabel)}</span>`;
 }
 
 function renderFeedUser(uLike) {
     const tier = getRoleTier(uLike);
-    const normalizedRole = getCanonicalRoleLabel(uLike);
-
-    // Truyền thẳng object user gốc vào renderUser để giữ đầy đủ mọi icon cấp bậc & style kế tên nick
+    const cfg = getRoleConfig(uLike);
     const rendered = renderUser(uLike || {}) || {};
     let nameHtml = String(rendered.nameHtml || '');
-
-    // Chỉ xóa chữ cấp bậc thừa bị chèn rời ngay sau thẻ badge nếu có, giữ nguyên mọi thẻ icon/badge
-    nameHtml = nameHtml.replace(
-        /(<span\b[^>]*class="[^"]*(?:staff-nick-badge|role-badge|nick-badge)[^"]*"[^>]*>[\s\S]*?<\/span>)\s*(?:FOUNDER|S\.ADMIN|SUPER ADMIN|ADMIN|MOD)\b/gi,
-        '$1'
-    );
 
     const fallbackName = escapeHtml((uLike && (uLike.display_name || uLike.username)) || 'Thành viên');
     if (!nameHtml.trim()) {
         nameHtml = `<span style="font-weight: bold; color: #fff;">${fallbackName}</span>`;
     }
 
+    const roleTitleHtml = buildRoleTitleHtml(uLike);
+    if (roleTitleHtml && !nameHtml.includes('role-tier-title')) {
+        nameHtml = `${nameHtml}${roleTitleHtml}`;
+    }
+
+    const fallbackAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='50' height='50'><rect width='50' height='50' fill='%23333'/></svg>";
+    const borderCol = (uLike && uLike.border_color) ? String(uLike.border_color) : '#ffcc00';
+    const glowCol = (uLike && uLike.avatar_glow && uLike.avatar_glow !== '#000000') ? String(uLike.avatar_glow) : '';
+    const defaultStyle = `width:36px;height:36px;border-radius:50%;object-fit:cover;display:block;border:2px solid ${escapeAttr(borderCol)};${glowCol ? `box-shadow:0 0 10px ${escapeAttr(glowCol)};` : ''}`;
+
+    const rawAvatarHtml = String(rendered.avatarHtml || '').trim();
+    const avatarHtml = rawAvatarHtml
+        ? rawAvatarHtml
+        : `<img src="${escapeAttr((uLike && uLike.avatar) || fallbackAvatar)}" loading="lazy" style="${defaultStyle}">`;
+
     return {
         ...rendered,
+        avatarHtml,
         nameHtml,
         tier,
-        roleLabel: normalizedRole
+        roleLabel: (cfg && cfg.label) ? cfg.label : 'Thành Viên',
+        roleBadge: (cfg && cfg.badge) ? cfg.badge : ''
     };
 }
 
@@ -729,7 +758,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                         id: c.user_id
                     });
                     commentsHtml += `
-                        <div style="font-size: 11px; margin-top: 4px; border-top: 1px solid #222; padding-top: 4px; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+                        <div style="font-size: 11px; margin-top: 4px; border-top: 1px solid #222; padding-top: 4px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">
                             <span style="display: inline-flex; align-items: center; gap: 3px; flex-wrap: wrap;">${rCommentUser.nameHtml}</span>: <span style="color: #ddd;">${escapeHtml(c.comment)}</span>
                         </div>
                     `;
@@ -758,8 +787,8 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 <div id="post-card-${p.id}" style="background: #121212; border: 1px solid #2c2c2c; border-radius: 6px; padding: 12px; margin-bottom: 12px;">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                         <div style="display: flex; align-items: center; gap: 10px;">
-                            <div style="width: 36px; height: 36px; min-width: 36px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
-                                ${rUser.avatarHtml.replace(/style="[^"]*"/gi, 'style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;"')}
+                            <div class="feed-post-avatar-wrap" style="min-width: 36px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                                ${rUser.avatarHtml}
                             </div>
                             <div>
                                 <div style="display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">${rUser.nameHtml}</div>
@@ -829,6 +858,14 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
     const followingColor = (tab === 'following') ? '#00ff00' : '#aaa';
 
     const content = `
+    <style>
+        .feed-post-avatar-wrap img {
+            width: 36px;
+            height: 36px;
+            object-fit: cover;
+            display: block;
+        }
+    </style>
     <div class="box">
         <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
             <span>📰 Bảng tin cộng đồng</span>
