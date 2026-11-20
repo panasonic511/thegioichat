@@ -25,6 +25,16 @@ function escapeAttr(str) {
         .replace(/>/g, '&gt;');
 }
 
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 function getCanonicalRoleLabel(uLike) {
     if (!uLike) return 'Thành Viên';
     const tier = getRoleTier(uLike);
@@ -37,25 +47,46 @@ function getCanonicalRoleLabel(uLike) {
 }
 
 function renderFeedUser(uLike) {
-    const normalizedRole = getCanonicalRoleLabel(uLike);
     const tier = getRoleTier(uLike);
-    const enrichedUser = {
-        ...uLike,
-        role: normalizedRole,
-        is_admin: tier >= ROLE_TIERS.ADMIN ? 1 : Number(uLike && uLike.is_admin ? uLike.is_admin : 0)
-    };
-    const rendered = renderUser(enrichedUser) || {};
+    const normalizedRole = getCanonicalRoleLabel(uLike);
+
+    // Giữ nguyên dữ liệu gốc của user để renderUser xử lý đúng style nick, khung và hiệu ứng avatar
+    const rendered = renderUser(uLike || {}) || {};
     let nameHtml = String(rendered.nameHtml || '');
 
-    // Xóa các text badge bị chèn lặp ngay sau thẻ đóng của badge staff
+    // Dọn badge cấp bậc lặp lại nếu có ngay sau thẻ badge
     nameHtml = nameHtml.replace(
-        /(<span\b[^>]*class="[^"]*staff-nick-badge[^"]*"[^>]*>[\s\S]*?<\/span>)\s*(?:FOUNDER|S\.ADMIN|SUPER ADMIN|ADMIN|MOD)\b/gi,
+        /(<span\b[^>]*class="[^"]*(?:staff-nick-badge|role-badge|user-role|nick-badge)[^"]*"[^>]*>[\s\S]*?<\/span>)\s*(?:FOUNDER|S\.ADMIN|SUPER ADMIN|ADMIN|MOD|NGƯỜI SÁNG LẬP|THÀNH VIÊN)\b/gi,
         '$1'
     );
+
+    const fallbackName = escapeHtml((uLike && (uLike.display_name || uLike.username)) || 'Thành viên');
+    if (!nameHtml.trim()) {
+        nameHtml = `<span style="font-weight: bold; color: #fff;">${fallbackName}</span>`;
+    }
+
+    const fallbackAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='50' height='50'><rect width='50' height='50' fill='%23333'/></svg>";
+    const rawAvatarUrl = normalizeMediaUrl((uLike && uLike.avatar) || '') || fallbackAvatar;
+    const avatarStyle = String(rendered.avatarStyle || 'border-radius: 50%; border: 2px solid #00ff00; object-fit: cover;');
+
+    // Nếu renderUser có trả avatarHtml thì giữ nguyên, đồng thời đảm bảo kích thước gọn cho feed; nếu thiếu thì dựng từ avatarStyle
+    let avatarHtml = String(rendered.avatarHtml || '').trim();
+    if (avatarHtml) {
+        avatarHtml = `<span class="feed-avatar-wrap" style="display: inline-flex; align-items: center; justify-content: center; position: relative; flex-shrink: 0;">${avatarHtml}</span>`;
+    } else {
+        avatarHtml = `
+            <span class="feed-avatar-wrap" style="display: inline-flex; align-items: center; justify-content: center; position: relative; flex-shrink: 0;">
+                <img src="${escapeAttr(rawAvatarUrl)}" alt="${fallbackName}" loading="lazy" style="width: 36px; height: 36px; ${escapeAttr(avatarStyle)}">
+            </span>
+        `;
+    }
 
     return {
         ...rendered,
         nameHtml,
+        avatarHtml,
+        avatarUrl: rawAvatarUrl,
+        avatarStyle,
         tier,
         roleLabel: normalizedRole
     };
@@ -579,7 +610,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 avatar_glow: s.avatar_glow
             });
             const sName = s.display_name || s.username || 'Thành viên';
-            const sAvatar = s.avatar || fallbackAvatar;
+            const sAvatar = rStoryUser.avatarUrl || fallbackAvatar;
             return {
                 index: idx,
                 id: s.id,
@@ -587,7 +618,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 name: sName,
                 nameHtml: rStoryUser.nameHtml,
                 avatar: sAvatar,
-                avatarStyle: rStoryUser.avatarStyle || 'border-radius: 50%; border: 2px solid #00ff00; object-fit: cover;',
+                avatarStyle: rStoryUser.avatarStyle,
                 mediaUrl: normalizeMediaUrl(s.resolved_media_url || ''),
                 mediaType: detectedType,
                 createdAt: s.created_at || 'Vừa xong',
@@ -614,14 +645,29 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
             const isVid = s.resolved_media_type === 'video';
             const thumbSrc = normalizeMediaUrl(s.resolved_thumb_url) || (isVid ? fallbackVideoThumb : '');
             const sName = s.display_name || s.username || 'Thành viên';
-            const sAvatar = s.avatar || fallbackAvatar;
+            const rMiniUser = renderFeedUser({
+                id: s.user_id,
+                username: s.username,
+                display_name: s.display_name,
+                avatar: s.avatar,
+                role: s.role,
+                is_admin: s.is_admin,
+                active_icon: s.active_icon,
+                name_color: s.name_color,
+                name_glow: s.name_glow,
+                name_border: s.name_border,
+                name_border_glow: s.name_border_glow,
+                border_color: s.border_color,
+                avatar_glow: s.avatar_glow
+            });
+            const sAvatar = rMiniUser.avatarUrl || fallbackAvatar;
             const bgStyle = thumbSrc
                 ? `background: url('${escapeAttr(thumbSrc)}') center/cover no-repeat;`
                 : 'background: #141414;';
 
             storiesHtml += `
                 <div onclick="openStoryViewer(${idx})" style="min-width: 68px; height: 110px; ${bgStyle} border-radius: 8px; position: relative; border: 1px solid #444; flex-shrink: 0; overflow: hidden; padding: 4px; display: flex; flex-direction: column; justify-content: space-between; cursor: pointer;">
-                    <img src="${escapeAttr(sAvatar)}" loading="lazy" style="position:relative;z-index:2;width: 22px; height: 22px; border-radius: 50%; border: 1px solid #00ff00; object-fit: cover;">
+                    <img src="${escapeAttr(sAvatar)}" loading="lazy" style="position:relative;z-index:2;width: 24px; height: 24px; ${escapeAttr(rMiniUser.avatarStyle)}">
                     <div style="position:relative;z-index:2;font-size: 8px; color: #fff; background: rgba(0,0,0,0.68); padding: 2px; border-radius: 3px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${isVid ? '🎬 ' : ''}${escapeAttr(sName)}</div>
                 </div>
             `;
@@ -733,8 +779,8 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                         id: c.user_id
                     });
                     commentsHtml += `
-                        <div style="font-size: 11px; margin-top: 4px; border-top: 1px solid #222; padding-top: 4px;">
-                            ${rCommentUser.nameHtml}: <span style="color: #ddd;">${c.comment}</span>
+                        <div style="font-size: 11px; margin-top: 4px; border-top: 1px solid #222; padding-top: 4px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                            ${rCommentUser.nameHtml}: <span style="color: #ddd;">${escapeHtml(c.comment)}</span>
                         </div>
                     `;
                 });
@@ -762,17 +808,17 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 <div id="post-card-${p.id}" style="background: #121212; border: 1px solid #2c2c2c; border-radius: 6px; padding: 12px; margin-bottom: 12px;">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                         <div style="display: flex; align-items: center; gap: 10px;">
-                            <div style="width: 36px; height: 36px; min-width: 36px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
-                                ${rUser.avatarHtml.replace(/style="[^"]*"/gi, 'style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;"')}
+                            <div style="min-width: 36px; display: inline-flex; align-items: center; justify-content: center; overflow: visible;">
+                                ${rUser.avatarHtml}
                             </div>
                             <div>
-                                <div>${rUser.nameHtml}</div>
-                                <div style="font-size: 10px; color: #888; margin-top: 2px;">${p.created_at || ''}</div>
+                                <div style="display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap;">${rUser.nameHtml}</div>
+                                <div style="font-size: 10px; color: #888; margin-top: 2px;">${escapeHtml(p.created_at || '')}</div>
                             </div>
                         </div>
                         ${deleteBtnHtml}
                     </div>
-                    <div style="color: #ddd; font-size: 13px; word-break: break-word; white-space: pre-wrap; margin-bottom: 6px;">${p.content || ''}</div>
+                    <div style="color: #ddd; font-size: 13px; word-break: break-word; white-space: pre-wrap; margin-bottom: 6px;">${escapeHtml(p.content || '')}</div>
                     ${imageTag}
 
                     <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #222; margin-top: 10px; padding-top: 8px;">
@@ -833,6 +879,14 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
     const followingColor = (tab === 'following') ? '#00ff00' : '#aaa';
 
     const content = `
+    <style>
+        .feed-avatar-wrap img {
+            width: 36px;
+            height: 36px;
+            object-fit: cover;
+            display: block;
+        }
+    </style>
     <div class="box">
         <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
             <span>📰 Bảng tin cộng đồng</span>
