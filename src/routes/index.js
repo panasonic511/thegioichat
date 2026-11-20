@@ -868,7 +868,7 @@ export async function handleIndex(request, env, user, renderLayout) {
                 <span class="cchat-live-dot"></span>
                 <span>💬 Chát cộng đồng</span>
             </div>
-            <span style="font-size: 11px; color: #86efac;">Trực tiếp</span>
+
         </div>
 
         <div class="cchat-subbar">
@@ -884,7 +884,7 @@ export async function handleIndex(request, env, user, renderLayout) {
                     <span>Nội dung tin nhắn:</span>
                     <span id="cchatCharCount">0 / 600</span>
                 </div>
-                <textarea id="cchatInput" class="cchat-textarea" placeholder="Nhập nội dung trò chuyện cùng mọi người... (Hỗ trợ icon động & [color=...]...[/color])"></textarea>
+                <textarea id="cchatInput" class="cchat-textarea" placeholder="Nhập nội dung trò chuyện cùng mọi người..."></textarea>
 
                 <div class="cchat-toolbar">
                     <button type="submit" id="cchatSendBtn" class="cchat-send-btn">
