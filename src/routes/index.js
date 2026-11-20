@@ -1,6 +1,10 @@
 import { handleLogin } from './auth.js';
 import { renderUser } from '../worker.js';
 
+const PAGE_SIZE = 9;
+const MAX_PAGES = 10;
+const RESET_THRESHOLD = PAGE_SIZE * MAX_PAGES; // 90 tin = 10 trang, sang trang/tin thứ 10 trang thì tự xóa reset
+
 function escapeHtml(str) {
     return String(str ?? '')
         .replace(/&/g, '&amp;')
@@ -15,6 +19,60 @@ function isSafeColor(color) {
     if (/^#[0-9a-fA-F]{3,8}$/.test(c)) return c;
     if (/^[a-zA-Z]{3,20}$/.test(c)) return c;
     return '#4ade80';
+}
+
+function getStaffRank(u) {
+    if (!u) return 0;
+    const rawRole = String(u.role || '').trim().toLowerCase();
+    const uid = Number(u.user_id || u.id || 0);
+    const isAdminFlag = Number(u.is_admin || 0);
+
+    if (
+        rawRole === 'người sáng lập' ||
+        rawRole === 'nguoi sang lap' ||
+        rawRole === 'founder' ||
+        uid === 1
+    ) {
+        return 4;
+    }
+    if (
+        rawRole === 'super admin' ||
+        rawRole === 'super_admin' ||
+        rawRole === 's.admin' ||
+        rawRole === 'sadmin' ||
+        rawRole === 'smod'
+    ) {
+        return 3;
+    }
+    if (
+        rawRole === 'admin' ||
+        rawRole === 'chủ wap' ||
+        rawRole === 'quản trị' ||
+        rawRole === 'quản lý' ||
+        rawRole === 'bqt' ||
+        isAdminFlag === 1
+    ) {
+        return 2;
+    }
+    if (rawRole === 'mod' || rawRole === 'điều hành viên') {
+        return 1;
+    }
+    return 0;
+}
+
+function canModerateDelete(actorUser, targetUser) {
+    const actorRank = getStaffRank(actorUser);
+    if (actorRank <= 0) return false;
+    const targetRank = getStaffRank(targetUser);
+    if (targetRank > actorRank) return false;
+    if (
+        targetRank === actorRank &&
+        actorRank >= 2 &&
+        Number(actorUser?.id || 0) !== Number(targetUser?.user_id || targetUser?.id || 0)
+    ) {
+        return false;
+    }
+    return true;
 }
 
 function renderBbcodeAndIcons(rawText) {
@@ -70,23 +128,88 @@ async function ensureChatTable(db) {
     } catch (e) {}
 }
 
-async function fetchChatMessages(db, afterId = 0, limit = 25) {
+async function resetChatIfReachedTenPages(db, pendingNewCount = 0) {
     await ensureChatTable(db);
     try {
-        if (afterId > 0) {
-            const rows = await db.prepare(`
-                SELECT c.id, c.user_id, c.content, c.created_at,
-                       u.display_name, u.username, u.role, u.is_admin, u.active_icon,
-                       u.name_color, u.name_glow, u.name_border, u.name_border_glow,
-                       u.border_color, u.avatar_glow, u.avatar, u.gender, u.level, u.coins, u.status_text
-                FROM community_chat c
-                LEFT JOIN users u ON c.user_id = u.id
-                WHERE c.id > ?
-                ORDER BY c.id ASC
-                LIMIT ?
-            `).bind(afterId, limit).all();
-            return rows?.results || [];
+        const row = await db.prepare("SELECT COUNT(*) AS total FROM community_chat").first();
+        const currentTotal = Number(row?.total || 0);
+        if (currentTotal + Number(pendingNewCount || 0) > RESET_THRESHOLD) {
+            await db.prepare("DELETE FROM community_chat").run();
+            return true;
         }
+    } catch (e) {}
+    return false;
+}
+
+async function computeRealWapCTop(db, targetUser) {
+    const uid = Number(targetUser?.user_id || targetUser?.id || 0);
+    const baseLevel = Number(targetUser?.level || 0);
+    if (!uid) return Math.max(0, baseLevel);
+
+    let realScore = 0;
+    let foundAnyRealMetric = false;
+
+    const metricQueries = [
+        "SELECT COUNT(*) AS cnt FROM feeds WHERE user_id = ?",
+        "SELECT COUNT(*) AS cnt FROM posts WHERE user_id = ?",
+        "SELECT COUNT(*) AS cnt FROM post_comments WHERE user_id = ?",
+        "SELECT COUNT(*) AS cnt FROM wall_post_comments WHERE user_id = ?",
+        "SELECT COUNT(*) AS cnt FROM community_chat WHERE user_id = ?"
+    ];
+
+    for (const sql of metricQueries) {
+        try {
+            const row = await db.prepare(sql).bind(uid).first();
+            if (row && row.cnt !== undefined && row.cnt !== null) {
+                realScore += Number(row.cnt || 0);
+                foundAnyRealMetric = true;
+            }
+        } catch (e) {}
+    }
+
+    try {
+        const uRow = await db.prepare("SELECT level, online_minutes, online_time FROM users WHERE id = ?").bind(uid).first();
+        if (uRow) {
+            const mins = Number(uRow.online_minutes ?? uRow.online_time ?? 0);
+            const lvl = Number(uRow.level ?? 0);
+            if (mins > 0) {
+                realScore += Math.floor(mins / 10);
+                foundAnyRealMetric = true;
+            }
+            if (!foundAnyRealMetric && lvl > 0) {
+                realScore = lvl;
+                foundAnyRealMetric = true;
+            }
+        }
+    } catch (e) {}
+
+    return foundAnyRealMetric ? realScore : baseLevel;
+}
+
+async function attachRealCTopToMessages(db, messages) {
+    if (!Array.isArray(messages) || messages.length === 0) return [];
+    const cache = new Map();
+    const out = [];
+    for (const m of messages) {
+        const uid = Number(m.user_id || 0);
+        let ctopVal = cache.get(uid);
+        if (ctopVal === undefined) {
+            ctopVal = await computeRealWapCTop(db, m);
+            cache.set(uid, ctopVal);
+        }
+        out.push({ ...m, ctop_real: ctopVal });
+    }
+    return out;
+}
+
+async function fetchChatMessages(db, page = 1, limit = PAGE_SIZE) {
+    await ensureChatTable(db);
+    try {
+        const cntRow = await db.prepare("SELECT COUNT(*) AS total FROM community_chat").first();
+        const totalCount = Number(cntRow?.total || 0);
+        const totalPages = Math.max(1, Math.min(MAX_PAGES, Math.ceil(totalCount / limit)));
+        const safePage = Math.min(Math.max(1, Number(page || 1)), totalPages);
+        const offset = (safePage - 1) * limit;
 
         const rows = await db.prepare(`
             SELECT c.id, c.user_id, c.content, c.created_at,
@@ -96,15 +219,53 @@ async function fetchChatMessages(db, afterId = 0, limit = 25) {
             FROM community_chat c
             LEFT JOIN users u ON c.user_id = u.id
             ORDER BY c.id DESC
-            LIMIT ?
-        `).bind(limit).all();
-        return (rows?.results || []).reverse();
+            LIMIT ? OFFSET ?
+        `).bind(limit, offset).all();
+
+        const enriched = await attachRealCTopToMessages(db, rows?.results || []);
+        return {
+            messages: enriched,
+            page: safePage,
+            totalPages,
+            totalCount
+        };
     } catch (e) {
-        return [];
+        return {
+            messages: [],
+            page: 1,
+            totalPages: 1,
+            totalCount: 0
+        };
     }
 }
 
-function formatTimeAgoVn(tsSec) {
+function buildPaginationHtml(page, totalPages) {
+    if (totalPages <= 1) return '';
+    const parts = [];
+    const prevPage = Math.max(1, page - 1);
+    const nextPage = Math.min(totalPages, page + 1);
+
+    parts.push(
+        `<button type="button" class="cchat-page-btn ${page <= 1 ? 'disabled' : ''}" ${page <= 1 ? 'disabled' : ''} onclick="cchatGoPage(${prevPage})">&lt;</button>`
+    );
+
+    const startP = Math.max(1, page - 2);
+    const endP = Math.min(totalPages, startP + 4);
+    for (let p = startP; p <= endP; p++) {
+        parts.push(
+            `<button type="button" class="cchat-page-btn ${p === page ? 'active' : ''}" onclick="cchatGoPage(${p})">${p}</button>`
+        );
+    }
+
+    parts.push(
+        `<button type="button" class="cchat-page-btn ${page >= totalPages ? 'disabled' : ''}" ${page >= totalPages ? 'disabled' : ''} onclick="cchatGoPage(${nextPage})">&gt;</button>`
+    );
+
+    return `<div class="cchat-pagination" id="cchatPagination">${parts.join('')}</div>`;
+}
+
+function formatTimeAgoVn(tsSec, isJustSent = false) {
+    if (isJustSent) return 'Vừa gửi';
     const nowSec = Math.floor(Date.now() / 1000);
     const diff = Math.max(0, nowSec - Number(tsSec || nowSec));
     if (diff < 30) return 'Vừa xong';
@@ -117,20 +278,22 @@ function formatTimeAgoVn(tsSec) {
     return `${days} ngày trước`;
 }
 
-function buildChatItemHtml(msg) {
+function buildChatItemHtml(msg, currentUser, isJustSent = false) {
     const ui = renderUser(msg);
     const smallAvatar = String(ui.avatarHtml || '').replace(
         'style="',
         'style="width:36px;height:36px;display:block;'
     );
-    const timeLabel = formatTimeAgoVn(msg.created_at);
+    const timeLabel = formatTimeAgoVn(msg.created_at, isJustSent);
     const formattedBody = renderBbcodeAndIcons(msg.content || '');
-    const lvl = Number(msg.level || 1);
+    const ctopVal = Number(msg.ctop_real ?? msg.level ?? 0).toLocaleString();
     const coins = Number(msg.coins || 0).toLocaleString();
+    const senderId = Number(msg.user_id || 0);
     const moodStatus = msg.status_text ? `<div class="cchat-status">» Status: ${escapeHtml(msg.status_text)}</div>` : '';
+    const showDelete = canModerateDelete(currentUser, msg);
 
     return `
-    <div class="cchat-item" data-msg-id="${Number(msg.id || 0)}" data-username="${escapeHtml(msg.username || msg.display_name || '')}">
+    <div class="cchat-item ${isJustSent ? 'is-new' : ''}" data-msg-id="${Number(msg.id || 0)}" data-user-id="${senderId}" data-username="${escapeHtml(msg.username || msg.display_name || '')}">
         <div class="cchat-row-top">
             <div class="cchat-user-meta">
                 <div class="cchat-ava">${smallAvatar}</div>
@@ -139,11 +302,13 @@ function buildChatItemHtml(msg) {
                         ${ui.nameHtml}
                         <span class="cchat-time">· ${escapeHtml(timeLabel)}</span>
                     </div>
-                    <div class="cchat-stats">C.top: <b>${lvl}</b> · Xu: <b>${coins}</b></div>
+                    <div class="cchat-stats">C.top: <b>${ctopVal}</b> · Xu: <b>${coins}</b></div>
                 </div>
             </div>
             <div class="cchat-actions">
+                <a href="/mail/chat?user=${senderId}" class="cchat-pm-btn" title="Nhắn tin riêng (PM)">PM</a>
                 <button type="button" class="cchat-mini-btn" onclick="cchatMentionUser(this)" title="Tag thành viên">Tag</button>
+                ${showDelete ? `<button type="button" class="cchat-del-btn" onclick="cchatDeleteMsg(this)" title="Xóa tin nhắn">Xóa</button>` : ''}
             </div>
         </div>
         <div class="cchat-body">${formattedBody}</div>
@@ -189,37 +354,89 @@ export async function handleIndex(request, env, user, renderLayout) {
     const isAjaxChat = url.searchParams.get('ajax_chat') === '1' || request.headers.get('X-Community-Chat') === '1';
 
     if (isAjaxChat && request.method === 'GET') {
-        const afterId = Math.max(0, Number(url.searchParams.get('after_id') || 0));
-        const mode = url.searchParams.get('mode') || 'poll';
-        const list = mode === 'reload'
-            ? await fetchChatMessages(env.DB, 0, 25)
-            : await fetchChatMessages(env.DB, afterId, 25);
-
-        const itemsHtml = list.map(buildChatItemHtml).join('');
-        const maxId = list.reduce((acc, m) => Math.max(acc, Number(m.id || 0)), afterId);
+        const page = Math.max(1, Number(url.searchParams.get('page') || 1));
+        const pageData = await fetchChatMessages(env.DB, page, PAGE_SIZE);
+        const itemsHtml = pageData.messages.map(m => buildChatItemHtml(m, user, false)).join('');
+        const paginationHtml = buildPaginationHtml(pageData.page, pageData.totalPages);
+        const maxId = pageData.messages.reduce((acc, m) => Math.max(acc, Number(m.id || 0)), 0);
 
         return new Response(JSON.stringify({
             ok: true,
-            mode,
+            page: pageData.page,
+            total_pages: pageData.totalPages,
             last_id: maxId,
-            items_html: itemsHtml
+            items_html: itemsHtml,
+            pagination_html: paginationHtml
         }), {
             headers: { 'Content-Type': 'application/json;charset=UTF-8', 'Cache-Control': 'no-store' }
         });
     }
 
     if (isAjaxChat && request.method === 'POST') {
-        let contentText = '';
+        let payload = {};
         try {
-            const body = await request.json();
-            contentText = String(body?.content ?? '').trim();
+            payload = await request.json();
         } catch (e) {
             try {
                 const fd = await request.formData();
-                contentText = String(fd.get('content') ?? '').trim();
+                payload = {
+                    action: fd.get('action'),
+                    msg_id: fd.get('msg_id'),
+                    content: fd.get('content'),
+                    page: fd.get('page')
+                };
             } catch (e2) {}
         }
 
+        const action = String(payload?.action || 'send').trim();
+        await ensureChatTable(env.DB);
+
+        if (action === 'delete') {
+            const msgId = Number(payload?.msg_id || 0);
+            if (!msgId) {
+                return new Response(JSON.stringify({ ok: false, error: 'Thiếu mã tin nhắn cần xóa.' }), {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json;charset=UTF-8' }
+                });
+            }
+
+            const targetRow = await env.DB.prepare(`
+                SELECT c.id, c.user_id, u.role, u.is_admin
+                FROM community_chat c
+                LEFT JOIN users u ON c.user_id = u.id
+                WHERE c.id = ?
+            `).bind(msgId).first();
+
+            if (!targetRow) {
+                return new Response(JSON.stringify({ ok: false, error: 'Tin nhắn không tồn tại hoặc đã bị xóa.' }), {
+                    status: 404,
+                    headers: { 'Content-Type': 'application/json;charset=UTF-8' }
+                });
+            }
+
+            if (!canModerateDelete(user, targetRow)) {
+                return new Response(JSON.stringify({ ok: false, error: 'Bạn không thể xóa tin nhắn của quản trị viên cấp bậc cao hơn!' }), {
+                    status: 403,
+                    headers: { 'Content-Type': 'application/json;charset=UTF-8' }
+                });
+            }
+
+            await env.DB.prepare("DELETE FROM community_chat WHERE id = ?").bind(msgId).run();
+            const pageData = await fetchChatMessages(env.DB, Number(payload?.page || 1), PAGE_SIZE);
+
+            return new Response(JSON.stringify({
+                ok: true,
+                deleted_id: msgId,
+                page: pageData.page,
+                total_pages: pageData.totalPages,
+                items_html: pageData.messages.map(m => buildChatItemHtml(m, user, false)).join(''),
+                pagination_html: buildPaginationHtml(pageData.page, pageData.totalPages)
+            }), {
+                headers: { 'Content-Type': 'application/json;charset=UTF-8', 'Cache-Control': 'no-store' }
+            });
+        }
+
+        let contentText = String(payload?.content ?? '').trim();
         if (!contentText) {
             return new Response(JSON.stringify({ ok: false, error: 'Vui lòng nhập nội dung tin nhắn.' }), {
                 status: 400,
@@ -231,12 +448,14 @@ export async function handleIndex(request, env, user, renderLayout) {
             contentText = contentText.slice(0, 600);
         }
 
-        await ensureChatTable(env.DB);
+        const wasReset = await resetChatIfReachedTenPages(env.DB, 1);
         const nowSec = Math.floor(Date.now() / 1000);
 
         const inserted = await env.DB.prepare(
             "INSERT INTO community_chat (user_id, content, created_at) VALUES (?, ?, ?) RETURNING id, user_id, content, created_at"
         ).bind(Number(user.id), contentText, nowSec).first();
+
+        const realCtop = await computeRealWapCTop(env.DB, user);
 
         const msgRecord = {
             id: inserted?.id || Date.now(),
@@ -258,13 +477,21 @@ export async function handleIndex(request, env, user, renderLayout) {
             gender: user.gender,
             level: user.level,
             coins: user.coins,
-            status_text: user.status_text
+            status_text: user.status_text,
+            ctop_real: realCtop
         };
+
+        const refreshedPage = await fetchChatMessages(env.DB, 1, PAGE_SIZE);
 
         return new Response(JSON.stringify({
             ok: true,
             id: Number(msgRecord.id),
-            item_html: buildChatItemHtml(msgRecord)
+            reset: wasReset,
+            page: refreshedPage.page,
+            total_pages: refreshedPage.totalPages,
+            item_html: buildChatItemHtml(msgRecord, user, true),
+            items_html: refreshedPage.messages.map(m => buildChatItemHtml(m, user, Number(m.id) === Number(msgRecord.id))).join(''),
+            pagination_html: buildPaginationHtml(refreshedPage.page, refreshedPage.totalPages)
         }), {
             headers: { 'Content-Type': 'application/json;charset=UTF-8', 'Cache-Control': 'no-store' }
         });
@@ -302,11 +529,13 @@ export async function handleIndex(request, env, user, renderLayout) {
         totalFeeds = fCount?.total || 0;
     } catch (e) {}
 
-    const chatMessages = await fetchChatMessages(env.DB, 0, 20);
+    const initialPageData = await fetchChatMessages(env.DB, 1, PAGE_SIZE);
+    const chatMessages = initialPageData.messages;
     const initialLastId = chatMessages.reduce((acc, m) => Math.max(acc, Number(m.id || 0)), 0);
     const initialChatHtml = chatMessages.length > 0
-        ? chatMessages.map(buildChatItemHtml).join('')
+        ? chatMessages.map(m => buildChatItemHtml(m, user, false)).join('')
         : `<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào. Hãy là người mở màn chát cộng đồng!</div>`;
+    const initialPaginationHtml = buildPaginationHtml(initialPageData.page, initialPageData.totalPages);
 
     const nowSec = Math.floor(Date.now() / 1000);
     let partyCount = 0;
@@ -636,7 +865,7 @@ export async function handleIndex(request, env, user, renderLayout) {
             padding: 8px 10px;
         }
         .cchat-item.is-new {
-            animation: cchatSlideIn 0.25s ease-out;
+            animation: cchatSlideIn 0.2s ease-out;
             border-color: #38bdf8;
             border-left-color: #38bdf8;
         }
@@ -683,6 +912,28 @@ export async function handleIndex(request, env, user, renderLayout) {
             font-size: 11px;
             color: #94a3b8;
         }
+        .cchat-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            flex-shrink: 0;
+        }
+        .cchat-pm-btn {
+            background: #132238;
+            color: #7dd3fc;
+            border: 1px solid #254672;
+            border-radius: 4px;
+            padding: 2px 7px;
+            font-size: 11px;
+            font-weight: bold;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .cchat-pm-btn:hover {
+            background: #1d3557;
+            color: #fff;
+            text-decoration: none;
+        }
         .cchat-mini-btn {
             background: #161c26;
             color: #cbd5e1;
@@ -696,6 +947,20 @@ export async function handleIndex(request, env, user, renderLayout) {
         .cchat-mini-btn:hover {
             border-color: #38bdf8;
             color: #38bdf8;
+        }
+        .cchat-del-btn {
+            background: #291216;
+            color: #fca5a5;
+            border: 1px solid #5c212b;
+            border-radius: 4px;
+            padding: 2px 7px;
+            font-size: 11px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .cchat-del-btn:hover {
+            background: #471720;
+            color: #fff;
         }
         .cchat-body {
             margin-top: 7px;
@@ -715,6 +980,40 @@ export async function handleIndex(request, env, user, renderLayout) {
             color: #888;
             padding: 16px 8px;
             font-size: 13px;
+        }
+        .cchat-pagination {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            padding: 8px 10px 10px 10px;
+            border-top: 1px solid #1c222b;
+            flex-wrap: wrap;
+        }
+        .cchat-page-btn {
+            min-width: 28px;
+            height: 26px;
+            padding: 0 7px;
+            background: #121720;
+            color: #cbd5e1;
+            border: 1px solid #2a3342;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .cchat-page-btn:hover:not(:disabled) {
+            border-color: #38bdf8;
+            color: #fff;
+        }
+        .cchat-page-btn.active {
+            background: #2563eb;
+            border-color: #3b82f6;
+            color: #fff;
+        }
+        .cchat-page-btn.disabled, .cchat-page-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
         }
         .wap-anim-ico {
             display: inline-block;
@@ -862,20 +1161,18 @@ export async function handleIndex(request, env, user, renderLayout) {
     </div>
 
     <!-- Chát cộng đồng -->
-    <div class="box cchat-box" id="communityChatBox" data-last-id="${initialLastId}">
+    <div class="box cchat-box" id="communityChatBox" data-last-id="${initialLastId}" data-page="${initialPageData.page}" data-total-pages="${initialPageData.totalPages}">
         <div class="cchat-header">
             <div class="cchat-title-wrap">
                 <span class="cchat-live-dot"></span>
                 <span>💬 Chát cộng đồng</span>
             </div>
-            
         </div>
 
         <div class="cchat-subbar">
             <div class="cchat-link-group">
                 <button type="button" class="cchat-sub-link" onclick="cchatReloadList()">↻ Làm mới</button>
             </div>
-            
         </div>
 
         <div class="cchat-form-area">
@@ -899,7 +1196,6 @@ export async function handleIndex(request, env, user, renderLayout) {
                         <span>🎨</span>
                         <span>BBCode Color</span>
                     </button>
-                    
                 </div>
 
                 <div id="cchatIconPicker" class="cchat-picker-panel">
@@ -925,10 +1221,14 @@ export async function handleIndex(request, env, user, renderLayout) {
         <div class="cchat-stream" id="cchatStream">
             ${initialChatHtml}
         </div>
+        <div id="cchatPaginationWrap">
+            ${initialPaginationHtml}
+        </div>
     </div>
 
     <script>
         (function() {
+            const PAGE_SIZE = ${PAGE_SIZE};
             const WAP_ICONS = [
                 { code: '[smile]', emo: '😄', anim: 'ico-bounce', name: 'Vui vẻ' },
                 { code: '[lol]', emo: '😂', anim: 'ico-shake', name: 'Cười lớn' },
@@ -958,6 +1258,7 @@ export async function handleIndex(request, env, user, renderLayout) {
 
             const boxEl = document.getElementById('communityChatBox');
             const streamEl = document.getElementById('cchatStream');
+            const pagWrapEl = document.getElementById('cchatPaginationWrap');
             const inputEl = document.getElementById('cchatInput');
             const sendBtnEl = document.getElementById('cchatSendBtn');
             const statusEl = document.getElementById('cchatStatusMsg');
@@ -969,6 +1270,14 @@ export async function handleIndex(request, env, user, renderLayout) {
 
             let isSending = false;
             let isPolling = false;
+
+            function getCurrentPage() {
+                return Math.max(1, Number(boxEl ? (boxEl.getAttribute('data-page') || 1) : 1));
+            }
+
+            function setCurrentPage(p) {
+                if (boxEl) boxEl.setAttribute('data-page', String(Math.max(1, Number(p || 1))));
+            }
 
             function getLastId() {
                 return Number(boxEl ? (boxEl.getAttribute('data-last-id') || 0) : 0);
@@ -989,6 +1298,14 @@ export async function handleIndex(request, env, user, renderLayout) {
             function updateCounter() {
                 if (!inputEl || !counterEl) return;
                 counterEl.textContent = inputEl.value.length + ' / 600';
+            }
+
+            function trimPageOneToLimit() {
+                if (!streamEl || getCurrentPage() !== 1) return;
+                const items = Array.from(streamEl.querySelectorAll('.cchat-item'));
+                for (let i = PAGE_SIZE; i < items.length; i++) {
+                    items[i].remove();
+                }
             }
 
             function insertAtCursor(snippet, selectOffsetStart, selectOffsetEnd) {
@@ -1071,25 +1388,76 @@ export async function handleIndex(request, env, user, renderLayout) {
                 insertAtCursor('@' + uname + ' ');
             };
 
-            function appendItemsHtml(itemsHtml, highlightNew) {
-                if (!itemsHtml || !streamEl) return;
-                const emptyNote = document.getElementById('cchatEmptyNote');
-                if (emptyNote) emptyNote.remove();
+            window.cchatDeleteMsg = async function(btnEl) {
+                const row = btnEl ? btnEl.closest('.cchat-item') : null;
+                const msgId = Number(row ? (row.getAttribute('data-msg-id') || 0) : 0);
+                if (!msgId || isPolling) return;
+                if (!confirm('Xóa tin nhắn này khỏi chát cộng đồng?')) return;
 
-                const temp = document.createElement('div');
-                temp.innerHTML = itemsHtml;
-                const nodes = Array.from(temp.children);
+                isPolling = true;
+                if (btnEl) btnEl.disabled = true;
+                setStatus('Đang xóa tin nhắn...', false);
 
-                nodes.forEach(function(node) {
-                    const idAttr = Number(node.getAttribute('data-msg-id') || 0);
-                    if (idAttr > 0 && streamEl.querySelector('[data-msg-id="' + idAttr + '"]')) {
-                        return;
+                try {
+                    const res = await fetch('/?ajax_chat=1', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Community-Chat': '1'
+                        },
+                        body: JSON.stringify({
+                            action: 'delete',
+                            msg_id: msgId,
+                            page: getCurrentPage()
+                        })
+                    });
+                    const data = await res.json();
+                    if (!res.ok || !data.ok) {
+                        setStatus(data.error || 'Không thể xóa tin nhắn.', true);
+                        if (btnEl) btnEl.disabled = false;
+                    } else {
+                        setCurrentPage(data.page || 1);
+                        if (streamEl) {
+                            streamEl.innerHTML = data.items_html || '<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào.</div>';
+                        }
+                        if (pagWrapEl) {
+                            pagWrapEl.innerHTML = data.pagination_html || '';
+                        }
+                        setStatus('Đã xóa tin nhắn.', false);
+                        setTimeout(function() { setStatus('', false); }, 1500);
                     }
-                    if (highlightNew) node.classList.add('is-new');
-                    streamEl.prepend(node);
-                    if (idAttr > 0) setLastId(idAttr);
-                });
-            }
+                } catch (e) {
+                    setStatus('Lỗi kết nối khi xóa tin nhắn.', true);
+                    if (btnEl) btnEl.disabled = false;
+                } finally {
+                    isPolling = false;
+                }
+            };
+
+            window.cchatGoPage = async function(targetPage) {
+                if (isPolling || !streamEl) return;
+                isPolling = true;
+                const p = Math.max(1, Number(targetPage || 1));
+                setStatus('Đang tải trang ' + p + '...', false);
+                try {
+                    const res = await fetch('/?ajax_chat=1&page=' + p + '&_t=' + Date.now(), {
+                        headers: { 'X-Community-Chat': '1' }
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.ok) {
+                            setCurrentPage(data.page || p);
+                            streamEl.innerHTML = data.items_html || '<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào.</div>';
+                            if (pagWrapEl) pagWrapEl.innerHTML = data.pagination_html || '';
+                            if (data.last_id) setLastId(data.last_id);
+                            setStatus('', false);
+                        }
+                    }
+                } catch (e) {
+                } finally {
+                    isPolling = false;
+                }
+            };
 
             window.cchatSubmitForm = async function(ev) {
                 if (ev) ev.preventDefault();
@@ -1104,7 +1472,55 @@ export async function handleIndex(request, env, user, renderLayout) {
 
                 isSending = true;
                 if (sendBtnEl) sendBtnEl.disabled = true;
-                setStatus('Đang gửi...', false);
+
+                const emptyNote = document.getElementById('cchatEmptyNote');
+                if (emptyNote) emptyNote.remove();
+
+                const tempClientId = 'tmp_' + Date.now();
+                const optimisticCard = document.createElement('div');
+                optimisticCard.className = 'cchat-item is-new';
+                optimisticCard.setAttribute('data-temp-id', tempClientId);
+
+                const safePreview = text
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;')
+                    .replace(/\[color=([^\]]+)\]([\s\S]*?)\[\/color\]/gi, function(_, col, inner) {
+                        const c = String(col || '').trim();
+                        const okCol = (/^#[0-9a-fA-F]{3,8}$/.test(c) || /^[a-zA-Z]{3,20}$/.test(c)) ? c : '#4ade80';
+                        return '<span style="color:' + okCol + ';font-weight:bold;">' + inner + '</span>';
+                    })
+                    .replace(/\n/g, '<br>');
+
+                function escapeLocalName(s) {
+                    return String(s || '').replace(/[&<>"']/g, function(ch) {
+                        return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch];
+                    });
+                }
+
+                optimisticCard.innerHTML =
+                    '<div class="cchat-row-top">' +
+                        '<div class="cchat-user-meta">' +
+                            '<div class="cchat-info">' +
+                                '<div class="cchat-nick-line">' +
+                                    '<b>' + escapeLocalName(${JSON.stringify(String(user.display_name || user.username || 'Bạn'))}) + '</b>' +
+                                    '<span class="cchat-time">· Vừa gửi</span>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="cchat-body">' + safePreview + '</div>';
+
+                if (getCurrentPage() === 1 && streamEl) {
+                    streamEl.prepend(optimisticCard);
+                    trimPageOneToLimit();
+                }
+
+                inputEl.value = '';
+                updateCounter();
+                setStatus('', false);
 
                 try {
                     const res = await fetch('/?ajax_chat=1', {
@@ -1117,16 +1533,28 @@ export async function handleIndex(request, env, user, renderLayout) {
                     });
                     const data = await res.json();
                     if (!res.ok || !data.ok) {
+                        optimisticCard.remove();
                         setStatus(data.error || 'Không thể gửi tin nhắn.', true);
                     } else {
-                        appendItemsHtml(data.item_html, true);
-                        if (data.id) setLastId(data.id);
-                        inputEl.value = '';
-                        updateCounter();
-                        setStatus('Đã gửi tin nhắn!', false);
-                        setTimeout(function() { setStatus('', false); }, 1800);
+                        setCurrentPage(data.page || 1);
+                        if (typeof data.items_html === 'string' && streamEl) {
+                            streamEl.innerHTML = data.items_html || '<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào.</div>';
+                        } else {
+                            optimisticCard.remove();
+                        }
+                        if (pagWrapEl) {
+                            pagWrapEl.innerHTML = data.pagination_html || '';
+                        }
+                        if (data.id && boxEl) {
+                            boxEl.setAttribute('data-last-id', String(Number(data.id)));
+                        }
+                        if (data.reset) {
+                            setStatus('Đã đủ 10 trang, ChatBox đã tự động reset.', false);
+                            setTimeout(function() { setStatus('', false); }, 2200);
+                        }
                     }
                 } catch (err) {
+                    optimisticCard.remove();
                     setStatus('Lỗi kết nối khi gửi tin nhắn.', true);
                 } finally {
                     isSending = false;
@@ -1136,41 +1564,26 @@ export async function handleIndex(request, env, user, renderLayout) {
             };
 
             window.cchatReloadList = async function() {
-                if (isPolling || !streamEl) return;
-                isPolling = true;
-                setStatus('Đang cập nhật...', false);
-                try {
-                    const res = await fetch('/?ajax_chat=1&mode=reload&_t=' + Date.now(), {
-                        headers: { 'X-Community-Chat': '1' }
-                    });
-                    if (res.ok) {
-                        const data = await res.json();
-                        if (data.ok) {
-                            streamEl.innerHTML = data.items_html || '<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào.</div>';
-                            if (data.last_id) setLastId(data.last_id);
-                            setStatus('', false);
-                        }
-                    }
-                } catch (e) {
-                } finally {
-                    isPolling = false;
-                }
+                await window.cchatGoPage(1);
             };
 
             async function pollNewMessages() {
-                if (isPolling || isSending) return;
+                if (isPolling || isSending || getCurrentPage() !== 1 || !streamEl) return;
                 isPolling = true;
                 try {
-                    const lastId = getLastId();
-                    const res = await fetch('/?ajax_chat=1&mode=poll&after_id=' + lastId + '&_t=' + Date.now(), {
+                    const res = await fetch('/?ajax_chat=1&page=1&_t=' + Date.now(), {
                         headers: { 'X-Community-Chat': '1' }
                     });
                     if (res.ok) {
                         const data = await res.json();
-                        if (data.ok && data.items_html) {
-                            appendItemsHtml(data.items_html, true);
+                        if (data.ok && typeof data.items_html === 'string') {
+                            const nextLastId = Number(data.last_id || 0);
+                            if (nextLastId !== getLastId()) {
+                                streamEl.innerHTML = data.items_html || '<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào.</div>';
+                                if (pagWrapEl) pagWrapEl.innerHTML = data.pagination_html || '';
+                                if (boxEl) boxEl.setAttribute('data-last-id', String(nextLastId));
+                            }
                         }
-                        if (data.last_id) setLastId(data.last_id);
                     }
                 } catch (e) {
                 } finally {
