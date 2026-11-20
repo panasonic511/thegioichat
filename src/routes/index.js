@@ -70,6 +70,35 @@ async function ensureChatTable(db) {
     } catch (e) {}
 }
 
+async function getUserChatCount(db, userId) {
+    const uid = Number(userId || 0);
+    if (!uid) return 0;
+    try {
+        const row = await db.prepare(
+            "SELECT COUNT(*) AS total FROM community_chat WHERE user_id = ?"
+        ).bind(uid).first();
+        return Number(row?.total ?? 0);
+    } catch (e) {
+        return 0;
+    }
+}
+
+async function attachChatCounts(db, messages) {
+    if (!Array.isArray(messages) || messages.length === 0) return [];
+    const cache = new Map();
+    const result = [];
+    for (const m of messages) {
+        const uid = Number(m.user_id || 0);
+        let cnt = cache.get(uid);
+        if (cnt === undefined) {
+            cnt = await getUserChatCount(db, uid);
+            cache.set(uid, cnt);
+        }
+        result.push({ ...m, ctop_chat_count: cnt });
+    }
+    return result;
+}
+
 async function fetchChatMessages(db, afterId = 0, limit = 25) {
     await ensureChatTable(db);
     try {
@@ -82,10 +111,10 @@ async function fetchChatMessages(db, afterId = 0, limit = 25) {
                 FROM community_chat c
                 LEFT JOIN users u ON c.user_id = u.id
                 WHERE c.id > ?
-                ORDER BY c.id ASC
+                ORDER BY c.id DESC
                 LIMIT ?
             `).bind(afterId, limit).all();
-            return rows?.results || [];
+            return await attachChatCounts(db, rows?.results || []);
         }
 
         const rows = await db.prepare(`
@@ -98,7 +127,7 @@ async function fetchChatMessages(db, afterId = 0, limit = 25) {
             ORDER BY c.id DESC
             LIMIT ?
         `).bind(limit).all();
-        return (rows?.results || []).reverse();
+        return await attachChatCounts(db, rows?.results || []);
     } catch (e) {
         return [];
     }
@@ -125,7 +154,7 @@ function buildChatItemHtml(msg) {
     );
     const timeLabel = formatTimeAgoVn(msg.created_at);
     const formattedBody = renderBbcodeAndIcons(msg.content || '');
-    const lvl = Number(msg.level || 1);
+    const chatCount = Number(msg.ctop_chat_count ?? 0).toLocaleString();
     const coins = Number(msg.coins || 0).toLocaleString();
     const moodStatus = msg.status_text ? `<div class="cchat-status">» Status: ${escapeHtml(msg.status_text)}</div>` : '';
 
@@ -139,7 +168,7 @@ function buildChatItemHtml(msg) {
                         ${ui.nameHtml}
                         <span class="cchat-time">· ${escapeHtml(timeLabel)}</span>
                     </div>
-                    <div class="cchat-stats">C.top: <b>${lvl}</b> · Xu: <b>${coins}</b></div>
+                    <div class="cchat-stats">C.top: <b>${chatCount}</b> · Xu: <b>${coins}</b></div>
                 </div>
             </div>
             <div class="cchat-actions">
@@ -238,6 +267,8 @@ export async function handleIndex(request, env, user, renderLayout) {
             "INSERT INTO community_chat (user_id, content, created_at) VALUES (?, ?, ?) RETURNING id, user_id, content, created_at"
         ).bind(Number(user.id), contentText, nowSec).first();
 
+        const userChatCount = await getUserChatCount(env.DB, user.id);
+
         const msgRecord = {
             id: inserted?.id || Date.now(),
             user_id: Number(user.id),
@@ -258,7 +289,8 @@ export async function handleIndex(request, env, user, renderLayout) {
             gender: user.gender,
             level: user.level,
             coins: user.coins,
-            status_text: user.status_text
+            status_text: user.status_text,
+            ctop_chat_count: userChatCount
         };
 
         return new Response(JSON.stringify({
@@ -868,14 +900,12 @@ export async function handleIndex(request, env, user, renderLayout) {
                 <span class="cchat-live-dot"></span>
                 <span>💬 Chát cộng đồng</span>
             </div>
-            
         </div>
 
         <div class="cchat-subbar">
             <div class="cchat-link-group">
                 <button type="button" class="cchat-sub-link" onclick="cchatReloadList()">↻ Làm mới</button>
             </div>
-            
         </div>
 
         <div class="cchat-form-area">
@@ -899,7 +929,6 @@ export async function handleIndex(request, env, user, renderLayout) {
                         <span>🎨</span>
                         <span>BBCode Color</span>
                     </button>
-                    
                 </div>
 
                 <div id="cchatIconPicker" class="cchat-picker-panel">
@@ -1078,7 +1107,7 @@ export async function handleIndex(request, env, user, renderLayout) {
 
                 const temp = document.createElement('div');
                 temp.innerHTML = itemsHtml;
-                const nodes = Array.from(temp.children);
+                const nodes = Array.from(temp.children).reverse();
 
                 nodes.forEach(function(node) {
                     const idAttr = Number(node.getAttribute('data-msg-id') || 0);
