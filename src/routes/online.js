@@ -30,10 +30,25 @@ function isMaleGender(genderRaw) {
     return formatGenderLabel(genderRaw) === 'Nam';
 }
 
-function formatLocationLabel(row) {
-    const loc = String(row.current_location || row.last_page || row.location || '').trim();
-    if (loc) return loc;
+export function resolveLocationNameByPath(pathname) {
+    const p = String(pathname || '/').trim().toLowerCase();
+    if (!p || p === '/') return 'Trang chủ';
+    if (p.startsWith('/online')) return 'Người dùng trực tuyến';
+    if (p.startsWith('/feed') || p.startsWith('/bang-tin') || p.startsWith('/posts')) return 'Bảng tin';
+    if (p.startsWith('/notifications') || p.startsWith('/thong-bao')) return 'Thông báo';
+    if (p.startsWith('/mail')) return 'Tin nhắn';
+    if (p.startsWith('/admin')) return 'Quản trị viên';
+    if (p.startsWith('/menu')) return 'Menu';
+    if (p.startsWith('/profile')) return 'Trang cá nhân';
+    if (p.startsWith('/shop') || p.startsWith('/store') || p.startsWith('/cua-hang')) return 'Cửa hàng';
+    if (p.startsWith('/chat')) return 'Phòng chat';
     return 'Trang chủ';
+}
+
+function formatLocationLabel(row, fallbackPath = '/online') {
+    const loc = String((row && (row.current_location || row.last_page || row.location)) || '').trim();
+    if (loc) return loc;
+    return resolveLocationNameByPath(fallbackPath);
 }
 
 // Cấp bậc càng cao số càng lớn: Admin (3) > SMOD (2) > MOD (1) > Thành viên (0)
@@ -126,7 +141,7 @@ function isUserCurrentlyOnline(u, nowSec, activeSessionUserIds, currentUserId) {
     );
 
     if (lastSeenSec > 0) {
-        return (nowSec - lastSeenSec) <= 300; // Hoạt động trong 5 phút gần nhất mới tính là đang ON
+        return (nowSec - lastSeenSec) <= 300;
     }
 
     return false;
@@ -186,15 +201,23 @@ async function getActiveSessionUserIds(env, nowSec) {
     return ids;
 }
 
-export async function getOnlineUsers(env, currentUser) {
+export async function getOnlineUsers(env, currentUser, currentPath = '/online') {
     const nowSec = Math.floor(Date.now() / 1000);
     const currentUserId = Number(currentUser && currentUser.id ? currentUser.id : 0);
+    const activeLocationLabel = resolveLocationNameByPath(currentPath);
 
-    // Cập nhật last_seen cho người đang truy cập nếu cột tồn tại
     if (currentUserId > 0) {
         try {
-            await env.DB.prepare(`UPDATE users SET last_seen = ? WHERE id = ?`).bind(nowSec, currentUserId).run();
-        } catch (e) {}
+            await env.DB.prepare(`UPDATE users SET last_seen = ?, current_location = ? WHERE id = ?`)
+                .bind(nowSec, activeLocationLabel, currentUserId)
+                .run();
+        } catch (e) {
+            try {
+                await env.DB.prepare(`UPDATE users SET last_seen = ? WHERE id = ?`)
+                    .bind(nowSec, currentUserId)
+                    .run();
+            } catch (e2) {}
+        }
     }
 
     let rawUsers = [];
@@ -228,8 +251,20 @@ export async function getOnlineUsers(env, currentUser) {
         isUserCurrentlyOnline(u, nowSec, activeSessionUserIds, currentUserId)
     );
 
-    if (currentUser && currentUser.id && !onlineUsers.some(u => Number(u.id) === currentUserId)) {
-        onlineUsers.push(currentUser);
+    if (currentUser && currentUser.id) {
+        const syncedSelf = {
+            ...currentUser,
+            current_location: activeLocationLabel
+        };
+        const existingIdx = onlineUsers.findIndex(u => Number(u.id) === currentUserId);
+        if (existingIdx >= 0) {
+            onlineUsers[existingIdx] = {
+                ...onlineUsers[existingIdx],
+                current_location: activeLocationLabel
+            };
+        } else {
+            onlineUsers.push(syncedSelf);
+        }
     }
 
     onlineUsers.sort(compareUsersByRankAndLevel);
@@ -243,7 +278,8 @@ export async function handleOnline(request, env, user, renderLayout, url) {
     const perPage = 10;
 
     const currentUserId = Number(user && user.id ? user.id : 0);
-    const onlineList = await getOnlineUsers(env, user);
+    const currentPath = url && url.pathname ? url.pathname : '/online';
+    const onlineList = await getOnlineUsers(env, user, currentPath);
     const totalOnlineCount = onlineList.length;
 
     let filteredList = onlineList.slice();
@@ -319,8 +355,7 @@ export async function handleOnline(request, env, user, renderLayout, url) {
                 : 'width: 42px; height: 42px; border-radius: 50%; object-fit: cover; border: 2px solid #00ff00; display: block;';
 
             const genderText = formatGenderLabel(uItem.gender);
-            const locationText = formatLocationLabel(uItem);
-            const levelText = getUserLevelValue(uItem);
+            const locationText = formatLocationLabel(uItem, currentPath);
             const isSelf = currentUserId === uid;
             const mailHref = isSelf ? '/mail/box' : `/mail/chat?user=${uid}`;
 
@@ -335,7 +370,7 @@ export async function handleOnline(request, env, user, renderLayout, url) {
                                 ${rendered.nameHtml}
                                 <span class="online-on-badge">ON</span>
                             </div>
-                            <div class="online-meta-line">▸ Giới tính: <span class="online-val-white">${escapeHtml(genderText)}</span> · Level: <span class="online-val-green">${levelText}</span></div>
+                            <div class="online-meta-line">▸ Giới tính: <span class="online-val-white">${escapeHtml(genderText)}</span></div>
                             <div class="online-meta-line">▸ Vị trí: <span class="online-val-gold">${escapeHtml(locationText)}</span></div>
                         </div>
                     </div>
@@ -502,10 +537,6 @@ export async function handleOnline(request, env, user, renderLayout, url) {
         }
         .online-val-white {
             color: #e2e8f0;
-            font-weight: bold;
-        }
-        .online-val-green {
-            color: #4ade80;
             font-weight: bold;
         }
         .online-val-gold {
