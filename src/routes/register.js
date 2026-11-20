@@ -1,3 +1,12 @@
+function escapeHtml(str) {
+    return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 export async function handleRegister(request, env) {
     if (request.method === 'GET') {
         return new Response(`<!DOCTYPE html>
@@ -68,11 +77,18 @@ export async function handleRegister(request, env) {
 
     if (request.method === 'POST') {
         const formData = await request.formData();
-        const username = formData.get('username');
-        const displayName = formData.get('display_name');
-        const email = formData.get('email');
-        const password = formData.get('password');
-        const gender = formData.get('gender');
+        const username = String(formData.get('username') ?? '').trim();
+        const displayName = String(formData.get('display_name') ?? '').trim();
+        const email = String(formData.get('email') ?? '').trim().toLowerCase();
+        const password = String(formData.get('password') ?? '');
+        const gender = String(formData.get('gender') ?? 'Nam').trim() || 'Nam';
+
+        if (!username || !displayName || !email || !password) {
+            return new Response(`Vui lòng nhập đầy đủ các trường bắt buộc! <a href="/register">Quay lại đăng ký</a>`, {
+                status: 400,
+                headers: { 'Content-Type': 'text/html;charset=UTF-8' }
+            });
+        }
 
         try {
             // Mặc định tài khoản mới đăng ký có Level 1 và 1000 Xu
@@ -84,10 +100,25 @@ export async function handleRegister(request, env) {
                 headers: { 'Content-Type': 'text/html;charset=UTF-8' }
             });
         } catch (e) {
-            return new Response(`Tên đăng nhập hoặc Email đã tồn tại! <a href="/register">Quay lại đăng ký</a>`, {
-                status: 400,
+            const errMsg = String(e?.message || e || '');
+            if (errMsg.includes('UNIQUE constraint failed') || errMsg.includes('SQLITE_CONSTRAINT_UNIQUE')) {
+                return new Response(`Tên đăng nhập hoặc Email đã tồn tại! <a href="/register">Quay lại đăng ký</a>`, {
+                    status: 400,
+                    headers: { 'Content-Type': 'text/html;charset=UTF-8' }
+                });
+            }
+
+            return new Response(`Lỗi đăng ký (${escapeHtml(errMsg)}). <a href="/register">Quay lại đăng ký</a>`, {
+                status: 500,
                 headers: { 'Content-Type': 'text/html;charset=UTF-8' }
             });
         }
     }
 }
+```[cite: 24]
+
+### Kiểm tra sau khi cập nhật
+* Thử submit form `/register` với đầy đủ thông tin và thử cố tình bỏ trống `email` (qua curl/POST trực tiếp)[cite: 24].
+* **Dấu hiệu thành công:** khi có `email` hợp lệ và chưa trùng thì tạo tài khoản thành công; khi thiếu `email` thì trả về thông báo nhập thiếu trường thay vì văng lỗi `D1_ERROR: NOT NULL constraint failed: users.email`[cite: 23].
+
+Lưu ý thêm: trong ảnh stack trace có dòng `at async handleRegister (worker.js:1139:22)`[cite: 23]—nếu bạn đang gộp `handleRegister` chung vào file `worker.js` thay vì tách ở `routes/register.js`, hãy nhớ thay đúng hàm `handleRegister` tại `worker.js` nhé. Bạn có đang đặt `handleRegister` trực tiếp trong `worker.js` không?
