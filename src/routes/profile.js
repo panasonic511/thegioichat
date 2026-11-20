@@ -73,6 +73,166 @@ function formatCommentUserStyle(row) {
     };
 }
 
+function renderWallPostsListHtml({ userPosts, commentsByPost, likesCountByPost, likedByMeSet, rProfile, avatarSrc, currentUserId, canModerate }) {
+    if (!Array.isArray(userPosts) || userPosts.length === 0) {
+        return `<div style="color: #888; text-align: center; padding: 14px; font-size: 12px;">Chưa có bài đăng nào.</div>`;
+    }
+
+    return userPosts.map((post) => {
+        const postId = Number(post.id || 0);
+        let rawText = post.content || post.body || post.caption || '';
+        let postStyle = '';
+        const styleMatch = rawText.match(/^\[style=([^\]]+)\]\r?\n/);
+        if (styleMatch) {
+            rawText = rawText.slice(styleMatch[0].length);
+            try {
+                const st = JSON.parse(decodeURIComponent(styleMatch[1]));
+                const rules = [];
+                if (isSafeColor(st.c)) rules.push(`color: ${st.c}`);
+                if (isSafeColor(st.b)) rules.push(`background: ${st.b}; padding: 6px 8px; border-radius: 4px; display: inline-block`);
+                if (isSafeColor(st.g)) rules.push(`text-shadow: 0 0 8px ${st.g}`);
+                if (rules.length) postStyle = rules.join('; ') + ';';
+            } catch (e) {}
+        }
+
+        const imgUrl = post.image_url || post.image || post.media_url || '';
+        const timeAgo = formatTimeAgo(post.created_at || post.time || post.createdAt);
+        const postComments = commentsByPost[postId] || [];
+        const dbLikes = Number(post.likes_count ?? post.likes ?? 0);
+        const tableLikes = Number(likesCountByPost[postId] ?? 0);
+        const likesCount = Math.max(dbLikes, tableLikes);
+        const isLikedByMe = likedByMeSet.has(postId);
+        const commentsCount = Math.max(Number(post.comments_count ?? post.comments ?? 0), postComments.length);
+        const canDeleteThisPost = canModerate || Number(post.user_id) === Number(currentUserId);
+
+        return `
+        <div data-post-id="${postId}" style="background: #141414; border: 1px solid #2b2b2b; border-radius: 4px; padding: 10px; margin-top: 8px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <img src="${avatarSrc}" width="34" height="34" style="${rProfile.avatarStyle} display: block;">
+                    <div>
+                        <div style="font-size: 13px; line-height: 1.2;">${rProfile.nameHtml}</div>
+                        <div style="font-size: 11px; color: #999; margin-top: 2px;">🕒 ${escapeHtml(timeAgo)}</div>
+                    </div>
+                </div>
+
+                ${canDeleteThisPost ? `
+                <form method="POST" onsubmit="return submitDeletePostAjax(event, this)" style="margin: 0;">
+                    <input type="hidden" name="action" value="delete_post">
+                    <input type="hidden" name="post_id" value="${postId}">
+                    <button type="submit" style="background: #2b0909; color: #ff6666; border: 1px solid #661a1a; border-radius: 3px; padding: 2px 7px; font-size: 10px; font-weight: bold; cursor: pointer;">🗑️ Xóa bài</button>
+                </form>
+                ` : `<span style="color: #666; font-size: 12px;">⋮</span>`}
+            </div>
+
+            ${rawText ? `<div style="font-size: 13px; color: #f2f2f2; line-height: 1.6; white-space: pre-wrap; text-align: center; margin-bottom: ${imgUrl ? '10px' : '8px'}; ${escapeHtml(postStyle)}">${escapeHtml(rawText)}</div>` : ''}
+
+            ${imgUrl ? `
+            <div style="text-align: center; background: #080808; border: 1px solid #222; border-radius: 4px; overflow: hidden; margin-bottom: 8px;">
+                <img src="${escapeHtml(imgUrl)}" alt="Ảnh bài đăng" style="max-width: 100%; max-height: 380px; object-fit: contain; display: block; margin: 0 auto;">
+            </div>
+            ` : ''}
+
+            <div style="display: flex; align-items: center; gap: 10px; border-top: 1px solid #242424; padding-top: 8px; flex-wrap: wrap;">
+                <form method="POST" onsubmit="return submitLikePostAjax(event, this)" style="margin: 0; display: inline-flex; align-items: center;">
+                    <input type="hidden" name="action" value="like_post">
+                    <input type="hidden" name="post_id" value="${postId}">
+                    <button type="submit" title="${isLikedByMe ? 'Bỏ thích bài viết' : 'Thích bài viết'}" style="background: ${isLikedByMe ? '#33121b' : '#1e1014'}; border: 1px solid ${isLikedByMe ? '#ff4d6d' : '#4a1c28'}; border-radius: 6px; color: #ff4d6d; font-size: 15px; font-weight: bold; cursor: pointer; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px; min-width: 64px; justify-content: center;">
+                        <span style="font-size: 16px; line-height: 1;">❤️</span>
+                        <span id="post-like-count-${postId}" style="color: #fff; font-size: 13px; font-weight: bold;">${likesCount}</span>
+                    </button>
+                </form>
+
+                <button type="button" onclick="openCommentPopup(${postId})" title="Bình luận bài viết" style="background: #121824; border: 1px solid #263654; border-radius: 6px; color: #60a5fa; font-size: 15px; font-weight: bold; cursor: pointer; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px; min-width: 64px; justify-content: center;">
+                    <span style="font-size: 16px; line-height: 1;">💬</span>
+                    <span id="post-comment-count-${postId}" style="color: #fff; font-size: 13px; font-weight: bold;">${commentsCount}</span>
+                </button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+async function fetchWallSnapshot(db, feedTable, targetId, currentUserId, rProfile, avatarSrc, canModerate) {
+    let postCount = 0;
+    let userPosts = [];
+    const commentsByPost = {};
+    const likesCountByPost = {};
+    const likedByMeSet = new Set();
+
+    try {
+        const pRow = await db.prepare(`SELECT COUNT(*) as total FROM ${feedTable} WHERE user_id = ?`).bind(targetId).first();
+        postCount = Number(pRow?.total || 0);
+
+        const pList = await db.prepare(`SELECT * FROM ${feedTable} WHERE user_id = ? ORDER BY id DESC LIMIT 20`).bind(targetId).all();
+        userPosts = pList.results || [];
+
+        const postIds = userPosts.map(p => Number(p.id || 0)).filter(id => id > 0);
+        if (postIds.length > 0) {
+            const placeholders = postIds.map(() => '?').join(',');
+            const cRows = await db.prepare(`
+                SELECT c.*, u.username, u.display_name, u.avatar, u.role, u.is_admin, u.active_icon,
+                       u.name_color, u.name_glow, u.name_border, u.name_border_glow, u.border_color, u.avatar_glow
+                FROM wall_post_comments c
+                LEFT JOIN users u ON u.id = c.user_id
+                WHERE c.post_id IN (${placeholders})
+                ORDER BY c.id DESC
+            `).bind(...postIds).all();
+
+            for (const c of (cRows.results || [])) {
+                const pid = Number(c.post_id);
+                if (!commentsByPost[pid]) commentsByPost[pid] = [];
+                const styleInfo = formatCommentUserStyle(c);
+                commentsByPost[pid].push({
+                    id: Number(c.id || 0),
+                    userId: Number(c.user_id || 0),
+                    nameHtml: styleInfo.nameHtml,
+                    avatarSrc: styleInfo.avatarSrc,
+                    avatarStyle: styleInfo.avatarStyle,
+                    content: c.content || '',
+                    timeAgo: formatTimeAgo(c.created_at)
+                });
+            }
+
+            const lRows = await db.prepare(`
+                SELECT post_id, COUNT(*) as cnt, SUM(CASE WHEN user_id = ? THEN 1 ELSE 0 END) as mine
+                FROM wall_post_likes
+                WHERE post_id IN (${placeholders})
+                GROUP BY post_id
+            `).bind(currentUserId, ...postIds).all();
+
+            for (const l of (lRows.results || [])) {
+                const pid = Number(l.post_id);
+                likesCountByPost[pid] = Number(l.cnt || 0);
+                if (Number(l.mine || 0) > 0) likedByMeSet.add(pid);
+            }
+        }
+    } catch (e) {}
+
+    const wallPostsHtml = renderWallPostsListHtml({
+        userPosts,
+        commentsByPost,
+        likesCountByPost,
+        likedByMeSet,
+        rProfile,
+        avatarSrc,
+        currentUserId,
+        canModerate
+    });
+
+    const latestPostId = userPosts.reduce((max, p) => Math.max(max, Number(p.id || 0)), 0);
+    const latestCommentId = Object.values(commentsByPost).flat().reduce((max, c) => Math.max(max, Number(c.id || 0)), 0);
+
+    return {
+        postCount,
+        commentsByPost,
+        likesCountByPost,
+        likedPostIds: Array.from(likedByMeSet),
+        wallPostsHtml,
+        latestPostId,
+        latestCommentId
+    };
+}
+
 export async function handleProfile(request, env, user, renderLayout, url) {
     let message = "";
     const targetId = parseInt(url.searchParams.get('user') || user.id);
@@ -147,6 +307,32 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         } catch (e2) {}
     }
 
+    const rProfile = renderUser(profileUser);
+    const hasCover = (profileUser.cover_photo && !profileUser.cover_photo.includes('7gXvS6v'));
+    const coverStyle = hasCover ? `background: url('${profileUser.cover_photo}') center/cover no-repeat;` : `background: linear-gradient(135deg, #0a1f0a 0%, #151515 50%, #051428 100%);`;
+    const avatarSrc = profileUser.avatar && !profileUser.avatar.includes('7gXvS6v')
+        ? profileUser.avatar
+        : "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/></svg>";
+
+    if (request.method === 'GET' && url.searchParams.get('ajax_wall') === '1') {
+        const snap = await fetchWallSnapshot(env.DB, feedTable, targetId, user.id, rProfile, avatarSrc, canModerate);
+        return new Response(JSON.stringify({
+            ok: true,
+            postCount: snap.postCount,
+            commentsByPost: snap.commentsByPost,
+            likesCountByPost: snap.likesCountByPost,
+            likedPostIds: snap.likedPostIds,
+            wallPostsHtml: snap.wallPostsHtml,
+            latestPostId: snap.latestPostId,
+            latestCommentId: snap.latestCommentId
+        }), {
+            headers: {
+                'Content-Type': 'application/json;charset=UTF-8',
+                'Cache-Control': 'no-store'
+            }
+        });
+    }
+
     if (request.method === 'POST') {
         const formData = await request.formData();
         const action = formData.get('action');
@@ -175,6 +361,17 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                         `INSERT INTO ${feedTable} (user_id, content) VALUES (?, ?)`
                     ).bind(user.id, postContent).run();
                 }
+
+                if (isAjax) {
+                    const snap = await fetchWallSnapshot(env.DB, feedTable, targetId, user.id, rProfile, avatarSrc, canModerate);
+                    return new Response(JSON.stringify({
+                        ok: true,
+                        ...snap
+                    }), {
+                        headers: { 'Content-Type': 'application/json;charset=UTF-8', 'Cache-Control': 'no-store' }
+                    });
+                }
+
                 message = `<div style="color: #00ff00; background: #001a00; border: 1px solid #005500; padding: 6px; text-align: center; margin-bottom: 8px;">✅ Đăng bài lên tường nhà thành công!</div>`;
             } else if (action === 'delete_post') {
                 const postId = parseInt(formData.get('post_id') || '0');
@@ -189,6 +386,18 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                     await env.DB.prepare(`DELETE FROM wall_post_comments WHERE post_id = ?`).bind(postId).run();
                     await env.DB.prepare(`DELETE FROM wall_post_likes WHERE post_id = ?`).bind(postId).run();
                 } catch (eDelMeta) {}
+
+                if (isAjax) {
+                    const snap = await fetchWallSnapshot(env.DB, feedTable, targetId, user.id, rProfile, avatarSrc, canModerate);
+                    return new Response(JSON.stringify({
+                        ok: true,
+                        deletedPostId: postId,
+                        ...snap
+                    }), {
+                        headers: { 'Content-Type': 'application/json;charset=UTF-8', 'Cache-Control': 'no-store' }
+                    });
+                }
+
                 message = `<div style="color: #ffcc00; background: #1a1500; border: 1px solid #665500; padding: 6px; text-align: center; margin-bottom: 8px;">🗑️ Đã xóa bài viết #${postId}!</div>`;
             } else if (action === 'like_post') {
                 const postId = parseInt(formData.get('post_id') || '0');
@@ -198,6 +407,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                     `SELECT id FROM wall_post_likes WHERE post_id = ? AND user_id = ?`
                 ).bind(postId, user.id).first();
 
+                let likedNow = false;
                 if (existingLike) {
                     await env.DB.prepare(
                         `DELETE FROM wall_post_likes WHERE post_id = ? AND user_id = ?`
@@ -209,6 +419,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                             await env.DB.prepare(`UPDATE ${feedTable} SET likes = MAX(0, COALESCE(likes, 0) - 1) WHERE id = ?`).bind(postId).run();
                         } catch (eLikeDec2) {}
                     }
+                    likedNow = false;
                 } else {
                     const nowSec = Math.floor(Date.now() / 1000);
                     await env.DB.prepare(
@@ -221,6 +432,19 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                             await env.DB.prepare(`UPDATE ${feedTable} SET likes = COALESCE(likes, 0) + 1 WHERE id = ?`).bind(postId).run();
                         } catch (eLikeInc2) {}
                     }
+                    likedNow = true;
+                }
+
+                if (isAjax) {
+                    const cntRow = await env.DB.prepare(`SELECT COUNT(*) as total FROM wall_post_likes WHERE post_id = ?`).bind(postId).first();
+                    return new Response(JSON.stringify({
+                        ok: true,
+                        postId,
+                        liked: likedNow,
+                        likesCount: Number(cntRow?.total || 0)
+                    }), {
+                        headers: { 'Content-Type': 'application/json;charset=UTF-8', 'Cache-Control': 'no-store' }
+                    });
                 }
             } else if (action === 'comment_post') {
                 const postId = parseInt(formData.get('post_id') || '0');
@@ -261,7 +485,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                             timeAgo: 'Vừa xong'
                         }
                     }), {
-                        headers: { 'Content-Type': 'application/json;charset=UTF-8' }
+                        headers: { 'Content-Type': 'application/json;charset=UTF-8', 'Cache-Control': 'no-store' }
                     });
                 }
 
@@ -325,7 +549,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             profileUser = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(targetId).first();
         } catch (e) {
             if (isAjax) {
-                return new Response(JSON.stringify({ ok: false, error: e.message || "Lỗi gửi bình luận!" }), {
+                return new Response(JSON.stringify({ ok: false, error: e.message || "Lỗi xử lý yêu cầu!" }), {
                     status: 400,
                     headers: { 'Content-Type': 'application/json;charset=UTF-8' }
                 });
@@ -334,7 +558,6 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         }
     }
 
-    const rProfile = renderUser(profileUser);
     const followingRow = await env.DB.prepare("SELECT COUNT(*) as total FROM follows WHERE follower_id = ?").bind(targetId).first();
     const followerRow = await env.DB.prepare("SELECT COUNT(*) as total FROM follows WHERE following_id = ?").bind(targetId).first();
     const friendsRow = await env.DB.prepare("SELECT COUNT(*) as total FROM friends WHERE user_id = ? OR friend_id = ?").bind(targetId, targetId).first();
@@ -355,140 +578,10 @@ export async function handleProfile(request, env, user, renderLayout, url) {
         totalGifts += r.cnt;
     }
 
-    let postCount = 0;
-    let userPosts = [];
-    let commentsByPost = {};
-    let likesCountByPost = {};
-    let likedByMeSet = new Set();
-    try {
-        const pRow = await env.DB.prepare(`SELECT COUNT(*) as total FROM ${feedTable} WHERE user_id = ?`).bind(targetId).first();
-        postCount = pRow?.total || 0;
-
-        const pList = await env.DB.prepare(`SELECT * FROM ${feedTable} WHERE user_id = ? ORDER BY id DESC LIMIT 20`).bind(targetId).all();
-        userPosts = pList.results || [];
-
-        const postIds = userPosts.map(p => Number(p.id || 0)).filter(id => id > 0);
-        if (postIds.length > 0) {
-            const placeholders = postIds.map(() => '?').join(',');
-            const cRows = await env.DB.prepare(`
-                SELECT c.*, u.username, u.display_name, u.avatar, u.role, u.is_admin, u.active_icon,
-                       u.name_color, u.name_glow, u.name_border, u.name_border_glow, u.border_color, u.avatar_glow
-                FROM wall_post_comments c
-                LEFT JOIN users u ON u.id = c.user_id
-                WHERE c.post_id IN (${placeholders})
-                ORDER BY c.id DESC
-            `).bind(...postIds).all();
-            for (const c of (cRows.results || [])) {
-                const pid = Number(c.post_id);
-                if (!commentsByPost[pid]) commentsByPost[pid] = [];
-                const styleInfo = formatCommentUserStyle(c);
-                commentsByPost[pid].push({
-                    id: Number(c.id || 0),
-                    userId: Number(c.user_id || 0),
-                    nameHtml: styleInfo.nameHtml,
-                    avatarSrc: styleInfo.avatarSrc,
-                    avatarStyle: styleInfo.avatarStyle,
-                    content: c.content || '',
-                    timeAgo: formatTimeAgo(c.created_at)
-                });
-            }
-
-            const lRows = await env.DB.prepare(`
-                SELECT post_id, COUNT(*) as cnt, SUM(CASE WHEN user_id = ? THEN 1 ELSE 0 END) as mine
-                FROM wall_post_likes
-                WHERE post_id IN (${placeholders})
-                GROUP BY post_id
-            `).bind(user.id, ...postIds).all();
-            for (const l of (lRows.results || [])) {
-                const pid = Number(l.post_id);
-                likesCountByPost[pid] = Number(l.cnt || 0);
-                if (Number(l.mine || 0) > 0) likedByMeSet.add(pid);
-            }
-        }
-    } catch(e) {}
-
-    const hasCover = (profileUser.cover_photo && !profileUser.cover_photo.includes('7gXvS6v'));
-    const coverStyle = hasCover ? `background: url('${profileUser.cover_photo}') center/cover no-repeat;` : `background: linear-gradient(135deg, #0a1f0a 0%, #151515 50%, #051428 100%);`;
-    const avatarSrc = profileUser.avatar && !profileUser.avatar.includes('7gXvS6v')
-        ? profileUser.avatar
-        : "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/></svg>";
-
-    const commentsJsonSafe = JSON.stringify(commentsByPost).replace(/</g, '\\u003c');
-
-    const wallPostsHtml = userPosts.length === 0
-        ? `<div style="color: #888; text-align: center; padding: 14px; font-size: 12px;">Chưa có bài đăng nào.</div>`
-        : userPosts.map((post) => {
-            const postId = Number(post.id || 0);
-            let rawText = post.content || post.body || post.caption || '';
-            let postStyle = '';
-            const styleMatch = rawText.match(/^\[style=([^\]]+)\]\r?\n/);
-            if (styleMatch) {
-                rawText = rawText.slice(styleMatch[0].length);
-                try {
-                    const st = JSON.parse(decodeURIComponent(styleMatch[1]));
-                    const rules = [];
-                    if (isSafeColor(st.c)) rules.push(`color: ${st.c}`);
-                    if (isSafeColor(st.b)) rules.push(`background: ${st.b}; padding: 6px 8px; border-radius: 4px; display: inline-block`);
-                    if (isSafeColor(st.g)) rules.push(`text-shadow: 0 0 8px ${st.g}`);
-                    if (rules.length) postStyle = rules.join('; ') + ';';
-                } catch (e) {}
-            }
-
-            const imgUrl = post.image_url || post.image || post.media_url || '';
-            const timeAgo = formatTimeAgo(post.created_at || post.time || post.createdAt);
-            const postComments = commentsByPost[postId] || [];
-            const dbLikes = Number(post.likes_count ?? post.likes ?? 0);
-            const tableLikes = Number(likesCountByPost[postId] ?? 0);
-            const likesCount = Math.max(dbLikes, tableLikes);
-            const isLikedByMe = likedByMeSet.has(postId);
-            const commentsCount = Math.max(Number(post.comments_count ?? post.comments ?? 0), postComments.length);
-            const canDeleteThisPost = canModerate || Number(post.user_id) === Number(user.id);
-
-            return `
-            <div style="background: #141414; border: 1px solid #2b2b2b; border-radius: 4px; padding: 10px; margin-top: 8px;">
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <img src="${avatarSrc}" width="34" height="34" style="${rProfile.avatarStyle} display: block;">
-                        <div>
-                            <div style="font-size: 13px; line-height: 1.2;">${rProfile.nameHtml}</div>
-                            <div style="font-size: 11px; color: #999; margin-top: 2px;">🕒 ${escapeHtml(timeAgo)}</div>
-                        </div>
-                    </div>
-
-                    ${canDeleteThisPost ? `
-                    <form method="POST" style="margin: 0;" onsubmit="return confirm('Xóa bài đăng này khỏi hệ thống?');">
-                        <input type="hidden" name="action" value="delete_post">
-                        <input type="hidden" name="post_id" value="${postId}">
-                        <button type="submit" style="background: #2b0909; color: #ff6666; border: 1px solid #661a1a; border-radius: 3px; padding: 2px 7px; font-size: 10px; font-weight: bold; cursor: pointer;">🗑️ Xóa bài</button>
-                    </form>
-                    ` : `<span style="color: #666; font-size: 12px;">⋮</span>`}
-                </div>
-
-                ${rawText ? `<div style="font-size: 13px; color: #f2f2f2; line-height: 1.6; white-space: pre-wrap; text-align: center; margin-bottom: ${imgUrl ? '10px' : '8px'}; ${escapeHtml(postStyle)}">${escapeHtml(rawText)}</div>` : ''}
-
-                ${imgUrl ? `
-                <div style="text-align: center; background: #080808; border: 1px solid #222; border-radius: 4px; overflow: hidden; margin-bottom: 8px;">
-                    <img src="${escapeHtml(imgUrl)}" alt="Ảnh bài đăng" style="max-width: 100%; max-height: 380px; object-fit: contain; display: block; margin: 0 auto;">
-                </div>
-                ` : ''}
-
-                <div style="display: flex; align-items: center; gap: 10px; border-top: 1px solid #242424; padding-top: 8px; flex-wrap: wrap;">
-                    <form method="POST" style="margin: 0; display: inline-flex; align-items: center;">
-                        <input type="hidden" name="action" value="like_post">
-                        <input type="hidden" name="post_id" value="${postId}">
-                        <button type="submit" title="${isLikedByMe ? 'Bỏ thích bài viết' : 'Thích bài viết'}" style="background: ${isLikedByMe ? '#33121b' : '#1e1014'}; border: 1px solid ${isLikedByMe ? '#ff4d6d' : '#4a1c28'}; border-radius: 6px; color: #ff4d6d; font-size: 15px; font-weight: bold; cursor: pointer; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px; min-width: 64px; justify-content: center;">
-                            <span style="font-size: 16px; line-height: 1;">❤️</span>
-                            <span style="color: #fff; font-size: 13px; font-weight: bold;">${likesCount}</span>
-                        </button>
-                    </form>
-
-                    <button type="button" onclick="openCommentPopup(${postId})" title="Bình luận bài viết" style="background: #121824; border: 1px solid #263654; border-radius: 6px; color: #60a5fa; font-size: 15px; font-weight: bold; cursor: pointer; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px; min-width: 64px; justify-content: center;">
-                        <span style="font-size: 16px; line-height: 1;">💬</span>
-                        <span id="post-comment-count-${postId}" style="color: #fff; font-size: 13px; font-weight: bold;">${commentsCount}</span>
-                    </button>
-                </div>
-            </div>`;
-        }).join('');
+    const wallSnap = await fetchWallSnapshot(env.DB, feedTable, targetId, user.id, rProfile, avatarSrc, canModerate);
+    const commentsJsonSafe = JSON.stringify(wallSnap.commentsByPost).replace(/</g, '\\u003c');
+    const wallPostsHtml = wallSnap.wallPostsHtml;
+    const postCount = wallSnap.postCount;
 
     const content = `
     <div class="box" style="margin-bottom: 8px; border: 1px solid #333;">
@@ -607,7 +700,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             <div>⭐ Cấp độ: <b style="color: #ffcc00;">${profileUser.level || 1}</b> - <a href="/profile/level" style="color: #00ff00;">Kiểm tra</a></div>
             <div>🪙 Xu: <b style="color: #00ff00;">${(profileUser.coins || 0).toLocaleString()} Xu</b></div>
             <div>💰 Vàng: <b style="color: #ffcc00;">${(profileUser.gold || 0).toLocaleString()} Vàng</b></div>
-            <div>📝 Bài viết: <b>${postCount}</b></div>
+            <div>📝 Bài viết: <b id="info-post-count">${postCount}</b></div>
             <div>🏙️ Tỉnh thành: <b>${profileUser.province || 'Chưa cập nhật'}</b></div>
             <div>🎂 Sinh nhật: <b>${profileUser.birthday || 'Chưa cập nhật'}</b></div>
             <div>📅 Ngày đăng ký: <b>${profileUser.created_at || 'Thành viên hệ thống'}</b></div>
@@ -617,7 +710,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
     <div class="box" style="max-width: 654px; margin: 0 auto 8px auto;">
         <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
             <span>🏠 Tường nhà</span>
-            <span style="font-size: 11px; color: #ccc;">${postCount} bài đăng</span>
+            <span id="wall-header-post-count" style="font-size: 11px; color: #ccc;">${postCount} bài đăng</span>
         </div>
         <div class="box-content" style="padding: 8px;">
             <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
@@ -627,7 +720,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             </div>
 
             <div id="wall-post-form" style="display: none; background: #101010; border: 1px solid #333; border-radius: 4px; padding: 8px; margin-top: 8px; position: relative;">
-                <form method="POST" id="wall-post-submit-form">
+                <form method="POST" id="wall-post-submit-form" onsubmit="return submitWallPostAjax(event)">
                     <input type="hidden" name="action" value="wall_post">
                     <input type="hidden" name="text_color" id="wall-text-color" value="">
                     <input type="hidden" name="bg_color" id="wall-bg-color" value="">
@@ -647,9 +740,11 @@ export async function handleProfile(request, env, user, renderLayout, url) {
 
                         <div style="display: flex; gap: 6px;">
                             <button type="button" onclick="toggleWallForm()" class="btn" style="background: #2b2b2b; color: #ccc; padding: 5px 10px; font-size: 11px;">Hủy</button>
-                            <button type="submit" class="btn" style="background: #0055ff; color: #fff; padding: 5px 12px; font-size: 11px; font-weight: bold;">Đăng bài</button>
+                            <button type="submit" id="wall-post-submit-btn" class="btn" style="background: #0055ff; color: #fff; padding: 5px 12px; font-size: 11px; font-weight: bold;">Đăng bài</button>
                         </div>
                     </div>
+
+                    <div id="wall-post-feedback" style="display: none; font-size: 11px; margin-top: 6px;"></div>
 
                     <div id="wall-emoji-picker" style="display: none; background: #161616; border: 1px solid #444; border-radius: 4px; padding: 6px; margin-top: 8px;">
                         <div style="font-size: 11px; color: #ffcc00; margin-bottom: 5px;">Chọn biểu tượng cảm xúc</div>
@@ -668,7 +763,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 </form>
             </div>
 
-            <div style="margin-top: 4px;">
+            <div id="wall-posts-container" style="margin-top: 4px;">
                 ${wallPostsHtml}
             </div>
         </div>
@@ -779,9 +874,10 @@ export async function handleProfile(request, env, user, renderLayout, url) {
     </div>
 
     <script>
-        const WALL_COMMENTS_DATA = ${commentsJsonSafe};
+        let WALL_COMMENTS_DATA = ${commentsJsonSafe};
         const FALLBACK_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/></svg>";
         let activeCommentPostId = 0;
+        let isWallBusy = false;
 
         function escapeJsHtml(str) {
             return String(str ?? '')
@@ -791,6 +887,31 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                 .replace(/"/g, '&quot;');
         }
 
+        function syncPostCountsHeader(postCount) {
+            const val = Number(postCount || 0);
+            const infoCount = document.getElementById('info-post-count');
+            const wallCount = document.getElementById('wall-header-post-count');
+            if (infoCount) infoCount.textContent = String(val);
+            if (wallCount) wallCount.textContent = val + ' bài đăng';
+        }
+
+        function applyWallSnapshot(data) {
+            if (!data || !data.ok) return;
+            const container = document.getElementById('wall-posts-container');
+            if (container && typeof data.wallPostsHtml === 'string') {
+                container.innerHTML = data.wallPostsHtml;
+            }
+            if (typeof data.postCount !== 'undefined') {
+                syncPostCountsHeader(data.postCount);
+            }
+            if (data.commentsByPost && typeof data.commentsByPost === 'object') {
+                WALL_COMMENTS_DATA = data.commentsByPost;
+                if (activeCommentPostId > 0) {
+                    renderCommentListInPopup(activeCommentPostId);
+                }
+            }
+        }
+
         function renderCommentListInPopup(postId) {
             const listEl = document.getElementById('comment-popup-list');
             const countBadge = document.getElementById('comment-popup-count');
@@ -798,8 +919,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             if (!listEl) return;
 
             const list = WALL_COMMENTS_DATA[postId] || [];
-            const currentPostCount = postCountSpan ? Number(postCountSpan.textContent || 0) : list.length;
-            const total = Math.max(currentPostCount, list.length);
+            const total = list.length;
 
             if (countBadge) countBadge.textContent = String(total);
             if (postCountSpan) postCountSpan.textContent = String(total);
@@ -852,7 +972,136 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             }
         }
 
-async function submitCommentAjax(ev) {
+        async function submitWallPostAjax(ev) {
+            ev.preventDefault();
+            if (isWallBusy) return false;
+
+            const ta = document.getElementById('wall-content-textarea');
+            const btn = document.getElementById('wall-post-submit-btn');
+            const fb = document.getElementById('wall-post-feedback');
+            const text = (ta?.value || '').trim();
+
+            if (!text) {
+                if (fb) {
+                    fb.style.display = 'block';
+                    fb.style.color = '#ff6666';
+                    fb.textContent = '❌ Vui lòng nhập nội dung trước khi đăng bài!';
+                }
+                return false;
+            }
+
+            isWallBusy = true;
+            if (btn) btn.disabled = true;
+            if (fb) fb.style.display = 'none';
+
+            try {
+                const body = new URLSearchParams();
+                body.set('action', 'wall_post');
+                body.set('content', text);
+                body.set('text_color', document.getElementById('wall-text-color')?.value || '');
+                body.set('bg_color', document.getElementById('wall-bg-color')?.value || '');
+                body.set('text_glow', document.getElementById('wall-text-glow')?.value || '');
+                body.set('ajax', '1');
+
+                const res = await fetch(window.location.href, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+                    },
+                    body: body.toString()
+                });
+                const data = await res.json();
+                if (!res.ok || !data.ok) {
+                    throw new Error(data.error || 'Không thể đăng bài!');
+                }
+
+                applyWallSnapshot(data);
+                if (ta) ta.value = '';
+                resetWallColors();
+                toggleWallForm();
+            } catch (err) {
+                if (fb) {
+                    fb.style.display = 'block';
+                    fb.style.color = '#ff6666';
+                    fb.textContent = '❌ ' + (err.message || 'Lỗi đăng bài');
+                }
+            } finally {
+                isWallBusy = false;
+                if (btn) btn.disabled = false;
+            }
+            return false;
+        }
+
+        async function submitDeletePostAjax(ev, formEl) {
+            ev.preventDefault();
+            if (!confirm('Xóa bài đăng này khỏi hệ thống?')) return false;
+            const postId = Number(formEl.querySelector('input[name="post_id"]')?.value || 0);
+            if (!postId) return false;
+
+            const body = new URLSearchParams();
+            body.set('action', 'delete_post');
+            body.set('post_id', String(postId));
+            body.set('ajax', '1');
+
+            try {
+                const res = await fetch(window.location.href, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+                    },
+                    body: body.toString()
+                });
+                const data = await res.json();
+                if (res.ok && data.ok) {
+                    if (activeCommentPostId === postId) closeCommentPopup();
+                    applyWallSnapshot(data);
+                }
+            } catch (e) {}
+            return false;
+        }
+
+        async function submitLikePostAjax(ev, formEl) {
+            ev.preventDefault();
+            const postId = Number(formEl.querySelector('input[name="post_id"]')?.value || 0);
+            if (!postId) return false;
+
+            const btn = formEl.querySelector('button[type="submit"]');
+            const countEl = document.getElementById('post-like-count-' + postId);
+            if (btn) btn.disabled = true;
+
+            try {
+                const body = new URLSearchParams();
+                body.set('action', 'like_post');
+                body.set('post_id', String(postId));
+                body.set('ajax', '1');
+
+                const res = await fetch(window.location.href, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+                    },
+                    body: body.toString()
+                });
+                const data = await res.json();
+                if (res.ok && data.ok) {
+                    if (countEl) countEl.textContent = String(data.likesCount ?? 0);
+                    if (btn) {
+                        btn.style.background = data.liked ? '#33121b' : '#1e1014';
+                        btn.style.borderColor = data.liked ? '#ff4d6d' : '#4a1c28';
+                        btn.title = data.liked ? 'Bỏ thích bài viết' : 'Thích bài viết';
+                    }
+                }
+            } catch (e) {
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+            return false;
+        }
+
+        async function submitCommentAjax(ev) {
             ev.preventDefault();
             const postId = Number(document.getElementById('comment-popup-post-id')?.value || activeCommentPostId || 0);
             const inputEl = document.getElementById('comment-popup-input');
@@ -939,11 +1188,34 @@ async function submitCommentAjax(ev) {
             }
         }
 
+        async function pollWallUpdates() {
+            if (isWallBusy) return;
+            const activeTag = document.activeElement?.tagName || '';
+            if (activeTag === 'TEXTAREA' || activeTag === 'INPUT') return;
+
+            try {
+                const u = new URL(window.location.href);
+                u.searchParams.set('ajax_wall', '1');
+                u.searchParams.set('_t', String(Date.now()));
+                const res = await fetch(u.toString(), {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (data && data.ok) {
+                    applyWallSnapshot(data);
+                }
+            } catch (e) {}
+        }
+
+        setInterval(pollWallUpdates, 4000);
+
         function closeCommentPopup() {
             const modal = document.getElementById('comment-popup-modal');
             const emojiBar = document.getElementById('comment-popup-emoji-bar');
             if (modal) modal.style.display = 'none';
             if (emojiBar) emojiBar.style.display = 'none';
+            activeCommentPostId = 0;
         }
 
         function toggleCommentEmojiBar() {
