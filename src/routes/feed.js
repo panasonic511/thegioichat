@@ -258,13 +258,287 @@ function jsonResponse(payload, status = 200) {
     });
 }
 
+async function queryFeedSnapshot(db, { tab = 'new', page = 1, limit = 10, actorId = 0, currentUser = null }) {
+    const offset = (page - 1) * limit;
+    let postsQuery = '';
+    if (tab === 'trending') {
+        postsQuery = `
+            SELECT posts.id AS post_id,
+                   posts.user_id AS post_user_id,
+                   posts.content AS post_content,
+                   posts.image_url AS post_image_url,
+                   posts.created_at AS post_created_at,
+                   users.*,
+                   (SELECT COUNT(*) FROM post_likes WHERE post_id = posts.id) +
+                   (SELECT COUNT(*) FROM post_comments WHERE post_id = posts.id) as total_interactions
+            FROM posts
+            LEFT JOIN users ON posts.user_id = users.id
+            ORDER BY total_interactions DESC, posts.id DESC LIMIT ? OFFSET ?
+        `;
+    } else if (tab === 'following') {
+        postsQuery = `
+            SELECT posts.id AS post_id,
+                   posts.user_id AS post_user_id,
+                   posts.content AS post_content,
+                   posts.image_url AS post_image_url,
+                   posts.created_at AS post_created_at,
+                   users.*
+            FROM posts
+            LEFT JOIN users ON posts.user_id = users.id
+            WHERE posts.user_id IN (SELECT following_id FROM follows WHERE follower_id = ?)
+            ORDER BY posts.id DESC LIMIT ? OFFSET ?
+        `;
+    } else {
+        postsQuery = `
+            SELECT posts.id AS post_id,
+                   posts.user_id AS post_user_id,
+                   posts.content AS post_content,
+                   posts.image_url AS post_image_url,
+                   posts.created_at AS post_created_at,
+                   users.*
+            FROM posts
+            LEFT JOIN users ON posts.user_id = users.id
+            ORDER BY posts.id DESC LIMIT ? OFFSET ?
+        `;
+    }
+
+    let totalPosts = 0;
+    let posts = [];
+    const countStmt = tab === 'following'
+        ? db.prepare("SELECT COUNT(*) as total FROM posts WHERE user_id IN (SELECT following_id FROM follows WHERE follower_id = ?)").bind(actorId)
+        : db.prepare("SELECT COUNT(*) as total FROM posts");
+
+    const postsStmt = tab === 'following'
+        ? db.prepare(postsQuery).bind(actorId, limit, offset)
+        : db.prepare(postsQuery).bind(limit, offset);
+
+    const [countRes, postsRes] = await db.batch([countStmt, postsStmt]);
+    const firstCount = countRes && countRes.results && countRes.results[0];
+    totalPosts = firstCount ? Number(firstCount.total || 0) : 0;
+    posts = (postsRes && postsRes.results) || [];
+
+    const postIds = posts
+        .map(p => Number(p.post_id !== undefined ? p.post_id : p.id))
+        .filter(id => !isNaN(id) && id > 0);
+
+    const likeCountMap = new Map();
+    const likedByMeSet = new Set();
+    const commentsByPostMap = new Map();
+
+    if (postIds.length > 0) {
+        const placeholders = postIds.map(() => '?').join(',');
+        const [likesRes, commentsRes] = await db.batch([
+            db.prepare(`SELECT post_id, user_id FROM post_likes WHERE post_id IN (${placeholders})`).bind(...postIds),
+            db.prepare(`
+                SELECT post_comments.id AS comment_id,
+                       post_comments.post_id AS comment_post_id,
+                       post_comments.user_id AS comment_user_id,
+                       post_comments.comment AS comment_body,
+                       post_comments.created_at AS comment_created_at,
+                       users.*
+                FROM post_comments
+                LEFT JOIN users ON post_comments.user_id = users.id
+                WHERE post_id IN (${placeholders})
+                ORDER BY post_comments.id ASC
+            `).bind(...postIds)
+        ]);
+
+        for (const lk of ((likesRes && likesRes.results) || [])) {
+            const lkPostId = Number(lk.post_id);
+            likeCountMap.set(lkPostId, (likeCountMap.get(lkPostId) || 0) + 1);
+            if (Number(lk.user_id) === actorId) {
+                likedByMeSet.add(lkPostId);
+            }
+        }
+
+        for (const cm of ((commentsRes && commentsRes.results) || [])) {
+            const cmPostId = Number(cm.comment_post_id !== undefined ? cm.comment_post_id : cm.post_id);
+            if (!commentsByPostMap.has(cmPostId)) commentsByPostMap.set(cmPostId, []);
+            commentsByPostMap.get(cmPostId).push(cm);
+        }
+    }
+
+    const postStates = [];
+    let postsHtml = '';
+
+    if (posts.length === 0) {
+        postsHtml = '<div id="feedEmptyNote" style="text-align: center; color: #777; padding: 20px;">Chưa có bài viết nào trong mục này.</div>';
+    } else {
+        for (let p of posts) {
+            const realPostId = Number(p.post_id !== undefined ? p.post_id : p.id);
+            const authorUserId = Number(p.post_user_id !== undefined ? p.post_user_id : p.user_id);
+            const postContent = p.post_content !== undefined ? p.post_content : p.content;
+            const postImageUrl = p.post_image_url !== undefined ? p.post_image_url : p.image_url;
+            const postCreatedAt = p.post_created_at !== undefined ? p.post_created_at : p.created_at;
+
+            const rUser = renderFeedUser({
+                ...p,
+                id: authorUserId
+            });
+            const likeCount = likeCountMap.get(realPostId) || 0;
+            const isLiked = likedByMeSet.has(realPostId);
+            const heartColor = isLiked ? '#ff3333' : '#888';
+            const comments = commentsByPostMap.get(realPostId) || [];
+
+            let commentsHtml = '';
+            const formattedComments = comments.map(c => {
+                const cId = Number(c.comment_id !== undefined ? c.comment_id : c.id || 0);
+                const cUserId = Number(c.comment_user_id !== undefined ? c.comment_user_id : c.user_id);
+                const cBody = c.comment_body !== undefined ? c.comment_body : c.comment;
+                const rCommentUser = renderFeedUser({
+                    ...c,
+                    id: cUserId
+                });
+                const rowHtml = `
+                    <div data-comment-id="${cId}" style="font-size: 11px; margin-top: 4px; border-top: 1px solid #222; padding-top: 4px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+                        <span style="display: inline-flex; align-items: center; gap: 3px; flex-wrap: wrap;">${rCommentUser.nameHtml}</span>: <span style="color: #ddd;">${escapeHtml(cBody)}</span>
+                    </div>
+                `;
+                commentsHtml += rowHtml;
+                return {
+                    id: cId,
+                    html: rowHtml
+                };
+            });
+
+            postStates.push({
+                id: realPostId,
+                likeCount,
+                liked: isLiked,
+                commentCount: comments.length,
+                comments: formattedComments
+            });
+
+            const imgSrc = normalizeMediaUrl(postImageUrl);
+            const imageTag = imgSrc
+                ? `<div style="margin-top: 8px; background: #000; text-align: center; border-radius: 4px; overflow: hidden;"><img src="${escapeAttr(imgSrc)}" loading="lazy" style="width: 100%; max-height: 450px; object-fit: contain; display: block; margin: 0 auto;"></div>`
+                : '';
+
+            const canDelete = canDeleteContent(currentUser, {
+                id: authorUserId,
+                user_id: authorUserId,
+                role: p.role,
+                is_admin: p.is_admin
+            });
+            const deleteBtnHtml = canDelete ? `
+                <form onsubmit="deletePostAjax(event, ${realPostId})" style="margin: 0;">
+                    <input type="hidden" name="action" value="delete_post">
+                    <input type="hidden" name="post_id" value="${realPostId}">
+                    <button type="submit" style="background: none; border: none; color: #ff5555; cursor: pointer; font-size: 11px;" title="Xóa bài viết">🗑️ Xóa</button>
+                </form>
+            ` : '';
+
+            postsHtml += `
+            <div id="post-card-${realPostId}" data-post-id="${realPostId}" data-post-item="1" style="background: #121212; border: 1px solid #2c2c2c; border-radius: 6px; padding: 12px; margin-bottom: 12px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div class="feed-post-avatar-wrap" style="min-width: 36px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                            ${rUser.avatarHtml}
+                        </div>
+                        <div>
+                            <div style="display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">${rUser.nameHtml}</div>
+                            <div style="font-size: 10px; color: #888; margin-top: 2px;">${escapeHtml(postCreatedAt || '')}</div>
+                        </div>
+                    </div>
+                    ${deleteBtnHtml}
+                </div>
+                <div style="color: #ddd; font-size: 13px; word-break: break-word; white-space: pre-wrap; margin-bottom: 6px;">${escapeHtml(postContent || '')}</div>
+                ${imageTag}
+
+                <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #222; margin-top: 10px; padding-top: 8px;">
+                    <div style="display: flex; align-items: center; gap: 14px;">
+                        <form onsubmit="submitLikeAjax(event, ${realPostId})" style="margin: 0;">
+                            <input type="hidden" name="action" value="like_post">
+                            <input type="hidden" name="post_id" value="${realPostId}">
+                            <button type="submit" data-role="like-btn" data-liked="${isLiked ? '1' : '0'}" style="background: none; border: none; color: ${heartColor}; cursor: pointer; font-size: 14px; padding: 0;">
+                                ❤️ <span style="font-size: 11px; color: #ccc;" data-role="like-count" id="like-count-${realPostId}">${likeCount}</span>
+                            </button>
+                        </form>
+
+                        <button type="button" onclick="toggleCommentBox(${realPostId})" style="background: none; border: none; color: #aaa; cursor: pointer; font-size: 13px; padding: 0; display: flex; align-items: center; gap: 4px;">
+                            💬 <span style="font-size: 11px;" data-role="comm-count" id="comm-count-${realPostId}">${comments.length}</span> bình luận
+                        </button>
+                    </div>
+                    <span style="font-size: 10px; color: #666;">Tương tác</span>
+                </div>
+
+                <div style="margin-top: 6px;" data-role="comment-list" id="comment-list-${realPostId}">
+                    ${commentsHtml}
+                </div>
+
+                <div data-role="comment-box" id="comment-box-${realPostId}" style="display: none; margin-top: 8px;">
+                    <form onsubmit="submitCommentAjax(event, ${realPostId})" style="display: flex; gap: 6px;">
+                        <input type="hidden" name="action" value="add_comment">
+                        <input type="hidden" name="post_id" value="${realPostId}">
+                        <input type="text" name="comment" data-role="comment-input" id="comment-input-${realPostId}" placeholder="Viết bình luận của bạn..." style="flex: 1; background: #0a0a0a; color: #fff; border: 1px solid #333; padding: 6px; font-size: 11px; border-radius: 4px;" required>
+                        <button type="submit" style="background: #0055ff; color: #fff; border: none; padding: 6px 12px; font-size: 11px; border-radius: 4px; cursor: pointer;">Gửi</button>
+                    </form>
+                </div>
+            </div>`;
+        }
+    }
+
+    const totalPages = Math.ceil(totalPosts / limit) || 1;
+    let paginationHtml = '';
+    if (totalPages > 1) {
+        paginationHtml = `<div style="display: flex; justify-content: center; align-items: center; gap: 6px; margin: 15px 0; font-size: 12px;">`;
+        if (page > 1) {
+            paginationHtml += `<a href="?tab=${tab}&page=${page - 1}" style="background: #1a1a1a; color: #00ff00; border: 1px solid #444; padding: 4px 10px; border-radius: 4px; text-decoration: none;">« Trước</a>`;
+        }
+        for (let i = 1; i <= totalPages; i++) {
+            if (i === page) {
+                paginationHtml += `<span style="background: #00ff00; color: #000; font-weight: bold; padding: 4px 10px; border-radius: 4px;">${i}</span>`;
+            } else {
+                paginationHtml += `<a href="?tab=${tab}&page=${i}" style="background: #1a1a1a; color: #ccc; border: 1px solid #444; padding: 4px 10px; border-radius: 4px; text-decoration: none;">${i}</a>`;
+            }
+        }
+        if (page < totalPages) {
+            paginationHtml += `<a href="?tab=${tab}&page=${page + 1}" style="background: #1a1a1a; color: #00ff00; border: 1px solid #444; padding: 4px 10px; border-radius: 4px; text-decoration: none;">Sau »</a>`;
+        }
+        paginationHtml += `</div>`;
+    }
+
+    return {
+        totalPosts,
+        totalPages,
+        postIds,
+        postStates,
+        postsHtml,
+        paginationHtml
+    };
+}
+
 export async function handleFeed(request, env, user, renderLayout, ctx) {
     const urlObj = new URL(request.url);
     const tab = urlObj.searchParams.get('tab') || 'new';
     const page = parseInt(urlObj.searchParams.get('page')) || 1;
     const limit = 10;
-    const offset = (page - 1) * limit;
     const actorId = Number(user && user.id ? user.id : 0);
+
+    if (request.method === 'GET' && urlObj.searchParams.get('ajax_feed') === '1') {
+        try {
+            await ensureFeedSchema(env);
+            const snap = await queryFeedSnapshot(env.DB, {
+                tab,
+                page,
+                limit,
+                actorId,
+                currentUser: user
+            });
+            return jsonResponse({
+                success: true,
+                tab,
+                page,
+                totalPages: snap.totalPages,
+                postIds: snap.postIds,
+                posts: snap.postStates,
+                postsHtml: snap.postsHtml,
+                paginationHtml: snap.paginationHtml
+            });
+        } catch (e) {
+            return jsonResponse({ success: false, error: e && e.message ? e.message : 'Lỗi tải bảng tin' }, 500);
+        }
+    }
 
     if (request.method === 'POST') {
         const ajax = isAjaxRequest(request);
@@ -691,231 +965,19 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
         storiesHtml = '';
     }
 
-    let postsQuery = '';
-    if (tab === 'trending') {
-        postsQuery = `
-            SELECT posts.id AS post_id,
-                   posts.user_id AS post_user_id,
-                   posts.content AS post_content,
-                   posts.image_url AS post_image_url,
-                   posts.created_at AS post_created_at,
-                   users.*,
-                   (SELECT COUNT(*) FROM post_likes WHERE post_id = posts.id) +
-                   (SELECT COUNT(*) FROM post_comments WHERE post_id = posts.id) as total_interactions
-            FROM posts
-            LEFT JOIN users ON posts.user_id = users.id
-            ORDER BY total_interactions DESC, posts.id DESC LIMIT ? OFFSET ?
-        `;
-    } else if (tab === 'following') {
-        postsQuery = `
-            SELECT posts.id AS post_id,
-                   posts.user_id AS post_user_id,
-                   posts.content AS post_content,
-                   posts.image_url AS post_image_url,
-                   posts.created_at AS post_created_at,
-                   users.*
-            FROM posts
-            LEFT JOIN users ON posts.user_id = users.id
-            WHERE posts.user_id IN (SELECT following_id FROM follows WHERE follower_id = ?)
-            ORDER BY posts.id DESC LIMIT ? OFFSET ?
-        `;
-    } else {
-        postsQuery = `
-            SELECT posts.id AS post_id,
-                   posts.user_id AS post_user_id,
-                   posts.content AS post_content,
-                   posts.image_url AS post_image_url,
-                   posts.created_at AS post_created_at,
-                   users.*
-            FROM posts
-            LEFT JOIN users ON posts.user_id = users.id
-            ORDER BY posts.id DESC LIMIT ? OFFSET ?
-        `;
-    }
-
-    let totalPosts = 0;
-    let posts = [];
-    try {
-        const countStmt = tab === 'following'
-            ? env.DB.prepare("SELECT COUNT(*) as total FROM posts WHERE user_id IN (SELECT following_id FROM follows WHERE follower_id = ?)").bind(actorId)
-            : env.DB.prepare("SELECT COUNT(*) as total FROM posts");
-
-        const postsStmt = tab === 'following'
-            ? env.DB.prepare(postsQuery).bind(actorId, limit, offset)
-            : env.DB.prepare(postsQuery).bind(limit, offset);
-
-        const [countRes, postsRes] = await env.DB.batch([countStmt, postsStmt]);
-        const firstCount = countRes && countRes.results && countRes.results[0];
-        totalPosts = firstCount ? firstCount.total : 0;
-        posts = (postsRes && postsRes.results) || [];
-    } catch (e) {}
-
-    const totalPages = Math.ceil(totalPosts / limit) || 1;
-
     let postsHtml = '';
-    try {
-        if (posts.length === 0) {
-            postsHtml = '<div id="feedEmptyNote" style="text-align: center; color: #777; padding: 20px;">Chưa có bài viết nào trong mục này.</div>';
-        } else {
-            const postIds = posts
-                .map(p => Number(p.post_id !== undefined ? p.post_id : p.id))
-                .filter(id => !isNaN(id) && id > 0);
-            const likeCountMap = new Map();
-            const likedByMeSet = new Set();
-            const commentsByPostMap = new Map();
-
-            if (postIds.length > 0) {
-                const placeholders = postIds.map(() => '?').join(',');
-                const [likesRes, commentsRes] = await env.DB.batch([
-                    env.DB.prepare(`SELECT post_id, user_id FROM post_likes WHERE post_id IN (${placeholders})`).bind(...postIds),
-                    env.DB.prepare(`
-                        SELECT post_comments.id AS comment_id,
-                               post_comments.post_id AS comment_post_id,
-                               post_comments.user_id AS comment_user_id,
-                               post_comments.comment AS comment_body,
-                               post_comments.created_at AS comment_created_at,
-                               users.*
-                        FROM post_comments
-                        LEFT JOIN users ON post_comments.user_id = users.id
-                        WHERE post_id IN (${placeholders})
-                        ORDER BY post_comments.id ASC
-                    `).bind(...postIds)
-                ]);
-
-                for (const lk of ((likesRes && likesRes.results) || [])) {
-                    const lkPostId = Number(lk.post_id);
-                    likeCountMap.set(lkPostId, (likeCountMap.get(lkPostId) || 0) + 1);
-                    if (Number(lk.user_id) === actorId) {
-                        likedByMeSet.add(lkPostId);
-                    }
-                }
-
-                for (const cm of ((commentsRes && commentsRes.results) || [])) {
-                    const cmPostId = Number(cm.comment_post_id !== undefined ? cm.comment_post_id : cm.post_id);
-                    if (!commentsByPostMap.has(cmPostId)) commentsByPostMap.set(cmPostId, []);
-                    commentsByPostMap.get(cmPostId).push(cm);
-                }
-            }
-
-            for (let p of posts) {
-                const realPostId = Number(p.post_id !== undefined ? p.post_id : p.id);
-                const authorUserId = Number(p.post_user_id !== undefined ? p.post_user_id : p.user_id);
-                const postContent = p.post_content !== undefined ? p.post_content : p.content;
-                const postImageUrl = p.post_image_url !== undefined ? p.post_image_url : p.image_url;
-                const postCreatedAt = p.post_created_at !== undefined ? p.post_created_at : p.created_at;
-
-                const rUser = renderFeedUser({
-                    ...p,
-                    id: authorUserId
-                });
-                const likeCount = likeCountMap.get(realPostId) || 0;
-                const isLiked = likedByMeSet.has(realPostId);
-                const heartColor = isLiked ? '#ff3333' : '#888';
-                const comments = commentsByPostMap.get(realPostId) || [];
-
-                let commentsHtml = '';
-                comments.forEach(c => {
-                    const cUserId = Number(c.comment_user_id !== undefined ? c.comment_user_id : c.user_id);
-                    const cBody = c.comment_body !== undefined ? c.comment_body : c.comment;
-                    const rCommentUser = renderFeedUser({
-                        ...c,
-                        id: cUserId
-                    });
-                    commentsHtml += `
-                        <div style="font-size: 11px; margin-top: 4px; border-top: 1px solid #222; padding-top: 4px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">
-                            <span style="display: inline-flex; align-items: center; gap: 3px; flex-wrap: wrap;">${rCommentUser.nameHtml}</span>: <span style="color: #ddd;">${escapeHtml(cBody)}</span>
-                        </div>
-                    `;
-                });
-
-                const imgSrc = normalizeMediaUrl(postImageUrl);
-                const imageTag = imgSrc
-                    ? `<div style="margin-top: 8px; background: #000; text-align: center; border-radius: 4px; overflow: hidden;"><img src="${escapeAttr(imgSrc)}" loading="lazy" style="width: 100%; max-height: 450px; object-fit: contain; display: block; margin: 0 auto;"></div>`
-                    : '';
-
-                const canDelete = canDeleteContent(user, {
-                    id: authorUserId,
-                    user_id: authorUserId,
-                    role: p.role,
-                    is_admin: p.is_admin
-                });
-                const deleteBtnHtml = canDelete ? `
-                    <form onsubmit="deletePostAjax(event, ${realPostId})" style="margin: 0;">
-                        <input type="hidden" name="action" value="delete_post">
-                        <input type="hidden" name="post_id" value="${realPostId}">
-                        <button type="submit" style="background: none; border: none; color: #ff5555; cursor: pointer; font-size: 11px;" title="Xóa bài viết">🗑️ Xóa</button>
-                    </form>
-                ` : '';
-
-                postsHtml += `
-                <div id="post-card-${realPostId}" data-post-id="${realPostId}" data-post-item="1" style="background: #121212; border: 1px solid #2c2c2c; border-radius: 6px; padding: 12px; margin-bottom: 12px;">
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <div class="feed-post-avatar-wrap" style="min-width: 36px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                                ${rUser.avatarHtml}
-                            </div>
-                            <div>
-                                <div style="display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">${rUser.nameHtml}</div>
-                                <div style="font-size: 10px; color: #888; margin-top: 2px;">${escapeHtml(postCreatedAt || '')}</div>
-                            </div>
-                        </div>
-                        ${deleteBtnHtml}
-                    </div>
-                    <div style="color: #ddd; font-size: 13px; word-break: break-word; white-space: pre-wrap; margin-bottom: 6px;">${escapeHtml(postContent || '')}</div>
-                    ${imageTag}
-
-                    <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #222; margin-top: 10px; padding-top: 8px;">
-                        <div style="display: flex; align-items: center; gap: 14px;">
-                            <form onsubmit="submitLikeAjax(event, ${realPostId})" style="margin: 0;">
-                                <input type="hidden" name="action" value="like_post">
-                                <input type="hidden" name="post_id" value="${realPostId}">
-                                <button type="submit" data-role="like-btn" data-liked="${isLiked ? '1' : '0'}" style="background: none; border: none; color: ${heartColor}; cursor: pointer; font-size: 14px; padding: 0;">
-                                    ❤️ <span style="font-size: 11px; color: #ccc;" data-role="like-count" id="like-count-${realPostId}">${likeCount}</span>
-                                </button>
-                            </form>
-
-                            <button type="button" onclick="toggleCommentBox(${realPostId})" style="background: none; border: none; color: #aaa; cursor: pointer; font-size: 13px; padding: 0; display: flex; align-items: center; gap: 4px;">
-                                💬 <span style="font-size: 11px;" data-role="comm-count" id="comm-count-${realPostId}">${comments.length}</span> bình luận
-                            </button>
-                        </div>
-                        <span style="font-size: 10px; color: #666;">Tương tác</span>
-                    </div>
-
-                    <div style="margin-top: 6px;" data-role="comment-list" id="comment-list-${realPostId}">
-                        ${commentsHtml}
-                    </div>
-
-                    <div data-role="comment-box" id="comment-box-${realPostId}" style="display: none; margin-top: 8px;">
-                        <form onsubmit="submitCommentAjax(event, ${realPostId})" style="display: flex; gap: 6px;">
-                            <input type="hidden" name="action" value="add_comment">
-                            <input type="hidden" name="post_id" value="${realPostId}">
-                            <input type="text" name="comment" data-role="comment-input" id="comment-input-${realPostId}" placeholder="Viết bình luận của bạn..." style="flex: 1; background: #0a0a0a; color: #fff; border: 1px solid #333; padding: 6px; font-size: 11px; border-radius: 4px;" required>
-                            <button type="submit" style="background: #0055ff; color: #fff; border: none; padding: 6px 12px; font-size: 11px; border-radius: 4px; cursor: pointer;">Gửi</button>
-                        </form>
-                    </div>
-                </div>`;
-            }
-        }
-    } catch (e) {}
-
     let paginationHtml = '';
-    if (totalPages > 1) {
-        paginationHtml = `<div style="display: flex; justify-content: center; align-items: center; gap: 6px; margin: 15px 0; font-size: 12px;">`;
-        if (page > 1) {
-            paginationHtml += `<a href="?tab=${tab}&page=${page - 1}" style="background: #1a1a1a; color: #00ff00; border: 1px solid #444; padding: 4px 10px; border-radius: 4px; text-decoration: none;">« Trước</a>`;
-        }
-        for (let i = 1; i <= totalPages; i++) {
-            if (i === page) {
-                paginationHtml += `<span style="background: #00ff00; color: #000; font-weight: bold; padding: 4px 10px; border-radius: 4px;">${i}</span>`;
-            } else {
-                paginationHtml += `<a href="?tab=${tab}&page=${i}" style="background: #1a1a1a; color: #ccc; border: 1px solid #444; padding: 4px 10px; border-radius: 4px; text-decoration: none;">${i}</a>`;
-            }
-        }
-        if (page < totalPages) {
-            paginationHtml += `<a href="?tab=${tab}&page=${page + 1}" style="background: #1a1a1a; color: #00ff00; border: 1px solid #444; padding: 4px 10px; border-radius: 4px; text-decoration: none;">Sau »</a>`;
-        }
-        paginationHtml += `</div>`;
-    }
+    try {
+        const snap = await queryFeedSnapshot(env.DB, {
+            tab,
+            page,
+            limit,
+            actorId,
+            currentUser: user
+        });
+        postsHtml = snap.postsHtml;
+        paginationHtml = snap.paginationHtml;
+    } catch (e) {}
 
     const newColor = (tab === 'new') ? '#00ff00' : '#aaa';
     const trendingColor = (tab === 'trending') ? '#00ff00' : '#aaa';
@@ -1057,6 +1119,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
         const FEED_CAN_DELETE_OWN = true;
         const FEED_POST_ENDPOINT = '${feedEndpointPath}';
         const FEED_CURRENT_TAB = '${escapeAttr(tab)}';
+        const FEED_CURRENT_PAGE = ${page};
         const FEED_AJAX_HEADERS = {
             'X-Requested-With': 'XMLHttpRequest',
             'Accept': 'application/json'
@@ -1064,6 +1127,7 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
         let currentStoryIndex = -1;
         let isSubmittingStory = false;
         let preparedStoryBlob = null;
+        let isFeedPolling = false;
 
         function getPostCardEl(postId) {
             const numId = Number(postId || 0);
@@ -1899,6 +1963,9 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 if (!res.ok || !data || data.success === false) {
                     throw new Error('Comment failed');
                 }
+                if (data.id) {
+                    itemEl.setAttribute('data-comment-id', String(Number(data.id)));
+                }
                 if (typeof data.commentCount === 'number' && cntSpan) {
                     cntSpan.innerText = String(data.commentCount);
                 }
@@ -2122,6 +2189,92 @@ export async function handleFeed(request, env, user, renderLayout, ctx) {
                 if (submitBtn) submitBtn.disabled = false;
             }
         }
+
+        function isUserTypingComment() {
+            const active = document.activeElement;
+            if (!active) return false;
+            return Boolean(active.closest && active.closest('[data-role="comment-box"]'));
+        }
+
+        function syncFeedPostStates(remotePosts) {
+            if (!Array.isArray(remotePosts)) return;
+
+            for (const p of remotePosts) {
+                const postId = Number(p.id || 0);
+                if (!postId) continue;
+                const card = getPostCardEl(postId);
+                if (!card) continue;
+
+                const spanLike = card.querySelector('[data-role="like-count"]') || document.getElementById('like-count-' + postId);
+                if (spanLike && typeof p.likeCount === 'number') {
+                    spanLike.innerText = String(p.likeCount);
+                }
+
+                const spanComm = card.querySelector('[data-role="comm-count"]') || document.getElementById('comm-count-' + postId);
+                if (spanComm && typeof p.commentCount === 'number') {
+                    spanComm.innerText = String(p.commentCount);
+                }
+
+                const commentList = card.querySelector('[data-role="comment-list"]') || document.getElementById('comment-list-' + postId);
+                if (commentList && Array.isArray(p.comments)) {
+                    const existingIds = new Set(
+                        Array.from(commentList.querySelectorAll('[data-comment-id]'))
+                            .map(el => Number(el.getAttribute('data-comment-id') || 0))
+                            .filter(id => id > 0)
+                    );
+                    for (const c of p.comments) {
+                        const cid = Number(c.id || 0);
+                        if (cid > 0 && !existingIds.has(cid) && c.html) {
+                            const wrap = document.createElement('div');
+                            wrap.innerHTML = c.html;
+                            if (wrap.firstElementChild) {
+                                commentList.appendChild(wrap.firstElementChild);
+                                existingIds.add(cid);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        async function pollFeedUpdates() {
+            if (isFeedPolling || isSubmittingStory || isUserTypingComment()) return;
+            const feedContainer = document.getElementById('feed-posts-list');
+            if (!feedContainer) return;
+
+            isFeedPolling = true;
+            try {
+                const q = FEED_POST_ENDPOINT + '?ajax_feed=1&tab=' + encodeURIComponent(FEED_CURRENT_TAB) + '&page=' + encodeURIComponent(String(FEED_CURRENT_PAGE)) + '&_t=' + Date.now();
+                const res = await fetch(q, {
+                    method: 'GET',
+                    headers: FEED_AJAX_HEADERS,
+                    cache: 'no-store'
+                });
+                if (!res.ok) return;
+                const data = await res.json().catch(() => null);
+                if (!data || !data.success) return;
+
+                const currentIds = Array.from(feedContainer.querySelectorAll('[data-post-id]'))
+                    .map(el => Number(el.getAttribute('data-post-id') || 0))
+                    .filter(id => id > 0);
+                const nextIds = Array.isArray(data.postIds) ? data.postIds.map(n => Number(n || 0)).filter(id => id > 0) : [];
+
+                const structureChanged =
+                    currentIds.length !== nextIds.length ||
+                    currentIds.some((id, idx) => id !== nextIds[idx]);
+
+                if (structureChanged && typeof data.postsHtml === 'string') {
+                    feedContainer.innerHTML = data.postsHtml + (data.paginationHtml || '');
+                } else {
+                    syncFeedPostStates(data.posts || []);
+                }
+            } catch (e) {
+            } finally {
+                isFeedPolling = false;
+            }
+        }
+
+        setInterval(pollFeedUpdates, 4000);
     </script>
 
     <div class="box">
