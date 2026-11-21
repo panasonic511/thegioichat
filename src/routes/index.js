@@ -1696,8 +1696,11 @@ export async function handleIndex(request, env, user, renderLayout) {
                     return { title, html: mainBox.innerHTML };
                 }
 
-                return { title, html: `<div class="box"><div class="box-content"><a href="${fallbackUrl}">Mở trang</a></div></div>` };
-            }
+                return {
+    title,
+    html: '<div class=\'box\'><div class=\'box-content\'><a href=\'' + fallbackUrl + '\'>Mở trang</a></div></div>'
+};
+
 
             function executeInlineScripts(containerEl) {
                 const scripts = Array.from(containerEl.querySelectorAll('script'));
