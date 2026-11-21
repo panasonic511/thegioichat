@@ -241,19 +241,19 @@ function buildPaginationHtml(page, totalPages) {
     const btns = [];
 
     btns.push(
-        `<button type="button" class="cchat-page-btn ${page <= 1 ? 'disabled' : ''}" ${page <= 1 ? 'disabled' : ''} onclick="cchatGoPage(${prevPage})">&lt;</button>`
+        `<button type="button" class="cchat-page-btn ${page <= 1 ? 'disabled' : ''}" ${page <= 1 ? 'disabled' : ''} data-page="${prevPage}">&lt;</button>`
     );
 
     const startP = Math.max(1, Math.min(page - 2, totalPages - 4));
     const endP = Math.min(totalPages, Math.max(1, startP + 4));
     for (let p = startP; p <= endP; p++) {
         btns.push(
-            `<button type="button" class="cchat-page-btn ${p === page ? 'active' : ''}" onclick="cchatGoPage(${p})">${p}</button>`
+            `<button type="button" class="cchat-page-btn ${p === page ? 'active' : ''}" data-page="${p}">${p}</button>`
         );
     }
 
     btns.push(
-        `<button type="button" class="cchat-page-btn ${page >= totalPages ? 'disabled' : ''}" ${page >= totalPages ? 'disabled' : ''} onclick="cchatGoPage(${nextPage})">&gt;</button>`
+        `<button type="button" class="cchat-page-btn ${page >= totalPages ? 'disabled' : ''}" ${page >= totalPages ? 'disabled' : ''} data-page="${nextPage}">&gt;</button>`
     );
 
     return `<div class="cchat-pagination" id="cchatPagination">${btns.join('')}</div>`;
@@ -289,9 +289,9 @@ function buildChatItemHtml(msg, currentUser = null) {
                 </div>
             </div>
             <div class="cchat-actions">
-                <button type="button" class="cchat-mini-btn" onclick="cchatMentionUser(this)" title="Tag thành viên">Tag</button>
+                <button type="button" class="cchat-mini-btn" data-action="mention" title="Tag thành viên">Tag</button>
                 ${showPm ? `<a href="/mail/chat?user=${senderId}" class="cchat-pm-btn" title="Nhắn tin riêng">PM</a>` : ''}
-                ${showDelete ? `<button type="button" class="cchat-del-btn" onclick="cchatDeleteMsg(this)" title="Xóa đoạn chat">Xóa</button>` : ''}
+                ${showDelete ? `<button type="button" class="cchat-del-btn" data-action="delete" title="Xóa đoạn chat">Xóa</button>` : ''}
             </div>
         </div>
         <div class="cchat-body">${formattedBody}</div>
@@ -617,6 +617,8 @@ export async function handleIndex(request, env, user, renderLayout) {
                 ${currentUserUI.nameHtml} · <a href="/users/feed" style="color: #ffcc00;">Đăng bảng tin</a>
             </div>
         </div>`;
+
+    const safeSenderNameJson = JSON.stringify(String(user.display_name || user.username || 'Bạn')).replace(/</g, '\\u003c');
 
     const content = `
     <style>
@@ -1152,12 +1154,12 @@ export async function handleIndex(request, env, user, renderLayout) {
 
             <div class="cchat-subbar">
                 <div class="cchat-link-group">
-                    <button type="button" class="cchat-sub-link" onclick="cchatReloadList()">↻ Làm mới</button>
+                    <button type="button" class="cchat-sub-link" data-cchat-reload="1">↻ Làm mới</button>
                 </div>
             </div>
 
             <div class="cchat-form-area">
-                <form id="cchatForm" onsubmit="return cchatSubmitForm(event);">
+                <form id="cchatForm">
                     <div class="cchat-label">
                         <span>Nội dung tin nhắn:</span>
                         <span id="cchatCharCount">0 / 600</span>
@@ -1169,11 +1171,11 @@ export async function handleIndex(request, env, user, renderLayout) {
                             <span>➤</span>
                             <span>Gửi</span>
                         </button>
-                        <button type="button" id="cchatIconBtn" class="cchat-tool-btn" onclick="cchatTogglePicker('icon')">
+                        <button type="button" id="cchatIconBtn" class="cchat-tool-btn" data-picker="icon">
                             <span class="wap-anim-ico ico-bounce" style="font-size:15px;">😄</span>
                             <span>Icon cảm xúc</span>
                         </button>
-                        <button type="button" id="cchatColorBtn" class="cchat-tool-btn" onclick="cchatTogglePicker('color')">
+                        <button type="button" id="cchatColorBtn" class="cchat-tool-btn" data-picker="color">
                             <span>🎨</span>
                             <span>BBCode Color</span>
                         </button>
@@ -1209,8 +1211,12 @@ export async function handleIndex(request, env, user, renderLayout) {
     </div>
 
     <script>
-        (function() {
+        (function mountCommunityChat() {
+            const boxEl = document.getElementById('communityChatBox');
+            if (!boxEl) return;
+
             const PAGE_SIZE = ${PAGE_SIZE};
+            const SENDER_NAME = ${safeSenderNameJson};
             const WAP_ICONS = [
                 { code: '[smile]', emo: '😄', anim: 'ico-bounce', name: 'Vui vẻ' },
                 { code: '[lol]', emo: '😂', anim: 'ico-shake', name: 'Cười lớn' },
@@ -1238,9 +1244,9 @@ export async function handleIndex(request, env, user, renderLayout) {
                 { label: 'Trắng sáng', hex: '#ffffff' }
             ];
 
-            const boxEl = document.getElementById('communityChatBox');
             const streamEl = document.getElementById('cchatStream');
             const pagWrapEl = document.getElementById('cchatPaginationWrap');
+            const formEl = document.getElementById('cchatForm');
             const inputEl = document.getElementById('cchatInput');
             const sendBtnEl = document.getElementById('cchatSendBtn');
             const statusEl = document.getElementById('cchatStatusMsg');
@@ -1250,14 +1256,14 @@ export async function handleIndex(request, env, user, renderLayout) {
             const iconBtnEl = document.getElementById('cchatIconBtn');
             const colorBtnEl = document.getElementById('cchatColorBtn');
 
+            // Luôn reset cờ trạng thái khi mount lại sau PJAX/popstate
             let isSending = false;
             let isPolling = false;
+            let destroyed = false;
 
-            function registerLocalTimer(id) {
+            function registerCleanup(fn) {
                 window.__wapPjaxCleanups = window.__wapPjaxCleanups || [];
-                window.__wapPjaxCleanups.push(function() {
-                    clearInterval(id);
-                });
+                window.__wapPjaxCleanups.push(fn);
             }
 
             function getCurrentPage() {
@@ -1330,8 +1336,8 @@ export async function handleIndex(request, env, user, renderLayout) {
 
             function insertAtCursor(snippet, selectOffsetStart, selectOffsetEnd) {
                 if (!inputEl) return;
-                const start = inputEl.selectionStart ?? inputEl.value.length;
-                const end = inputEl.selectionEnd ?? inputEl.value.length;
+                const start = typeof inputEl.selectionStart === 'number' ? inputEl.selectionStart : inputEl.value.length;
+                const end = typeof inputEl.selectionEnd === 'number' ? inputEl.selectionEnd : inputEl.value.length;
                 const before = inputEl.value.slice(0, start);
                 const after = inputEl.value.slice(end);
                 inputEl.value = before + snippet + after;
@@ -1343,6 +1349,16 @@ export async function handleIndex(request, env, user, renderLayout) {
                     inputEl.setSelectionRange(caret, caret);
                 }
                 updateCounter();
+            }
+
+            function togglePicker(which) {
+                const showIcon = which === 'icon' && !(iconPickerEl && iconPickerEl.classList.contains('open'));
+                const showColor = which === 'color' && !(colorPickerEl && colorPickerEl.classList.contains('open'));
+
+                if (iconPickerEl) iconPickerEl.classList.toggle('open', showIcon);
+                if (colorPickerEl) colorPickerEl.classList.toggle('open', showColor);
+                if (iconBtnEl) iconBtnEl.classList.toggle('active', showIcon);
+                if (colorBtnEl) colorBtnEl.classList.toggle('active', showColor);
             }
 
             function renderPickers() {
@@ -1357,7 +1373,9 @@ export async function handleIndex(request, env, user, renderLayout) {
                         btn.className = 'cchat-icon-choice';
                         btn.title = item.name + ' ' + item.code;
                         btn.innerHTML = '<span class="wap-anim-ico ' + item.anim + '">' + item.emo + '</span>';
-                        btn.addEventListener('click', function() {
+                        btn.addEventListener('click', function(e) {
+                            e.preventDefault();
+                            e.stopPropagation();
                             insertAtCursor(item.code + ' ');
                         });
                         iconGrid.appendChild(btn);
@@ -1372,7 +1390,9 @@ export async function handleIndex(request, env, user, renderLayout) {
                         btn.className = 'cchat-color-chip';
                         btn.style.background = c.hex;
                         btn.textContent = c.label;
-                        btn.addEventListener('click', function() {
+                        btn.addEventListener('click', function(e) {
+                            e.preventDefault();
+                            e.stopPropagation();
                             const sample = 'nội dung';
                             const tag = '[color=' + c.hex + ']' + sample + '[/color]';
                             const openLen = ('[color=' + c.hex + ']').length;
@@ -1382,78 +1402,6 @@ export async function handleIndex(request, env, user, renderLayout) {
                     });
                 }
             }
-
-            window.cchatTogglePicker = function(which) {
-                const showIcon = which === 'icon' && !(iconPickerEl && iconPickerEl.classList.contains('open'));
-                const showColor = which === 'color' && !(colorPickerEl && colorPickerEl.classList.contains('open'));
-
-                if (iconPickerEl) iconPickerEl.classList.toggle('open', showIcon);
-                if (colorPickerEl) colorPickerEl.classList.toggle('open', showColor);
-                if (iconBtnEl) iconBtnEl.classList.toggle('active', showIcon);
-                if (colorBtnEl) colorBtnEl.classList.toggle('active', showColor);
-            };
-
-            window.cchatClearInput = function() {
-                if (!inputEl) return;
-                inputEl.value = '';
-                updateCounter();
-                setStatus('', false);
-                inputEl.focus();
-            };
-
-            window.cchatMentionUser = function(btnEl) {
-                const row = btnEl ? btnEl.closest('.cchat-item') : null;
-                const uname = row ? (row.getAttribute('data-username') || '') : '';
-                if (!uname) return;
-                insertAtCursor('@' + uname + ' ');
-            };
-
-            window.cchatDeleteMsg = async function(btnEl) {
-                const row = btnEl ? btnEl.closest('.cchat-item') : null;
-                const msgId = Number(row ? (row.getAttribute('data-msg-id') || 0) : 0);
-                if (!msgId || isPolling) return;
-                if (!confirm('Xóa đoạn chat này?')) return;
-
-                isPolling = true;
-                if (btnEl) btnEl.disabled = true;
-                setStatus('Đang xóa đoạn chat...', false);
-
-                try {
-                    const res = await fetch('/?ajax_chat=1', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Community-Chat': '1'
-                        },
-                        body: JSON.stringify({
-                            action: 'delete',
-                            msg_id: msgId,
-                            page: getCurrentPage()
-                        })
-                    });
-                    const data = await res.json();
-                    if (!res.ok || !data.ok) {
-                        setStatus(data.error || 'Không thể xóa đoạn chat.', true);
-                        if (btnEl) btnEl.disabled = false;
-                    } else {
-                        setCurrentPage(data.page || 1);
-                        if (streamEl) {
-                            streamEl.innerHTML = data.items_html || '<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào.</div>';
-                        }
-                        if (pagWrapEl) {
-                            pagWrapEl.innerHTML = data.pagination_html || '';
-                        }
-                        refreshTimestamps();
-                        setStatus('Đã xóa đoạn chat.', false);
-                        setTimeout(function() { setStatus('', false); }, 1500);
-                    }
-                } catch (e) {
-                    setStatus('Lỗi kết nối khi xóa đoạn chat.', true);
-                    if (btnEl) btnEl.disabled = false;
-                } finally {
-                    isPolling = false;
-                }
-            };
 
             function escapeLocalHtml(s) {
                 return String(s ?? '')
@@ -1498,8 +1446,8 @@ export async function handleIndex(request, env, user, renderLayout) {
                 return txt;
             }
 
-            window.cchatGoPage = async function(targetPage) {
-                if (isPolling || !streamEl) return;
+            async function goPage(targetPage) {
+                if (destroyed || isPolling || !streamEl) return;
                 isPolling = true;
                 const p = Math.max(1, Number(targetPage || 1));
                 setStatus('Đang tải trang ' + p + '...', false);
@@ -1507,7 +1455,7 @@ export async function handleIndex(request, env, user, renderLayout) {
                     const res = await fetch('/?ajax_chat=1&page=' + p + '&_t=' + Date.now(), {
                         headers: { 'X-Community-Chat': '1' }
                     });
-                    if (res.ok) {
+                    if (res.ok && !destroyed) {
                         const data = await res.json();
                         if (data.ok) {
                             setCurrentPage(data.page || p);
@@ -1522,11 +1470,58 @@ export async function handleIndex(request, env, user, renderLayout) {
                 } finally {
                     isPolling = false;
                 }
-            };
+            }
 
-            window.cchatSubmitForm = async function(ev) {
+            async function deleteMsg(btnEl) {
+                const row = btnEl ? btnEl.closest('.cchat-item') : null;
+                const msgId = Number(row ? (row.getAttribute('data-msg-id') || 0) : 0);
+                if (!msgId || isPolling) return;
+                if (!confirm('Xóa đoạn chat này?')) return;
+
+                isPolling = true;
+                btnEl.disabled = true;
+                setStatus('Đang xóa đoạn chat...', false);
+
+                try {
+                    const res = await fetch('/?ajax_chat=1', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Community-Chat': '1'
+                        },
+                        body: JSON.stringify({
+                            action: 'delete',
+                            msg_id: msgId,
+                            page: getCurrentPage()
+                        })
+                    });
+                    const data = await res.json();
+                    if (!res.ok || !data.ok) {
+                        setStatus(data.error || 'Không thể xóa đoạn chat.', true);
+                        btnEl.disabled = false;
+                    } else if (!destroyed) {
+                        setCurrentPage(data.page || 1);
+                        if (streamEl) {
+                            streamEl.innerHTML = data.items_html || '<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào.</div>';
+                        }
+                        if (pagWrapEl) {
+                            pagWrapEl.innerHTML = data.pagination_html || '';
+                        }
+                        refreshTimestamps();
+                        setStatus('Đã xóa đoạn chat.', false);
+                        setTimeout(function() { if (!destroyed) setStatus('', false); }, 1500);
+                    }
+                } catch (e) {
+                    setStatus('Lỗi kết nối khi xóa đoạn chat.', true);
+                    btnEl.disabled = false;
+                } finally {
+                    isPolling = false;
+                }
+            }
+
+            async function submitChat(ev) {
                 if (ev) ev.preventDefault();
-                if (isSending || !inputEl) return false;
+                if (destroyed || isSending || !inputEl) return false;
 
                 const text = inputEl.value.trim();
                 if (!text) {
@@ -1550,7 +1545,7 @@ export async function handleIndex(request, env, user, renderLayout) {
                         '<div class="cchat-user-meta">' +
                             '<div class="cchat-info">' +
                                 '<div class="cchat-nick-line">' +
-                                    '<b>' + escapeLocalHtml(${JSON.stringify(String(user.display_name || user.username || 'Bạn'))}) + '</b>' +
+                                    '<b>' + escapeLocalHtml(SENDER_NAME) + '</b>' +
                                     '<span class="cchat-time">· Vừa xong</span>' +
                                 '</div>' +
                             '</div>' +
@@ -1583,7 +1578,7 @@ export async function handleIndex(request, env, user, renderLayout) {
                     if (!res.ok || !data.ok) {
                         tempCard.remove();
                         setStatus(data.error || 'Không thể gửi tin nhắn.', true);
-                    } else {
+                    } else if (!destroyed) {
                         setCurrentPage(data.page || 1);
                         if (typeof data.items_html === 'string' && streamEl) {
                             streamEl.innerHTML = data.items_html || '<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào.</div>';
@@ -1599,9 +1594,12 @@ export async function handleIndex(request, env, user, renderLayout) {
                             setLastId(data.id);
                         }
                         refreshTimestamps();
+                        if (typeof window.__wapRefreshHomeSnapshot === 'function') {
+                            window.__wapRefreshHomeSnapshot();
+                        }
                         if (data.reset) {
                             setStatus('Đã đầy 10 trang, toàn bộ tin nhắn cũ đã được tự động xóa.', false);
-                            setTimeout(function() { setStatus('', false); }, 2500);
+                            setTimeout(function() { if (!destroyed) setStatus('', false); }, 2500);
                         }
                     }
                 } catch (err) {
@@ -1612,21 +1610,17 @@ export async function handleIndex(request, env, user, renderLayout) {
                     if (sendBtnEl) sendBtnEl.disabled = false;
                 }
                 return false;
-            };
-
-            window.cchatReloadList = async function() {
-                await window.cchatGoPage(1);
-            };
+            }
 
             async function pollCurrentPage() {
-                if (isPolling || isSending || !streamEl) return;
+                if (destroyed || isPolling || isSending || !streamEl) return;
                 isPolling = true;
                 try {
                     const p = getCurrentPage();
                     const res = await fetch('/?ajax_chat=1&page=' + p + '&_t=' + Date.now(), {
                         headers: { 'X-Community-Chat': '1' }
                     });
-                    if (res.ok) {
+                    if (res.ok && !destroyed) {
                         const data = await res.json();
                         if (data.ok && typeof data.items_html === 'string') {
                             const currentTopId = Number(streamEl.querySelector('.cchat-item')?.getAttribute('data-msg-id') || 0);
@@ -1645,31 +1639,89 @@ export async function handleIndex(request, env, user, renderLayout) {
                 }
             }
 
+            if (formEl) {
+                formEl.addEventListener('submit', submitChat);
+            }
+            if (iconBtnEl) {
+                iconBtnEl.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    togglePicker('icon');
+                });
+            }
+            if (colorBtnEl) {
+                colorBtnEl.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    togglePicker('color');
+                });
+            }
             if (inputEl) {
                 inputEl.addEventListener('input', updateCounter);
                 inputEl.addEventListener('keydown', function(e) {
                     if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
-                        cchatSubmitForm(e);
+                        submitChat(e);
                     }
                 });
             }
 
+            function onBoxClick(e) {
+                const target = e.target;
+                if (!target) return;
+
+                const reloadBtn = target.closest('[data-cchat-reload="1"]');
+                if (reloadBtn) {
+                    e.preventDefault();
+                    goPage(1);
+                    return;
+                }
+
+                const pageBtn = target.closest('.cchat-page-btn[data-page]');
+                if (pageBtn && !pageBtn.disabled) {
+                    e.preventDefault();
+                    goPage(Number(pageBtn.getAttribute('data-page') || 1));
+                    return;
+                }
+
+                const actBtn = target.closest('[data-action]');
+                if (actBtn) {
+                    const act = actBtn.getAttribute('data-action');
+                    const row = actBtn.closest('.cchat-item');
+                    if (act === 'mention') {
+                        const uname = row ? (row.getAttribute('data-username') || '') : '';
+                        if (uname) insertAtCursor('@' + uname + ' ');
+                    } else if (act === 'delete') {
+                        deleteMsg(actBtn);
+                    }
+                }
+            }
+
+            boxEl.addEventListener('click', onBoxClick);
+
             renderPickers();
+            updateCounter();
             refreshTimestamps();
-            registerLocalTimer(setInterval(refreshTimestamps, 15000));
-            registerLocalTimer(setInterval(pollCurrentPage, 4000));
+
+            const tsTimer = setInterval(refreshTimestamps, 15000);
+            const pollTimer = setInterval(pollCurrentPage, 4000);
+
+            registerCleanup(function() {
+                destroyed = true;
+                isSending = false;
+                isPolling = false;
+                clearInterval(tsTimer);
+                clearInterval(pollTimer);
+                boxEl.removeEventListener('click', onBoxClick);
+            });
         })();
     </script>
 
     <script>
         (function initWapPjax() {
-            if (window.__wapPjaxInitialized) return;
-            window.__wapPjaxInitialized = true;
-
-            const CACHE_PREFIX = 'wap_pjax_v2:';
-            const memoryCache = new Map();
-            let activeController = null;
+            const CACHE_PREFIX = 'wap_pjax_v3:';
+            window.__wapPjaxMemCache = window.__wapPjaxMemCache || new Map();
+            const memoryCache = window.__wapPjaxMemCache;
 
             function readCache(key) {
                 if (memoryCache.has(key)) return memoryCache.get(key);
@@ -1686,20 +1738,27 @@ export async function handleIndex(request, env, user, renderLayout) {
             }
 
             function writeCache(key, title, html) {
-                const entry = { title: title || document.title, html: html || '', savedAt: Date.now() };
+                if (!html || html.indexOf('data-pjax-placeholder="1"') !== -1) return;
+                const entry = { title: title || document.title, html: html, savedAt: Date.now() };
                 memoryCache.set(key, entry);
                 try {
                     sessionStorage.setItem(CACHE_PREFIX + key, JSON.stringify(entry));
                 } catch (e) {}
             }
 
-            // Lưu trang hiện tại ngay khi mở để bấm quay lại là hiện ngay
             function saveCurrentPageSnapshot() {
                 const container = document.getElementById('pjax-main-content');
                 if (!container) return;
                 const key = window.location.pathname + window.location.search;
                 writeCache(key, document.title, container.innerHTML);
             }
+
+            window.__wapRefreshHomeSnapshot = function() {
+                const container = document.getElementById('pjax-main-content');
+                if (!container) return;
+                const key = container.getAttribute('data-pjax-url') || '/';
+                writeCache(key, document.title, container.innerHTML);
+            };
 
             function cleanupOldPageScripts() {
                 const list = window.__wapPjaxCleanups;
@@ -1709,6 +1768,10 @@ export async function handleIndex(request, env, user, renderLayout) {
                         try { if (typeof fn === 'function') fn(); } catch (e) {}
                     }
                 }
+            }
+
+            function escapeLocalUrl(u) {
+                return String(u ?? '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
             }
 
             function extractMainHtml(htmlText, fallbackUrl) {
@@ -1730,10 +1793,6 @@ export async function handleIndex(request, env, user, renderLayout) {
                     title,
                     html: '<div class="box"><div class="box-content"><a href="' + escapeLocalUrl(fallbackUrl) + '">Mở trang</a></div></div>'
                 };
-            }
-
-            function escapeLocalUrl(u) {
-                return String(u ?? '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
             }
 
             function executeInlineScripts(containerEl) {
@@ -1783,13 +1842,14 @@ export async function handleIndex(request, env, user, renderLayout) {
                 }
 
                 const fullKey = targetUrl.pathname + targetUrl.search;
-                saveCurrentPageSnapshot();
+                if (!fromPop) {
+                    saveCurrentPageSnapshot();
+                }
 
                 if (push && fullKey !== (window.location.pathname + window.location.search)) {
                     window.history.pushState({ pjaxUrl: fullKey }, '', fullKey);
                 }
 
-                // 1. Hiện nội dung ngay lập tức khi click (ưu tiên cache đã lưu; nếu chưa có thì hiện khung nhanh tức thì)
                 const cached = readCache(fullKey);
                 if (cached && cached.html) {
                     applyHtmlToContainer(container, cached.title, cached.html);
@@ -1799,19 +1859,19 @@ export async function handleIndex(request, env, user, renderLayout) {
                 }
                 if (!fromPop) window.scrollTo({ top: 0, behavior: 'instant' });
 
-                // 2. Chạy ngầm fetch dữ liệu mới nhất từ server
-                if (activeController) {
-                    try { activeController.abort(); } catch (e) {}
+                if (window.__wapPjaxController) {
+                    try { window.__wapPjaxController.abort(); } catch (e) {}
                 }
-                activeController = new AbortController();
+                const controller = new AbortController();
+                window.__wapPjaxController = controller;
 
                 try {
                     const res = await fetch(fullKey, {
-                        signal: activeController.signal,
+                        signal: controller.signal,
                         headers: { 'X-PJAX': '1', 'X-Requested-With': 'XMLHttpRequest' }
                     });
                     if (!res.ok) {
-                        window.location.href = fullKey;
+                        if (!cached) window.location.href = fullKey;
                         return;
                     }
                     const text = await res.text();
@@ -1850,37 +1910,41 @@ export async function handleIndex(request, env, user, renderLayout) {
                 } catch (e) {}
             }
 
-            function handlePrefetchEvent(ev) {
-                const a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
-                if (!a) return;
-                const href = a.getAttribute('href') || '';
-                if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.includes('logout')) return;
-                prefetchUrl(href);
+            if (!window.__wapPjaxBound) {
+                window.__wapPjaxBound = true;
+
+                function handlePrefetchEvent(ev) {
+                    const a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
+                    if (!a) return;
+                    const href = a.getAttribute('href') || '';
+                    if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.includes('logout')) return;
+                    prefetchUrl(href);
+                }
+
+                document.addEventListener('pointerenter', handlePrefetchEvent, true);
+                document.addEventListener('touchstart', handlePrefetchEvent, { passive: true, capture: true });
+
+                document.addEventListener('click', function(ev) {
+                    if (ev.defaultPrevented || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey || ev.button !== 0) return;
+                    const a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
+                    if (!a) return;
+
+                    if (a.hasAttribute('download') || a.getAttribute('target') === '_blank' || a.dataset.noPjax === '1') return;
+                    const href = a.getAttribute('href') || '';
+                    if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) return;
+                    if (href.includes('/logout')) return;
+
+                    const u = new URL(href, window.location.origin);
+                    if (u.origin !== window.location.origin) return;
+
+                    ev.preventDefault();
+                    navigatePjax(u.pathname + u.search, { push: true });
+                });
+
+                window.addEventListener('popstate', function() {
+                    navigatePjax(window.location.pathname + window.location.search, { push: false, fromPop: true });
+                });
             }
-
-            document.addEventListener('pointerenter', handlePrefetchEvent, true);
-            document.addEventListener('touchstart', handlePrefetchEvent, { passive: true, capture: true });
-
-            document.addEventListener('click', function(ev) {
-                if (ev.defaultPrevented || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey || ev.button !== 0) return;
-                const a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
-                if (!a) return;
-
-                if (a.hasAttribute('download') || a.getAttribute('target') === '_blank' || a.dataset.noPjax === '1') return;
-                const href = a.getAttribute('href') || '';
-                if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) return;
-                if (href.includes('/logout')) return;
-
-                const u = new URL(href, window.location.origin);
-                if (u.origin !== window.location.origin) return;
-
-                ev.preventDefault();
-                navigatePjax(u.pathname + u.search, { push: true });
-            });
-
-            window.addEventListener('popstate', function() {
-                navigatePjax(window.location.pathname + window.location.search, { push: false, fromPop: true });
-            });
 
             saveCurrentPageSnapshot();
         })();
