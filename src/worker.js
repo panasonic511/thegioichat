@@ -124,10 +124,15 @@ export function renderUser(u) {
     const avatarVal = String(safeUser.avatar || '');
     const avatarUrl = (avatarVal && !avatarVal.includes('7gXvS6v')) ? avatarVal : systemDefaultAvatar;
 
+    const activeFrame = String(safeUser.active_frame || '');
     const borderColor = String(safeUser.border_color || '#ffcc00');
+
     let avatarStyle = `border-radius: 50%; object-fit: cover; border: 2px solid ${borderColor};`;
     if (safeUser.avatar_glow && safeUser.avatar_glow !== '#000000') {
         avatarStyle += ` box-shadow: 0 0 10px ${safeUser.avatar_glow};`;
+    }
+    if (activeFrame) {
+        avatarStyle = `border-radius: 50%; object-fit: cover; border: none; box-shadow: none;`;
     }
 
     const nameColor = String(safeUser.name_color || '#00ff00');
@@ -143,7 +148,6 @@ export function renderUser(u) {
 
     const activeIcon = safeUser.active_icon ? `${escapeHtmlText(safeUser.active_icon)} ` : '';
     const staffBadge = getStaffAfterNickBadge(safeUser);
-    const activeFrame = String(safeUser.active_frame || '');
 
     const avatarHtml = activeFrame
         ? `<a href="/profile?user=${userId}" style="display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;">${renderAvatarFrameHtml(escapeHtmlText(avatarUrl), activeFrame, 44, avatarStyle)}</a>`
@@ -619,6 +623,8 @@ function renderLayout(title, content, user) {
             border-radius: 50%;
             object-fit: cover;
             display: block;
+            border: none !important;
+            box-shadow: none !important;
         }
 
         /* 6 KHUNG TĨNH */
