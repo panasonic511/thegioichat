@@ -1208,747 +1208,752 @@ export async function handleIndex(request, env, user, renderLayout) {
                 ${initialPaginationHtml}
             </div>
         </div>
-    </div>
 
-    <script>
-        (function mountCommunityChat() {
-            const boxEl = document.getElementById('communityChatBox');
-            if (!boxEl) return;
+        <script>
+            (function mountCommunityChat() {
+                const boxEl = document.getElementById('communityChatBox');
+                if (!boxEl) return;
 
-            const PAGE_SIZE = ${PAGE_SIZE};
-            const SENDER_NAME = ${safeSenderNameJson};
-            const WAP_ICONS = [
-                { code: '[smile]', emo: '😄', anim: 'ico-bounce', name: 'Vui vẻ' },
-                { code: '[lol]', emo: '😂', anim: 'ico-shake', name: 'Cười lớn' },
-                { code: '[love]', emo: '😍', anim: 'ico-pulse', name: 'Yêu thích' },
-                { code: '[heart]', emo: '❤️', anim: 'ico-beat', name: 'Trái tim' },
-                { code: '[fire]', emo: '🔥', anim: 'ico-flicker', name: 'Bùng nổ' },
-                { code: '[cool]', emo: '😎', anim: 'ico-tilt', name: 'Ngầu' },
-                { code: '[cry]', emo: '😭', anim: 'ico-drop', name: 'Khóc' },
-                { code: '[angry]', emo: '😡', anim: 'ico-shake', name: 'Tức giận' },
-                { code: '[party]', emo: '🎉', anim: 'ico-spin', name: 'Tiệc tùng' },
-                { code: '[star]', emo: '🌟', anim: 'ico-pulse', name: 'Ngôi sao' },
-                { code: '[wink]', emo: '😉', anim: 'ico-tilt', name: 'Nháy mắt' },
-                { code: '[hug]', emo: '🥰', anim: 'ico-beat', name: 'Thương mến' }
-            ];
+                const PAGE_SIZE = ${PAGE_SIZE};
+                const SENDER_NAME = ${safeSenderNameJson};
+                const WAP_ICONS = [
+                    { code: '[smile]', emo: '😄', anim: 'ico-bounce', name: 'Vui vẻ' },
+                    { code: '[lol]', emo: '😂', anim: 'ico-shake', name: 'Cười lớn' },
+                    { code: '[love]', emo: '😍', anim: 'ico-pulse', name: 'Yêu thích' },
+                    { code: '[heart]', emo: '❤️', anim: 'ico-beat', name: 'Trái tim' },
+                    { code: '[fire]', emo: '🔥', anim: 'ico-flicker', name: 'Bùng nổ' },
+                    { code: '[cool]', emo: '😎', anim: 'ico-tilt', name: 'Ngầu' },
+                    { code: '[cry]', emo: '😭', anim: 'ico-drop', name: 'Khóc' },
+                    { code: '[angry]', emo: '😡', anim: 'ico-shake', name: 'Tức giận' },
+                    { code: '[party]', emo: '🎉', anim: 'ico-spin', name: 'Tiệc tùng' },
+                    { code: '[star]', emo: '🌟', anim: 'ico-pulse', name: 'Ngôi sao' },
+                    { code: '[wink]', emo: '😉', anim: 'ico-tilt', name: 'Nháy mắt' },
+                    { code: '[hug]', emo: '🥰', anim: 'ico-beat', name: 'Thương mến' }
+                ];
 
-            const BBCODE_COLORS = [
-                { label: 'Đỏ rực', hex: '#ff3b30' },
-                { label: 'Cam lửa', hex: '#ff9500' },
-                { label: 'Vàng nắng', hex: '#facc15' },
-                { label: 'Xanh lá', hex: '#4ade80' },
-                { label: 'Xanh ngọc', hex: '#2dd4bf' },
-                { label: 'Xanh dương', hex: '#38bdf8' },
-                { label: 'Tím mộng', hex: '#c084fc' },
-                { label: 'Hồng phấn', hex: '#f472b6' },
-                { label: 'Trắng sáng', hex: '#ffffff' }
-            ];
+                const BBCODE_COLORS = [
+                    { label: 'Đỏ rực', hex: '#ff3b30' },
+                    { label: 'Cam lửa', hex: '#ff9500' },
+                    { label: 'Vàng nắng', hex: '#facc15' },
+                    { label: 'Xanh lá', hex: '#4ade80' },
+                    { label: 'Xanh ngọc', hex: '#2dd4bf' },
+                    { label: 'Xanh dương', hex: '#38bdf8' },
+                    { label: 'Tím mộng', hex: '#c084fc' },
+                    { label: 'Hồng phấn', hex: '#f472b6' },
+                    { label: 'Trắng sáng', hex: '#ffffff' }
+                ];
 
-            const streamEl = document.getElementById('cchatStream');
-            const pagWrapEl = document.getElementById('cchatPaginationWrap');
-            const formEl = document.getElementById('cchatForm');
-            const inputEl = document.getElementById('cchatInput');
-            const sendBtnEl = document.getElementById('cchatSendBtn');
-            const statusEl = document.getElementById('cchatStatusMsg');
-            const counterEl = document.getElementById('cchatCharCount');
-            const iconPickerEl = document.getElementById('cchatIconPicker');
-            const colorPickerEl = document.getElementById('cchatColorPicker');
-            const iconBtnEl = document.getElementById('cchatIconBtn');
-            const colorBtnEl = document.getElementById('cchatColorBtn');
+                const streamEl = document.getElementById('cchatStream');
+                const pagWrapEl = document.getElementById('cchatPaginationWrap');
+                const formEl = document.getElementById('cchatForm');
+                const inputEl = document.getElementById('cchatInput');
+                const sendBtnEl = document.getElementById('cchatSendBtn');
+                const statusEl = document.getElementById('cchatStatusMsg');
+                const counterEl = document.getElementById('cchatCharCount');
+                const iconPickerEl = document.getElementById('cchatIconPicker');
+                const colorPickerEl = document.getElementById('cchatColorPicker');
+                const iconBtnEl = document.getElementById('cchatIconBtn');
+                const colorBtnEl = document.getElementById('cchatColorBtn');
 
-            // Luôn reset cờ trạng thái khi mount lại sau PJAX/popstate
-            let isSending = false;
-            let isPolling = false;
-            let destroyed = false;
+                let isSending = false;
+                let isPolling = false;
+                let destroyed = false;
 
-            function registerCleanup(fn) {
-                window.__wapPjaxCleanups = window.__wapPjaxCleanups || [];
-                window.__wapPjaxCleanups.push(fn);
-            }
-
-            function getCurrentPage() {
-                return Math.max(1, Number(boxEl ? (boxEl.getAttribute('data-page') || 1) : 1));
-            }
-
-            function setCurrentPage(p) {
-                if (boxEl) boxEl.setAttribute('data-page', String(Math.max(1, Number(p || 1))));
-            }
-
-            function getLastId() {
-                return Number(boxEl ? (boxEl.getAttribute('data-last-id') || 0) : 0);
-            }
-
-            function setLastId(val) {
-                if (boxEl && Number(val) > getLastId()) {
-                    boxEl.setAttribute('data-last-id', String(Number(val)));
+                function registerCleanup(fn) {
+                    window.__wapPjaxCleanups = window.__wapPjaxCleanups || [];
+                    window.__wapPjaxCleanups.push(fn);
                 }
-            }
 
-            function setStatus(text, isErr) {
-                if (!statusEl) return;
-                statusEl.style.color = isErr ? '#f87171' : '#4ade80';
-                statusEl.textContent = text || '';
-            }
+                function getCurrentPage() {
+                    return Math.max(1, Number(boxEl ? (boxEl.getAttribute('data-page') || 1) : 1));
+                }
 
-            function updateCounter() {
-                if (!inputEl || !counterEl) return;
-                counterEl.textContent = inputEl.value.length + ' / 600';
-            }
+                function setCurrentPage(p) {
+                    if (boxEl) boxEl.setAttribute('data-page', String(Math.max(1, Number(p || 1))));
+                }
 
-            function formatClientTimeAgo(tsSec) {
-                const nowSec = Math.floor(Date.now() / 1000);
-                const sec = Number(tsSec || nowSec);
-                const diff = Math.max(0, nowSec - sec);
-                if (diff < 10) return 'Vừa xong';
-                if (diff < 60) return diff + ' giây trước';
-                const mins = Math.floor(diff / 60);
-                if (mins < 60) return mins + ' phút trước';
-                const hours = Math.floor(mins / 60);
-                if (hours < 24) return hours + ' giờ trước';
-                const days = Math.floor(hours / 24);
-                if (days < 7) return days + ' ngày trước';
-                const vnDate = new Date((sec + 7 * 3600) * 1000);
-                const dd = String(vnDate.getUTCDate()).padStart(2, '0');
-                const mm = String(vnDate.getUTCMonth() + 1).padStart(2, '0');
-                const hh = String(vnDate.getUTCHours()).padStart(2, '0');
-                const mi = String(vnDate.getUTCMinutes()).padStart(2, '0');
-                return hh + ':' + mi + ' ' + dd + '/' + mm;
-            }
+                function getLastId() {
+                    return Number(boxEl ? (boxEl.getAttribute('data-last-id') || 0) : 0);
+                }
 
-            function refreshTimestamps() {
-                if (!streamEl) return;
-                streamEl.querySelectorAll('.cchat-item').forEach(function(item) {
-                    const ts = Number(item.getAttribute('data-ts') || 0);
-                    const timeSpan = item.querySelector('.cchat-time');
-                    if (ts > 0 && timeSpan) {
-                        timeSpan.textContent = '· ' + formatClientTimeAgo(ts);
+                function setLastId(val) {
+                    if (boxEl && Number(val) > getLastId()) {
+                        boxEl.setAttribute('data-last-id', String(Number(val)));
                     }
-                });
-            }
-
-            function trimStreamToPageSize() {
-                if (!streamEl) return;
-                const items = Array.from(streamEl.querySelectorAll('.cchat-item'));
-                for (let i = PAGE_SIZE; i < items.length; i++) {
-                    items[i].remove();
-                }
-            }
-
-            function insertAtCursor(snippet, selectOffsetStart, selectOffsetEnd) {
-                if (!inputEl) return;
-                const start = typeof inputEl.selectionStart === 'number' ? inputEl.selectionStart : inputEl.value.length;
-                const end = typeof inputEl.selectionEnd === 'number' ? inputEl.selectionEnd : inputEl.value.length;
-                const before = inputEl.value.slice(0, start);
-                const after = inputEl.value.slice(end);
-                inputEl.value = before + snippet + after;
-                inputEl.focus();
-                if (typeof selectOffsetStart === 'number' && typeof selectOffsetEnd === 'number') {
-                    inputEl.setSelectionRange(start + selectOffsetStart, start + selectOffsetEnd);
-                } else {
-                    const caret = start + snippet.length;
-                    inputEl.setSelectionRange(caret, caret);
-                }
-                updateCounter();
-            }
-
-            function togglePicker(which) {
-                const showIcon = which === 'icon' && !(iconPickerEl && iconPickerEl.classList.contains('open'));
-                const showColor = which === 'color' && !(colorPickerEl && colorPickerEl.classList.contains('open'));
-
-                if (iconPickerEl) iconPickerEl.classList.toggle('open', showIcon);
-                if (colorPickerEl) colorPickerEl.classList.toggle('open', showColor);
-                if (iconBtnEl) iconBtnEl.classList.toggle('active', showIcon);
-                if (colorBtnEl) colorBtnEl.classList.toggle('active', showColor);
-            }
-
-            function renderPickers() {
-                const iconGrid = document.getElementById('cchatIconGrid');
-                const colorGrid = document.getElementById('cchatColorGrid');
-
-                if (iconGrid) {
-                    iconGrid.innerHTML = '';
-                    WAP_ICONS.forEach(function(item) {
-                        const btn = document.createElement('button');
-                        btn.type = 'button';
-                        btn.className = 'cchat-icon-choice';
-                        btn.title = item.name + ' ' + item.code;
-                        btn.innerHTML = '<span class="wap-anim-ico ' + item.anim + '">' + item.emo + '</span>';
-                        btn.addEventListener('click', function(e) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            insertAtCursor(item.code + ' ');
-                        });
-                        iconGrid.appendChild(btn);
-                    });
                 }
 
-                if (colorGrid) {
-                    colorGrid.innerHTML = '';
-                    BBCODE_COLORS.forEach(function(c) {
-                        const btn = document.createElement('button');
-                        btn.type = 'button';
-                        btn.className = 'cchat-color-chip';
-                        btn.style.background = c.hex;
-                        btn.textContent = c.label;
-                        btn.addEventListener('click', function(e) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            const sample = 'nội dung';
-                            const tag = '[color=' + c.hex + ']' + sample + '[/color]';
-                            const openLen = ('[color=' + c.hex + ']').length;
-                            insertAtCursor(tag, openLen, openLen + sample.length);
-                        });
-                        colorGrid.appendChild(btn);
-                    });
+                function setStatus(text, isErr) {
+                    if (!statusEl) return;
+                    statusEl.style.color = isErr ? '#f87171' : '#4ade80';
+                    statusEl.textContent = text || '';
                 }
-            }
 
-            function escapeLocalHtml(s) {
-                return String(s ?? '')
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;')
-                    .replace(/'/g, '&#39;');
-            }
+                function updateCounter() {
+                    if (!inputEl || !counterEl) return;
+                    counterEl.textContent = inputEl.value.length + ' / 600';
+                }
 
-            function formatPreviewBody(raw) {
-                let txt = String(raw ?? '');
-                const iconMap = {
-                    '[smile]': '<span class="wap-anim-ico ico-bounce">😄</span>',
-                    '[lol]': '<span class="wap-anim-ico ico-shake">😂</span>',
-                    '[love]': '<span class="wap-anim-ico ico-pulse">😍</span>',
-                    '[heart]': '<span class="wap-anim-ico ico-beat">❤️</span>',
-                    '[fire]': '<span class="wap-anim-ico ico-flicker">🔥</span>',
-                    '[cool]': '<span class="wap-anim-ico ico-tilt">😎</span>',
-                    '[cry]': '<span class="wap-anim-ico ico-drop">😭</span>',
-                    '[angry]': '<span class="wap-anim-ico ico-shake">😡</span>',
-                    '[party]': '<span class="wap-anim-ico ico-spin">🎉</span>',
-                    '[star]': '<span class="wap-anim-ico ico-pulse">🌟</span>',
-                    '[wink]': '<span class="wap-anim-ico ico-tilt">😉</span>',
-                    '[hug]': '<span class="wap-anim-ico ico-beat">🥰</span>'
-                };
-                const holders = [];
-                Object.keys(iconMap).forEach(function(k, idx) {
-                    holders.push(iconMap[k]);
-                    txt = txt.split(k).join('@@ICO_' + idx + '@@');
-                });
-                txt = escapeLocalHtml(txt)
-                    .replace(/\\[color=([^\\]]+)\\]([\\s\\S]*?)\\[\\/color\\]/gi, function(_, col, inner) {
-                        const c = String(col || '').trim();
-                        const okCol = (/^#[0-9a-fA-F]{3,8}$/.test(c) || /^[a-zA-Z]{3,20}$/.test(c)) ? c : '#4ade80';
-                        return '<span style="color:' + okCol + ';font-weight:bold;">' + inner + '</span>';
-                    })
-                    .replace(/\\n/g, '<br>')
-                    .replace(/@@ICO_(\\d+)@@/g, function(_, idx) {
-                        return holders[Number(idx)] || '';
-                    });
-                return txt;
-            }
+                function formatClientTimeAgo(tsSec) {
+                    const nowSec = Math.floor(Date.now() / 1000);
+                    const sec = Number(tsSec || nowSec);
+                    const diff = Math.max(0, nowSec - sec);
+                    if (diff < 10) return 'Vừa xong';
+                    if (diff < 60) return diff + ' giây trước';
+                    const mins = Math.floor(diff / 60);
+                    if (mins < 60) return mins + ' phút trước';
+                    const hours = Math.floor(mins / 60);
+                    if (hours < 24) return hours + ' giờ trước';
+                    const days = Math.floor(hours / 24);
+                    if (days < 7) return days + ' ngày trước';
+                    const vnDate = new Date((sec + 7 * 3600) * 1000);
+                    const dd = String(vnDate.getUTCDate()).padStart(2, '0');
+                    const mm = String(vnDate.getUTCMonth() + 1).padStart(2, '0');
+                    const hh = String(vnDate.getUTCHours()).padStart(2, '0');
+                    const mi = String(vnDate.getUTCMinutes()).padStart(2, '0');
+                    return hh + ':' + mi + ' ' + dd + '/' + mm;
+                }
 
-            async function goPage(targetPage) {
-                if (destroyed || isPolling || !streamEl) return;
-                isPolling = true;
-                const p = Math.max(1, Number(targetPage || 1));
-                setStatus('Đang tải trang ' + p + '...', false);
-                try {
-                    const res = await fetch('/?ajax_chat=1&page=' + p + '&_t=' + Date.now(), {
-                        headers: { 'X-Community-Chat': '1' }
-                    });
-                    if (res.ok && !destroyed) {
-                        const data = await res.json();
-                        if (data.ok) {
-                            setCurrentPage(data.page || p);
-                            streamEl.innerHTML = data.items_html || '<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào.</div>';
-                            if (pagWrapEl) pagWrapEl.innerHTML = data.pagination_html || '';
-                            if (data.last_id) setLastId(data.last_id);
-                            refreshTimestamps();
-                            setStatus('', false);
+                function refreshTimestamps() {
+                    if (!streamEl) return;
+                    streamEl.querySelectorAll('.cchat-item').forEach(function(item) {
+                        const ts = Number(item.getAttribute('data-ts') || 0);
+                        const timeSpan = item.querySelector('.cchat-time');
+                        if (ts > 0 && timeSpan) {
+                            timeSpan.textContent = '· ' + formatClientTimeAgo(ts);
                         }
+                    });
+                }
+
+                function trimStreamToPageSize() {
+                    if (!streamEl) return;
+                    const items = Array.from(streamEl.querySelectorAll('.cchat-item'));
+                    for (let i = PAGE_SIZE; i < items.length; i++) {
+                        items[i].remove();
                     }
-                } catch (e) {
-                } finally {
-                    isPolling = false;
                 }
-            }
 
-            async function deleteMsg(btnEl) {
-                const row = btnEl ? btnEl.closest('.cchat-item') : null;
-                const msgId = Number(row ? (row.getAttribute('data-msg-id') || 0) : 0);
-                if (!msgId || isPolling) return;
-                if (!confirm('Xóa đoạn chat này?')) return;
-
-                isPolling = true;
-                btnEl.disabled = true;
-                setStatus('Đang xóa đoạn chat...', false);
-
-                try {
-                    const res = await fetch('/?ajax_chat=1', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Community-Chat': '1'
-                        },
-                        body: JSON.stringify({
-                            action: 'delete',
-                            msg_id: msgId,
-                            page: getCurrentPage()
-                        })
-                    });
-                    const data = await res.json();
-                    if (!res.ok || !data.ok) {
-                        setStatus(data.error || 'Không thể xóa đoạn chat.', true);
-                        btnEl.disabled = false;
-                    } else if (!destroyed) {
-                        setCurrentPage(data.page || 1);
-                        if (streamEl) {
-                            streamEl.innerHTML = data.items_html || '<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào.</div>';
-                        }
-                        if (pagWrapEl) {
-                            pagWrapEl.innerHTML = data.pagination_html || '';
-                        }
-                        refreshTimestamps();
-                        setStatus('Đã xóa đoạn chat.', false);
-                        setTimeout(function() { if (!destroyed) setStatus('', false); }, 1500);
-                    }
-                } catch (e) {
-                    setStatus('Lỗi kết nối khi xóa đoạn chat.', true);
-                    btnEl.disabled = false;
-                } finally {
-                    isPolling = false;
-                }
-            }
-
-            async function submitChat(ev) {
-                if (ev) ev.preventDefault();
-                if (destroyed || isSending || !inputEl) return false;
-
-                const text = inputEl.value.trim();
-                if (!text) {
-                    setStatus('Hãy nhập nội dung trước khi gửi.', true);
+                function insertAtCursor(snippet, selectOffsetStart, selectOffsetEnd) {
+                    if (!inputEl) return;
+                    const start = typeof inputEl.selectionStart === 'number' ? inputEl.selectionStart : inputEl.value.length;
+                    const end = typeof inputEl.selectionEnd === 'number' ? inputEl.selectionEnd : inputEl.value.length;
+                    const before = inputEl.value.slice(0, start);
+                    const after = inputEl.value.slice(end);
+                    inputEl.value = before + snippet + after;
                     inputEl.focus();
-                    return false;
-                }
-
-                isSending = true;
-                if (sendBtnEl) sendBtnEl.disabled = true;
-
-                const emptyNote = document.getElementById('cchatEmptyNote');
-                if (emptyNote) emptyNote.remove();
-
-                const nowSec = Math.floor(Date.now() / 1000);
-                const tempCard = document.createElement('div');
-                tempCard.className = 'cchat-item is-new';
-                tempCard.setAttribute('data-ts', String(nowSec));
-                tempCard.innerHTML =
-                    '<div class="cchat-row-top">' +
-                        '<div class="cchat-user-meta">' +
-                            '<div class="cchat-info">' +
-                                '<div class="cchat-nick-line">' +
-                                    '<b>' + escapeLocalHtml(SENDER_NAME) + '</b>' +
-                                    '<span class="cchat-time">· Vừa xong</span>' +
-                                '</div>' +
-                            '</div>' +
-                        '</div>' +
-                    '</div>' +
-                    '<div class="cchat-body">' + formatPreviewBody(text) + '</div>';
-
-                if (getCurrentPage() === 1 && streamEl) {
-                    streamEl.prepend(tempCard);
-                    trimStreamToPageSize();
-                }
-
-                inputEl.value = '';
-                updateCounter();
-                setStatus('', false);
-
-                try {
-                    const res = await fetch('/?ajax_chat=1', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Community-Chat': '1'
-                        },
-                        body: JSON.stringify({
-                            content: text,
-                            page: getCurrentPage()
-                        })
-                    });
-                    const data = await res.json();
-                    if (!res.ok || !data.ok) {
-                        tempCard.remove();
-                        setStatus(data.error || 'Không thể gửi tin nhắn.', true);
-                    } else if (!destroyed) {
-                        setCurrentPage(data.page || 1);
-                        if (typeof data.items_html === 'string' && streamEl) {
-                            streamEl.innerHTML = data.items_html || '<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào.</div>';
-                        } else {
-                            tempCard.remove();
-                        }
-                        if (pagWrapEl) {
-                            pagWrapEl.innerHTML = data.pagination_html || '';
-                        }
-                        if (data.last_id) {
-                            setLastId(data.last_id);
-                        } else if (data.id) {
-                            setLastId(data.id);
-                        }
-                        refreshTimestamps();
-                        if (typeof window.__wapRefreshHomeSnapshot === 'function') {
-                            window.__wapRefreshHomeSnapshot();
-                        }
-                        if (data.reset) {
-                            setStatus('Đã đầy 10 trang, toàn bộ tin nhắn cũ đã được tự động xóa.', false);
-                            setTimeout(function() { if (!destroyed) setStatus('', false); }, 2500);
-                        }
+                    if (typeof selectOffsetStart === 'number' && typeof selectOffsetEnd === 'number') {
+                        inputEl.setSelectionRange(start + selectOffsetStart, start + selectOffsetEnd);
+                    } else {
+                        const caret = start + snippet.length;
+                        inputEl.setSelectionRange(caret, caret);
                     }
-                } catch (err) {
-                    tempCard.remove();
-                    setStatus('Lỗi kết nối khi gửi tin nhắn.', true);
-                } finally {
-                    isSending = false;
-                    if (sendBtnEl) sendBtnEl.disabled = false;
+                    updateCounter();
                 }
-                return false;
-            }
 
-            async function pollCurrentPage() {
-                if (destroyed || isPolling || isSending || !streamEl) return;
-                isPolling = true;
-                try {
-                    const p = getCurrentPage();
-                    const res = await fetch('/?ajax_chat=1&page=' + p + '&_t=' + Date.now(), {
-                        headers: { 'X-Community-Chat': '1' }
+                function togglePicker(which) {
+                    const showIcon = which === 'icon' && !(iconPickerEl && iconPickerEl.classList.contains('open'));
+                    const showColor = which === 'color' && !(colorPickerEl && colorPickerEl.classList.contains('open'));
+
+                    if (iconPickerEl) iconPickerEl.classList.toggle('open', showIcon);
+                    if (colorPickerEl) colorPickerEl.classList.toggle('open', showColor);
+                    if (iconBtnEl) iconBtnEl.classList.toggle('active', showIcon);
+                    if (colorBtnEl) colorBtnEl.classList.toggle('active', showColor);
+                }
+
+                function renderPickers() {
+                    const iconGrid = document.getElementById('cchatIconGrid');
+                    const colorGrid = document.getElementById('cchatColorGrid');
+
+                    if (iconGrid) {
+                        iconGrid.innerHTML = '';
+                        WAP_ICONS.forEach(function(item) {
+                            const btn = document.createElement('button');
+                            btn.type = 'button';
+                            btn.className = 'cchat-icon-choice';
+                            btn.title = item.name + ' ' + item.code;
+                            btn.innerHTML = '<span class="wap-anim-ico ' + item.anim + '">' + item.emo + '</span>';
+                            btn.addEventListener('click', function(e) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                insertAtCursor(item.code + ' ');
+                            });
+                            iconGrid.appendChild(btn);
+                        });
+                    }
+
+                    if (colorGrid) {
+                        colorGrid.innerHTML = '';
+                        BBCODE_COLORS.forEach(function(c) {
+                            const btn = document.createElement('button');
+                            btn.type = 'button';
+                            btn.className = 'cchat-color-chip';
+                            btn.style.background = c.hex;
+                            btn.textContent = c.label;
+                            btn.addEventListener('click', function(e) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const sample = 'nội dung';
+                                const tag = '[color=' + c.hex + ']' + sample + '[/color]';
+                                const openLen = ('[color=' + c.hex + ']').length;
+                                insertAtCursor(tag, openLen, openLen + sample.length);
+                            });
+                            colorGrid.appendChild(btn);
+                        });
+                    }
+                }
+
+                function escapeLocalHtml(s) {
+                    return String(s ?? '')
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/'/g, '&#39;');
+                }
+
+                function formatPreviewBody(raw) {
+                    let txt = String(raw ?? '');
+                    const iconMap = {
+                        '[smile]': '<span class="wap-anim-ico ico-bounce">😄</span>',
+                        '[lol]': '<span class="wap-anim-ico ico-shake">😂</span>',
+                        '[love]': '<span class="wap-anim-ico ico-pulse">😍</span>',
+                        '[heart]': '<span class="wap-anim-ico ico-beat">❤️</span>',
+                        '[fire]': '<span class="wap-anim-ico ico-flicker">🔥</span>',
+                        '[cool]': '<span class="wap-anim-ico ico-tilt">😎</span>',
+                        '[cry]': '<span class="wap-anim-ico ico-drop">😭</span>',
+                        '[angry]': '<span class="wap-anim-ico ico-shake">😡</span>',
+                        '[party]': '<span class="wap-anim-ico ico-spin">🎉</span>',
+                        '[star]': '<span class="wap-anim-ico ico-pulse">🌟</span>',
+                        '[wink]': '<span class="wap-anim-ico ico-tilt">😉</span>',
+                        '[hug]': '<span class="wap-anim-ico ico-beat">🥰</span>'
+                    };
+                    const holders = [];
+                    Object.keys(iconMap).forEach(function(k, idx) {
+                        holders.push(iconMap[k]);
+                        txt = txt.split(k).join('@@ICO_' + idx + '@@');
                     });
-                    if (res.ok && !destroyed) {
-                        const data = await res.json();
-                        if (data.ok && typeof data.items_html === 'string') {
-                            const currentTopId = Number(streamEl.querySelector('.cchat-item')?.getAttribute('data-msg-id') || 0);
-                            const nextTopId = Number(data.last_id || 0);
-                            if (nextTopId !== currentTopId || p !== 1) {
+                    txt = escapeLocalHtml(txt)
+                        .replace(/\\[color=([^\\]]+)\\]([\\s\\S]*?)\\[\\/color\\]/gi, function(_, col, inner) {
+                            const c = String(col || '').trim();
+                            const okCol = (/^#[0-9a-fA-F]{3,8}$/.test(c) || /^[a-zA-Z]{3,20}$/.test(c)) ? c : '#4ade80';
+                            return '<span style="color:' + okCol + ';font-weight:bold;">' + inner + '</span>';
+                        })
+                        .replace(/\\n/g, '<br>')
+                        .replace(/@@ICO_(\\d+)@@/g, function(_, idx) {
+                            return holders[Number(idx)] || '';
+                        });
+                    return txt;
+                }
+
+                async function goPage(targetPage) {
+                    if (destroyed || isPolling || !streamEl) return;
+                    isPolling = true;
+                    const p = Math.max(1, Number(targetPage || 1));
+                    setStatus('Đang tải trang ' + p + '...', false);
+                    try {
+                        const res = await fetch('/?ajax_chat=1&page=' + p + '&_t=' + Date.now(), {
+                            headers: { 'X-Community-Chat': '1' }
+                        });
+                        if (res.ok && !destroyed) {
+                            const data = await res.json();
+                            if (data.ok) {
+                                setCurrentPage(data.page || p);
                                 streamEl.innerHTML = data.items_html || '<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào.</div>';
                                 if (pagWrapEl) pagWrapEl.innerHTML = data.pagination_html || '';
                                 if (data.last_id) setLastId(data.last_id);
+                                refreshTimestamps();
+                                setStatus('', false);
+                            }
+                        }
+                    } catch (e) {
+                    } finally {
+                        isPolling = false;
+                    }
+                }
+
+                async function deleteMsg(btnEl) {
+                    const row = btnEl ? btnEl.closest('.cchat-item') : null;
+                    const msgId = Number(row ? (row.getAttribute('data-msg-id') || 0) : 0);
+                    if (!msgId || isPolling) return;
+                    if (!confirm('Xóa đoạn chat này?')) return;
+
+                    isPolling = true;
+                    btnEl.disabled = true;
+                    setStatus('Đang xóa đoạn chat...', false);
+
+                    try {
+                        const res = await fetch('/?ajax_chat=1', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-Community-Chat': '1'
+                            },
+                            body: JSON.stringify({
+                                action: 'delete',
+                                msg_id: msgId,
+                                page: getCurrentPage()
+                            })
+                        });
+                        const data = await res.json();
+                        if (!res.ok || !data.ok) {
+                            setStatus(data.error || 'Không thể xóa đoạn chat.', true);
+                            btnEl.disabled = false;
+                        } else if (!destroyed) {
+                            setCurrentPage(data.page || 1);
+                            if (streamEl) {
+                                streamEl.innerHTML = data.items_html || '<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào.</div>';
+                            }
+                            if (pagWrapEl) {
+                                pagWrapEl.innerHTML = data.pagination_html || '';
                             }
                             refreshTimestamps();
+                            if (typeof window.__wapRefreshHomeSnapshot === 'function') {
+                                window.__wapRefreshHomeSnapshot();
+                            }
+                            setStatus('Đã xóa đoạn chat.', false);
+                            setTimeout(function() { if (!destroyed) setStatus('', false); }, 1500);
                         }
-                    }
-                } catch (e) {
-                } finally {
-                    isPolling = false;
-                }
-            }
-
-            if (formEl) {
-                formEl.addEventListener('submit', submitChat);
-            }
-            if (iconBtnEl) {
-                iconBtnEl.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    togglePicker('icon');
-                });
-            }
-            if (colorBtnEl) {
-                colorBtnEl.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    togglePicker('color');
-                });
-            }
-            if (inputEl) {
-                inputEl.addEventListener('input', updateCounter);
-                inputEl.addEventListener('keydown', function(e) {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        submitChat(e);
-                    }
-                });
-            }
-
-            function onBoxClick(e) {
-                const target = e.target;
-                if (!target) return;
-
-                const reloadBtn = target.closest('[data-cchat-reload="1"]');
-                if (reloadBtn) {
-                    e.preventDefault();
-                    goPage(1);
-                    return;
-                }
-
-                const pageBtn = target.closest('.cchat-page-btn[data-page]');
-                if (pageBtn && !pageBtn.disabled) {
-                    e.preventDefault();
-                    goPage(Number(pageBtn.getAttribute('data-page') || 1));
-                    return;
-                }
-
-                const actBtn = target.closest('[data-action]');
-                if (actBtn) {
-                    const act = actBtn.getAttribute('data-action');
-                    const row = actBtn.closest('.cchat-item');
-                    if (act === 'mention') {
-                        const uname = row ? (row.getAttribute('data-username') || '') : '';
-                        if (uname) insertAtCursor('@' + uname + ' ');
-                    } else if (act === 'delete') {
-                        deleteMsg(actBtn);
+                    } catch (e) {
+                        setStatus('Lỗi kết nối khi xóa đoạn chat.', true);
+                        btnEl.disabled = false;
+                    } finally {
+                        isPolling = false;
                     }
                 }
-            }
 
-            boxEl.addEventListener('click', onBoxClick);
+                async function submitChat(ev) {
+                    if (ev) ev.preventDefault();
+                    if (destroyed || isSending || !inputEl) return false;
 
-            renderPickers();
-            updateCounter();
-            refreshTimestamps();
-
-            const tsTimer = setInterval(refreshTimestamps, 15000);
-            const pollTimer = setInterval(pollCurrentPage, 4000);
-
-            registerCleanup(function() {
-                destroyed = true;
-                isSending = false;
-                isPolling = false;
-                clearInterval(tsTimer);
-                clearInterval(pollTimer);
-                boxEl.removeEventListener('click', onBoxClick);
-            });
-        })();
-    </script>
-
-    <script>
-        (function initWapPjax() {
-            const CACHE_PREFIX = 'wap_pjax_v3:';
-            window.__wapPjaxMemCache = window.__wapPjaxMemCache || new Map();
-            const memoryCache = window.__wapPjaxMemCache;
-
-            function readCache(key) {
-                if (memoryCache.has(key)) return memoryCache.get(key);
-                try {
-                    const raw = sessionStorage.getItem(CACHE_PREFIX + key);
-                    if (!raw) return null;
-                    const parsed = JSON.parse(raw);
-                    if (parsed && typeof parsed.html === 'string') {
-                        memoryCache.set(key, parsed);
-                        return parsed;
+                    const text = inputEl.value.trim();
+                    if (!text) {
+                        setStatus('Hãy nhập nội dung trước khi gửi.', true);
+                        inputEl.focus();
+                        return false;
                     }
-                } catch (e) {}
-                return null;
-            }
 
-            function writeCache(key, title, html) {
-                if (!html || html.indexOf('data-pjax-placeholder="1"') !== -1) return;
-                const entry = { title: title || document.title, html: html, savedAt: Date.now() };
-                memoryCache.set(key, entry);
-                try {
-                    sessionStorage.setItem(CACHE_PREFIX + key, JSON.stringify(entry));
-                } catch (e) {}
-            }
+                    isSending = true;
+                    if (sendBtnEl) sendBtnEl.disabled = true;
 
-            function saveCurrentPageSnapshot() {
-                const container = document.getElementById('pjax-main-content');
-                if (!container) return;
-                const key = window.location.pathname + window.location.search;
-                writeCache(key, document.title, container.innerHTML);
-            }
+                    const emptyNote = document.getElementById('cchatEmptyNote');
+                    if (emptyNote) emptyNote.remove();
 
-            window.__wapRefreshHomeSnapshot = function() {
-                const container = document.getElementById('pjax-main-content');
-                if (!container) return;
-                const key = container.getAttribute('data-pjax-url') || '/';
-                writeCache(key, document.title, container.innerHTML);
-            };
-
-            function cleanupOldPageScripts() {
-                const list = window.__wapPjaxCleanups;
-                if (Array.isArray(list)) {
-                    while (list.length > 0) {
-                        const fn = list.pop();
-                        try { if (typeof fn === 'function') fn(); } catch (e) {}
-                    }
-                }
-            }
-
-            function escapeLocalUrl(u) {
-                return String(u ?? '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-            }
-
-            function extractMainHtml(htmlText, fallbackUrl) {
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(htmlText, 'text/html');
-                const title = doc.title || document.title;
-
-                const targetContainer = doc.getElementById('pjax-main-content');
-                if (targetContainer) {
-                    return { title, html: targetContainer.innerHTML };
-                }
-
-                const mainBox = doc.querySelector('.container') || doc.body;
-                if (mainBox) {
-                    return { title, html: mainBox.innerHTML };
-                }
-
-                return {
-                    title,
-                    html: '<div class="box"><div class="box-content"><a href="' + escapeLocalUrl(fallbackUrl) + '">Mở trang</a></div></div>'
-                };
-            }
-
-            function executeInlineScripts(containerEl) {
-                const scripts = Array.from(containerEl.querySelectorAll('script'));
-                scripts.forEach(function(oldScript) {
-                    const newScript = document.createElement('script');
-                    Array.from(oldScript.attributes).forEach(function(attr) {
-                        newScript.setAttribute(attr.name, attr.value);
-                    });
-                    if (!oldScript.src) {
-                        newScript.textContent = oldScript.textContent;
-                    }
-                    oldScript.parentNode.replaceChild(newScript, oldScript);
-                });
-            }
-
-            function applyHtmlToContainer(containerEl, title, htmlContent) {
-                cleanupOldPageScripts();
-                if (title) document.title = title;
-                containerEl.innerHTML = htmlContent;
-                executeInlineScripts(containerEl);
-            }
-
-            function buildInstantPlaceholder(key) {
-                return (
-                    '<div class="box" data-pjax-placeholder="1" style="background:#0b0f14;border:1px solid #2a3342;">' +
-                        '<div class="box-title">⚡ Đang mở ' + escapeLocalUrl(key) + '...</div>' +
-                        '<div class="box-content" style="padding:14px;color:#9ca3af;font-size:13px;">' +
-                            'Đang hiển thị khung nhanh và đồng bộ dữ liệu ngầm...' +
+                    const nowSec = Math.floor(Date.now() / 1000);
+                    const tempCard = document.createElement('div');
+                    tempCard.className = 'cchat-item is-new';
+                    tempCard.setAttribute('data-ts', String(nowSec));
+                    tempCard.innerHTML =
+                        '<div class="cchat-row-top">' +
+                            '<div class="cchat-user-meta">' +
+                                '<div class="cchat-info">' +
+                                    '<div class="cchat-nick-line">' +
+                                        '<b>' + escapeLocalHtml(SENDER_NAME) + '</b>' +
+                                        '<span class="cchat-time">· Vừa xong</span>' +
+                                    '</div>' +
+                                '</div>' +
+                            '</div>' +
                         '</div>' +
-                    '</div>'
-                );
-            }
+                        '<div class="cchat-body">' + formatPreviewBody(text) + '</div>';
 
-            async function navigatePjax(urlStr, opts = {}) {
-                const { push = true, fromPop = false } = opts;
-                const container = document.getElementById('pjax-main-content');
-                if (!container) {
-                    window.location.href = urlStr;
-                    return;
+                    if (getCurrentPage() === 1 && streamEl) {
+                        streamEl.prepend(tempCard);
+                        trimStreamToPageSize();
+                    }
+
+                    inputEl.value = '';
+                    updateCounter();
+                    setStatus('', false);
+
+                    try {
+                        const res = await fetch('/?ajax_chat=1', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-Community-Chat': '1'
+                            },
+                            body: JSON.stringify({
+                                content: text,
+                                page: getCurrentPage()
+                            })
+                        });
+                        const data = await res.json();
+                        if (!res.ok || !data.ok) {
+                            tempCard.remove();
+                            setStatus(data.error || 'Không thể gửi tin nhắn.', true);
+                        } else if (!destroyed) {
+                            setCurrentPage(data.page || 1);
+                            if (typeof data.items_html === 'string' && streamEl) {
+                                streamEl.innerHTML = data.items_html || '<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào.</div>';
+                            } else {
+                                tempCard.remove();
+                            }
+                            if (pagWrapEl) {
+                                pagWrapEl.innerHTML = data.pagination_html || '';
+                            }
+                            if (data.last_id) {
+                                setLastId(data.last_id);
+                            } else if (data.id) {
+                                setLastId(data.id);
+                            }
+                            refreshTimestamps();
+                            if (typeof window.__wapRefreshHomeSnapshot === 'function') {
+                                window.__wapRefreshHomeSnapshot();
+                            }
+                            if (data.reset) {
+                                setStatus('Đã đầy 10 trang, toàn bộ tin nhắn cũ đã được tự động xóa.', false);
+                                setTimeout(function() { if (!destroyed) setStatus('', false); }, 2500);
+                            }
+                        }
+                    } catch (err) {
+                        tempCard.remove();
+                        setStatus('Lỗi kết nối khi gửi tin nhắn.', true);
+                    } finally {
+                        isSending = false;
+                        if (sendBtnEl) sendBtnEl.disabled = false;
+                    }
+                    return false;
                 }
 
-                const targetUrl = new URL(urlStr, window.location.origin);
-                if (targetUrl.origin !== window.location.origin) {
-                    window.location.href = urlStr;
-                    return;
+                async function pollCurrentPage() {
+                    if (destroyed || isPolling || isSending || !streamEl) return;
+                    isPolling = true;
+                    try {
+                        const p = getCurrentPage();
+                        const res = await fetch('/?ajax_chat=1&page=' + p + '&_t=' + Date.now(), {
+                            headers: { 'X-Community-Chat': '1' }
+                        });
+                        if (res.ok && !destroyed) {
+                            const data = await res.json();
+                            if (data.ok && typeof data.items_html === 'string') {
+                                const currentTopId = Number(streamEl.querySelector('.cchat-item')?.getAttribute('data-msg-id') || 0);
+                                const nextTopId = Number(data.last_id || 0);
+                                if (nextTopId !== currentTopId || p !== 1) {
+                                    streamEl.innerHTML = data.items_html || '<div class="cchat-empty" id="cchatEmptyNote">Chưa có tin nhắn nào.</div>';
+                                    if (pagWrapEl) pagWrapEl.innerHTML = data.pagination_html || '';
+                                    if (data.last_id) setLastId(data.last_id);
+                                    if (typeof window.__wapRefreshHomeSnapshot === 'function') {
+                                        window.__wapRefreshHomeSnapshot();
+                                    }
+                                }
+                                refreshTimestamps();
+                            }
+                        }
+                    } catch (e) {
+                    } finally {
+                        isPolling = false;
+                    }
                 }
 
-                const fullKey = targetUrl.pathname + targetUrl.search;
-                if (!fromPop) {
-                    saveCurrentPageSnapshot();
+                if (formEl) {
+                    formEl.addEventListener('submit', submitChat);
                 }
-
-                if (push && fullKey !== (window.location.pathname + window.location.search)) {
-                    window.history.pushState({ pjaxUrl: fullKey }, '', fullKey);
-                }
-
-                const cached = readCache(fullKey);
-                if (cached && cached.html) {
-                    applyHtmlToContainer(container, cached.title, cached.html);
-                } else {
-                    cleanupOldPageScripts();
-                    container.innerHTML = buildInstantPlaceholder(fullKey);
-                }
-                if (!fromPop) window.scrollTo({ top: 0, behavior: 'instant' });
-
-                if (window.__wapPjaxController) {
-                    try { window.__wapPjaxController.abort(); } catch (e) {}
-                }
-                const controller = new AbortController();
-                window.__wapPjaxController = controller;
-
-                try {
-                    const res = await fetch(fullKey, {
-                        signal: controller.signal,
-                        headers: { 'X-PJAX': '1', 'X-Requested-With': 'XMLHttpRequest' }
+                if (iconBtnEl) {
+                    iconBtnEl.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        togglePicker('icon');
                     });
-                    if (!res.ok) {
-                        if (!cached) window.location.href = fullKey;
+                }
+                if (colorBtnEl) {
+                    colorBtnEl.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        togglePicker('color');
+                    });
+                }
+                if (inputEl) {
+                    inputEl.addEventListener('input', updateCounter);
+                    inputEl.addEventListener('keydown', function(e) {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            submitChat(e);
+                        }
+                    });
+                }
+
+                function onBoxClick(e) {
+                    const target = e.target;
+                    if (!target) return;
+
+                    const reloadBtn = target.closest('[data-cchat-reload="1"]');
+                    if (reloadBtn) {
+                        e.preventDefault();
+                        goPage(1);
                         return;
                     }
-                    const text = await res.text();
-                    const extracted = extractMainHtml(text, fullKey);
-                    writeCache(fullKey, extracted.title, extracted.html);
 
-                    if ((window.location.pathname + window.location.search) === fullKey) {
-                        const isPlaceholder = !!container.querySelector('[data-pjax-placeholder="1"]');
-                        if (isPlaceholder || !cached || cached.html !== extracted.html) {
-                            applyHtmlToContainer(container, extracted.title, extracted.html);
+                    const pageBtn = target.closest('.cchat-page-btn[data-page]');
+                    if (pageBtn && !pageBtn.disabled) {
+                        e.preventDefault();
+                        goPage(Number(pageBtn.getAttribute('data-page') || 1));
+                        return;
+                    }
+
+                    const actBtn = target.closest('[data-action]');
+                    if (actBtn) {
+                        const act = actBtn.getAttribute('data-action');
+                        const row = actBtn.closest('.cchat-item');
+                        if (act === 'mention') {
+                            const uname = row ? (row.getAttribute('data-username') || '') : '';
+                            if (uname) insertAtCursor('@' + uname + ' ');
+                        } else if (act === 'delete') {
+                            deleteMsg(actBtn);
                         }
                     }
-                } catch (err) {
-                    if (err && err.name === 'AbortError') return;
-                    if (!cached) {
-                        window.location.href = fullKey;
+                }
+
+                boxEl.addEventListener('click', onBoxClick);
+
+                renderPickers();
+                updateCounter();
+                refreshTimestamps();
+
+                const tsTimer = setInterval(refreshTimestamps, 15000);
+                const pollTimer = setInterval(pollCurrentPage, 4000);
+
+                registerCleanup(function() {
+                    destroyed = true;
+                    isSending = false;
+                    isPolling = false;
+                    clearInterval(tsTimer);
+                    clearInterval(pollTimer);
+                    boxEl.removeEventListener('click', onBoxClick);
+                });
+            })();
+        </script>
+
+        <script>
+            (function initWapPjax() {
+                const CACHE_PREFIX = 'wap_pjax_v4:';
+                window.__wapPjaxMemCache = window.__wapPjaxMemCache || new Map();
+                const memoryCache = window.__wapPjaxMemCache;
+
+                function readCache(key) {
+                    if (memoryCache.has(key)) return memoryCache.get(key);
+                    try {
+                        const raw = sessionStorage.getItem(CACHE_PREFIX + key);
+                        if (!raw) return null;
+                        const parsed = JSON.parse(raw);
+                        if (parsed && typeof parsed.html === 'string') {
+                            memoryCache.set(key, parsed);
+                            return parsed;
+                        }
+                    } catch (e) {}
+                    return null;
+                }
+
+                function writeCache(key, title, html) {
+                    if (!html || html.indexOf('data-pjax-placeholder="1"') !== -1) return;
+                    const entry = { title: title || document.title, html: html, savedAt: Date.now() };
+                    memoryCache.set(key, entry);
+                    try {
+                        sessionStorage.setItem(CACHE_PREFIX + key, JSON.stringify(entry));
+                    } catch (e) {}
+                }
+
+                function saveCurrentPageSnapshot() {
+                    const container = document.getElementById('pjax-main-content');
+                    if (!container) return;
+                    const key = window.location.pathname + window.location.search;
+                    writeCache(key, document.title, container.innerHTML);
+                }
+
+                window.__wapRefreshHomeSnapshot = function() {
+                    const container = document.getElementById('pjax-main-content');
+                    if (!container) return;
+                    const key = container.getAttribute('data-pjax-url') || '/';
+                    writeCache(key, document.title, container.innerHTML);
+                };
+
+                function cleanupOldPageScripts() {
+                    const list = window.__wapPjaxCleanups;
+                    if (Array.isArray(list)) {
+                        while (list.length > 0) {
+                            const fn = list.pop();
+                            try { if (typeof fn === 'function') fn(); } catch (e) {}
+                        }
                     }
                 }
-            }
 
-            function prefetchUrl(urlStr) {
-                try {
-                    const u = new URL(urlStr, window.location.origin);
-                    if (u.origin !== window.location.origin) return;
-                    const key = u.pathname + u.search;
-                    if (readCache(key)) return;
-
-                    fetch(key, { headers: { 'X-PJAX': '1' } })
-                        .then(r => r.ok ? r.text() : null)
-                        .then(txt => {
-                            if (!txt) return;
-                            const ex = extractMainHtml(txt, key);
-                            writeCache(key, ex.title, ex.html);
-                        })
-                        .catch(() => {});
-                } catch (e) {}
-            }
-
-            if (!window.__wapPjaxBound) {
-                window.__wapPjaxBound = true;
-
-                function handlePrefetchEvent(ev) {
-                    const a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
-                    if (!a) return;
-                    const href = a.getAttribute('href') || '';
-                    if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.includes('logout')) return;
-                    prefetchUrl(href);
+                function escapeLocalUrl(u) {
+                    return String(u ?? '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
                 }
 
-                document.addEventListener('pointerenter', handlePrefetchEvent, true);
-                document.addEventListener('touchstart', handlePrefetchEvent, { passive: true, capture: true });
+                function extractMainHtml(htmlText, fallbackUrl) {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(htmlText, 'text/html');
+                    const title = doc.title || document.title;
 
-                document.addEventListener('click', function(ev) {
-                    if (ev.defaultPrevented || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey || ev.button !== 0) return;
-                    const a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
-                    if (!a) return;
+                    const targetContainer = doc.getElementById('pjax-main-content');
+                    if (targetContainer) {
+                        return { title, html: targetContainer.innerHTML };
+                    }
 
-                    if (a.hasAttribute('download') || a.getAttribute('target') === '_blank' || a.dataset.noPjax === '1') return;
-                    const href = a.getAttribute('href') || '';
-                    if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) return;
-                    if (href.includes('/logout')) return;
+                    const mainBox = doc.querySelector('.container') || doc.body;
+                    if (mainBox) {
+                        return { title, html: mainBox.innerHTML };
+                    }
 
-                    const u = new URL(href, window.location.origin);
-                    if (u.origin !== window.location.origin) return;
+                    return {
+                        title,
+                        html: '<div class="box"><div class="box-content"><a href="' + escapeLocalUrl(fallbackUrl) + '">Mở trang</a></div></div>'
+                    };
+                }
 
-                    ev.preventDefault();
-                    navigatePjax(u.pathname + u.search, { push: true });
-                });
+                function executeInlineScripts(containerEl) {
+                    const scripts = Array.from(containerEl.querySelectorAll('script'));
+                    scripts.forEach(function(oldScript) {
+                        const newScript = document.createElement('script');
+                        Array.from(oldScript.attributes).forEach(function(attr) {
+                            newScript.setAttribute(attr.name, attr.value);
+                        });
+                        if (!oldScript.src) {
+                            newScript.textContent = oldScript.textContent;
+                        }
+                        oldScript.parentNode.replaceChild(newScript, oldScript);
+                    });
+                }
 
-                window.addEventListener('popstate', function() {
-                    navigatePjax(window.location.pathname + window.location.search, { push: false, fromPop: true });
-                });
-            }
+                function applyHtmlToContainer(containerEl, title, htmlContent) {
+                    cleanupOldPageScripts();
+                    if (title) document.title = title;
+                    containerEl.innerHTML = htmlContent;
+                    executeInlineScripts(containerEl);
+                }
 
-            saveCurrentPageSnapshot();
-        })();
-    </script>
+                function buildInstantPlaceholder(key) {
+                    return (
+                        '<div class="box" data-pjax-placeholder="1" style="background:#0b0f14;border:1px solid #2a3342;">' +
+                            '<div class="box-title">⚡ Đang mở ' + escapeLocalUrl(key) + '...</div>' +
+                            '<div class="box-content" style="padding:14px;color:#9ca3af;font-size:13px;">' +
+                                'Đang hiển thị khung nhanh và đồng bộ dữ liệu ngầm...' +
+                            '</div>' +
+                        '</div>'
+                    );
+                }
+
+                async function navigatePjax(urlStr, opts = {}) {
+                    const { push = true, fromPop = false } = opts;
+                    const container = document.getElementById('pjax-main-content');
+                    if (!container) {
+                        window.location.href = urlStr;
+                        return;
+                    }
+
+                    const targetUrl = new URL(urlStr, window.location.origin);
+                    if (targetUrl.origin !== window.location.origin) {
+                        window.location.href = urlStr;
+                        return;
+                    }
+
+                    const fullKey = targetUrl.pathname + targetUrl.search;
+                    if (!fromPop) {
+                        saveCurrentPageSnapshot();
+                    }
+
+                    if (push && fullKey !== (window.location.pathname + window.location.search)) {
+                        window.history.pushState({ pjaxUrl: fullKey }, '', fullKey);
+                    }
+
+                    const cached = readCache(fullKey);
+                    if (cached && cached.html) {
+                        applyHtmlToContainer(container, cached.title, cached.html);
+                    } else {
+                        cleanupOldPageScripts();
+                        container.innerHTML = buildInstantPlaceholder(fullKey);
+                    }
+                    if (!fromPop) window.scrollTo({ top: 0, behavior: 'instant' });
+
+                    if (window.__wapPjaxController) {
+                        try { window.__wapPjaxController.abort(); } catch (e) {}
+                    }
+                    const controller = new AbortController();
+                    window.__wapPjaxController = controller;
+
+                    try {
+                        const res = await fetch(fullKey, {
+                            signal: controller.signal,
+                            headers: { 'X-PJAX': '1', 'X-Requested-With': 'XMLHttpRequest' }
+                        });
+                        if (!res.ok) {
+                            if (!cached) window.location.href = fullKey;
+                            return;
+                        }
+                        const text = await res.text();
+                        const extracted = extractMainHtml(text, fullKey);
+                        writeCache(fullKey, extracted.title, extracted.html);
+
+                        if ((window.location.pathname + window.location.search) === fullKey) {
+                            const isPlaceholder = !!container.querySelector('[data-pjax-placeholder="1"]');
+                            if (isPlaceholder || !cached || cached.html !== extracted.html) {
+                                applyHtmlToContainer(container, extracted.title, extracted.html);
+                            }
+                        }
+                    } catch (err) {
+                        if (err && err.name === 'AbortError') return;
+                        if (!cached) {
+                            window.location.href = fullKey;
+                        }
+                    }
+                }
+
+                function prefetchUrl(urlStr) {
+                    try {
+                        const u = new URL(urlStr, window.location.origin);
+                        if (u.origin !== window.location.origin) return;
+                        const key = u.pathname + u.search;
+                        if (readCache(key)) return;
+
+                        fetch(key, { headers: { 'X-PJAX': '1' } })
+                            .then(r => r.ok ? r.text() : null)
+                            .then(txt => {
+                                if (!txt) return;
+                                const ex = extractMainHtml(txt, key);
+                                writeCache(key, ex.title, ex.html);
+                            })
+                            .catch(() => {});
+                    } catch (e) {}
+                }
+
+                if (!window.__wapPjaxBound) {
+                    window.__wapPjaxBound = true;
+
+                    function handlePrefetchEvent(ev) {
+                        const a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
+                        if (!a) return;
+                        const href = a.getAttribute('href') || '';
+                        if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.includes('logout')) return;
+                        prefetchUrl(href);
+                    }
+
+                    document.addEventListener('pointerenter', handlePrefetchEvent, true);
+                    document.addEventListener('touchstart', handlePrefetchEvent, { passive: true, capture: true });
+
+                    document.addEventListener('click', function(ev) {
+                        if (ev.defaultPrevented || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey || ev.button !== 0) return;
+                        const a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
+                        if (!a) return;
+
+                        if (a.hasAttribute('download') || a.getAttribute('target') === '_blank' || a.dataset.noPjax === '1') return;
+                        const href = a.getAttribute('href') || '';
+                        if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) return;
+                        if (href.includes('/logout')) return;
+
+                        const u = new URL(href, window.location.origin);
+                        if (u.origin !== window.location.origin) return;
+
+                        ev.preventDefault();
+                        navigatePjax(u.pathname + u.search, { push: true });
+                    });
+
+                    window.addEventListener('popstate', function() {
+                        navigatePjax(window.location.pathname + window.location.search, { push: false, fromPop: true });
+                    });
+                }
+
+                saveCurrentPageSnapshot();
+            })();
+        </script>
+    </div>
     `;
 
     return new Response(renderLayout('Trang chủ', content, user), {
