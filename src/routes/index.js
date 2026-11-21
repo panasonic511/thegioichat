@@ -1667,9 +1667,39 @@ export async function handleIndex(request, env, user, renderLayout) {
             if (window.__wapPjaxInitialized) return;
             window.__wapPjaxInitialized = true;
 
-            const CACHE_TTL_MS = 10000;
+            const CACHE_PREFIX = 'wap_pjax_v2:';
             const memoryCache = new Map();
             let activeController = null;
+
+            function readCache(key) {
+                if (memoryCache.has(key)) return memoryCache.get(key);
+                try {
+                    const raw = sessionStorage.getItem(CACHE_PREFIX + key);
+                    if (!raw) return null;
+                    const parsed = JSON.parse(raw);
+                    if (parsed && typeof parsed.html === 'string') {
+                        memoryCache.set(key, parsed);
+                        return parsed;
+                    }
+                } catch (e) {}
+                return null;
+            }
+
+            function writeCache(key, title, html) {
+                const entry = { title: title || document.title, html: html || '', savedAt: Date.now() };
+                memoryCache.set(key, entry);
+                try {
+                    sessionStorage.setItem(CACHE_PREFIX + key, JSON.stringify(entry));
+                } catch (e) {}
+            }
+
+            // Lưu trang hiện tại ngay khi mở để bấm quay lại là hiện ngay
+            function saveCurrentPageSnapshot() {
+                const container = document.getElementById('pjax-main-content');
+                if (!container) return;
+                const key = window.location.pathname + window.location.search;
+                writeCache(key, document.title, container.innerHTML);
+            }
 
             function cleanupOldPageScripts() {
                 const list = window.__wapPjaxCleanups;
@@ -1697,10 +1727,14 @@ export async function handleIndex(request, env, user, renderLayout) {
                 }
 
                 return {
-    title,
-    html: '<div class=\'box\'><div class=\'box-content\'><a href=\'' + fallbackUrl + '\'>Mở trang</a></div></div>'
-};
+                    title,
+                    html: '<div class="box"><div class="box-content"><a href="' + escapeLocalUrl(fallbackUrl) + '">Mở trang</a></div></div>'
+                };
+            }
 
+            function escapeLocalUrl(u) {
+                return String(u ?? '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+            }
 
             function executeInlineScripts(containerEl) {
                 const scripts = Array.from(containerEl.querySelectorAll('script'));
@@ -1723,6 +1757,17 @@ export async function handleIndex(request, env, user, renderLayout) {
                 executeInlineScripts(containerEl);
             }
 
+            function buildInstantPlaceholder(key) {
+                return (
+                    '<div class="box" data-pjax-placeholder="1" style="background:#0b0f14;border:1px solid #2a3342;">' +
+                        '<div class="box-title">⚡ Đang mở ' + escapeLocalUrl(key) + '...</div>' +
+                        '<div class="box-content" style="padding:14px;color:#9ca3af;font-size:13px;">' +
+                            'Đang hiển thị khung nhanh và đồng bộ dữ liệu ngầm...' +
+                        '</div>' +
+                    '</div>'
+                );
+            }
+
             async function navigatePjax(urlStr, opts = {}) {
                 const { push = true, fromPop = false } = opts;
                 const container = document.getElementById('pjax-main-content');
@@ -1738,16 +1783,23 @@ export async function handleIndex(request, env, user, renderLayout) {
                 }
 
                 const fullKey = targetUrl.pathname + targetUrl.search;
+                saveCurrentPageSnapshot();
+
                 if (push && fullKey !== (window.location.pathname + window.location.search)) {
                     window.history.pushState({ pjaxUrl: fullKey }, '', fullKey);
                 }
 
-                const cached = memoryCache.get(fullKey);
-                if (cached && (Date.now() - cached.savedAt) <= CACHE_TTL_MS) {
+                // 1. Hiện nội dung ngay lập tức khi click (ưu tiên cache đã lưu; nếu chưa có thì hiện khung nhanh tức thì)
+                const cached = readCache(fullKey);
+                if (cached && cached.html) {
                     applyHtmlToContainer(container, cached.title, cached.html);
-                    if (!fromPop) window.scrollTo({ top: 0, behavior: 'instant' });
+                } else {
+                    cleanupOldPageScripts();
+                    container.innerHTML = buildInstantPlaceholder(fullKey);
                 }
+                if (!fromPop) window.scrollTo({ top: 0, behavior: 'instant' });
 
+                // 2. Chạy ngầm fetch dữ liệu mới nhất từ server
                 if (activeController) {
                     try { activeController.abort(); } catch (e) {}
                 }
@@ -1764,20 +1816,19 @@ export async function handleIndex(request, env, user, renderLayout) {
                     }
                     const text = await res.text();
                     const extracted = extractMainHtml(text, fullKey);
-                    memoryCache.set(fullKey, {
-                        title: extracted.title,
-                        html: extracted.html,
-                        savedAt: Date.now()
-                    });
+                    writeCache(fullKey, extracted.title, extracted.html);
 
                     if ((window.location.pathname + window.location.search) === fullKey) {
-                        if (!cached || cached.html !== extracted.html) {
+                        const isPlaceholder = !!container.querySelector('[data-pjax-placeholder="1"]');
+                        if (isPlaceholder || !cached || cached.html !== extracted.html) {
                             applyHtmlToContainer(container, extracted.title, extracted.html);
                         }
                     }
                 } catch (err) {
                     if (err && err.name === 'AbortError') return;
-                    window.location.href = fullKey;
+                    if (!cached) {
+                        window.location.href = fullKey;
+                    }
                 }
             }
 
@@ -1786,27 +1837,29 @@ export async function handleIndex(request, env, user, renderLayout) {
                     const u = new URL(urlStr, window.location.origin);
                     if (u.origin !== window.location.origin) return;
                     const key = u.pathname + u.search;
-                    const cur = memoryCache.get(key);
-                    if (cur && (Date.now() - cur.savedAt) <= CACHE_TTL_MS) return;
+                    if (readCache(key)) return;
 
                     fetch(key, { headers: { 'X-PJAX': '1' } })
                         .then(r => r.ok ? r.text() : null)
                         .then(txt => {
                             if (!txt) return;
                             const ex = extractMainHtml(txt, key);
-                            memoryCache.set(key, { title: ex.title, html: ex.html, savedAt: Date.now() });
+                            writeCache(key, ex.title, ex.html);
                         })
                         .catch(() => {});
                 } catch (e) {}
             }
 
-            document.addEventListener('pointerenter', function(ev) {
+            function handlePrefetchEvent(ev) {
                 const a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
                 if (!a) return;
                 const href = a.getAttribute('href') || '';
                 if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.includes('logout')) return;
                 prefetchUrl(href);
-            }, true);
+            }
+
+            document.addEventListener('pointerenter', handlePrefetchEvent, true);
+            document.addEventListener('touchstart', handlePrefetchEvent, { passive: true, capture: true });
 
             document.addEventListener('click', function(ev) {
                 if (ev.defaultPrevented || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey || ev.button !== 0) return;
@@ -1828,6 +1881,8 @@ export async function handleIndex(request, env, user, renderLayout) {
             window.addEventListener('popstate', function() {
                 navigatePjax(window.location.pathname + window.location.search, { push: false, fromPop: true });
             });
+
+            saveCurrentPageSnapshot();
         })();
     </script>
     `;
