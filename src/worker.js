@@ -7,7 +7,7 @@ import { handleProfile } from './routes/profile.js';
 import { handleLevel } from './routes/level.js';
 import { handleShop } from './routes/shop.js';
 import { handleShopIcon } from './routes/shop_icon.js';
-import { handleShopFrames } from './routes/shop_frames.js';
+import { handleShopFrames, renderAvatarFrameHtml } from './routes/shop_frames.js';
 import { handleShopColor } from './routes/shop_color.js';
 import { handleInventory } from './routes/inventory.js';
 import { handleMailBox } from './routes/mail_box.js';
@@ -143,12 +143,17 @@ export function renderUser(u) {
 
     const activeIcon = safeUser.active_icon ? `${escapeHtmlText(safeUser.active_icon)} ` : '';
     const staffBadge = getStaffAfterNickBadge(safeUser);
+    const activeFrame = String(safeUser.active_frame || '');
+
+    const avatarHtml = activeFrame
+        ? `<a href="/profile?user=${userId}" style="display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;">${renderAvatarFrameHtml(escapeHtmlText(avatarUrl), activeFrame, 44, avatarStyle)}</a>`
+        : `<a href="/profile?user=${userId}"><img src="${escapeHtmlText(avatarUrl)}" style="${avatarStyle}"></a>`;
 
     return {
         nameStyle,
         avatarStyle,
         nameHtml: `<span class="nick-inline-wrap"><a href="/profile?user=${userId}" style="${nameStyle}">${activeIcon}${displayName}</a>${staffBadge}</span>`,
-        avatarHtml: `<a href="/profile?user=${userId}"><img src="${escapeHtmlText(avatarUrl)}" style="${avatarStyle}"></a>`
+        avatarHtml
     };
 }
 
@@ -589,6 +594,118 @@ function renderLayout(title, content, user) {
         @keyframes staffBadgeSlide {
             0% { background-position: 0% 50%; }
             100% { background-position: 200% 50%; }
+        }
+
+        /* KHUNG AVATAR (6 TĨNH + 6 ĐỘNG) */
+        .wap-avt-frame {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            vertical-align: middle;
+            box-sizing: border-box;
+        }
+        .wap-avt-frame-ring {
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            pointer-events: none;
+            box-sizing: border-box;
+        }
+        .wap-avt-frame-img {
+            position: relative;
+            z-index: 1;
+            border-radius: 50%;
+            object-fit: cover;
+            display: block;
+        }
+
+        /* 6 KHUNG TĨNH */
+        .avt-frame-static-1 .wap-avt-frame-ring {
+            border: 3px solid #10b981;
+            box-shadow: inset 0 0 0 1px #a7f3d0, 0 0 6px rgba(16, 185, 129, 0.55);
+        }
+        .avt-frame-static-2 .wap-avt-frame-ring {
+            border: 3px solid #f59e0b;
+            box-shadow: inset 0 0 0 1px #fde68a, 0 0 7px rgba(245, 158, 11, 0.6);
+        }
+        .avt-frame-static-3 .wap-avt-frame-ring {
+            border: 3px solid #f43f5e;
+            box-shadow: inset 0 0 0 1px #fecdd3, 0 0 7px rgba(244, 63, 94, 0.6);
+        }
+        .avt-frame-static-4 .wap-avt-frame-ring {
+            border: 3px solid #0ea5e9;
+            box-shadow: inset 0 0 0 1px #bae6fd, 0 0 7px rgba(14, 165, 233, 0.6);
+        }
+        .avt-frame-static-5 .wap-avt-frame-ring {
+            border: 3px solid #a855f7;
+            box-shadow: inset 0 0 0 1px #e9d5ff, 0 0 7px rgba(168, 85, 247, 0.6);
+        }
+        .avt-frame-static-6 .wap-avt-frame-ring {
+            border: 3px solid #e2e8f0;
+            box-shadow: inset 0 0 0 1px #94a3b8, 0 0 6px rgba(226, 232, 240, 0.55);
+        }
+
+        /* 6 KHUNG ĐỘNG */
+        .avt-frame-anim-7 .wap-avt-frame-ring {
+            padding: 3px;
+            background: conic-gradient(#ff2a00, #ff9900, #ffee00, #ff2a00);
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            animation: frameSpin 2.2s linear infinite;
+            box-shadow: 0 0 10px rgba(255, 85, 0, 0.75);
+        }
+        .avt-frame-anim-8 .wap-avt-frame-ring {
+            padding: 3px;
+            background: conic-gradient(#ff0055, #ffaa00, #22ff55, #00ddff, #9933ff, #ff0055);
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            animation: frameSpin 2.6s linear infinite;
+        }
+        .avt-frame-anim-9 .wap-avt-frame-ring {
+            border: 3px solid #38bdf8;
+            animation: framePulseBolt 1.1s ease-in-out infinite alternate;
+        }
+        .avt-frame-anim-10 .wap-avt-frame-ring {
+            border: 3px solid #facc15;
+            animation: frameHaloGlow 1.5s ease-in-out infinite;
+        }
+        .avt-frame-anim-11 .wap-avt-frame-ring {
+            padding: 3px;
+            background: conic-gradient(#38bdf8, #818cf8, #c084fc, #38bdf8);
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            animation: frameSpinReverse 3s linear infinite;
+        }
+        .avt-frame-anim-12 .wap-avt-frame-ring {
+            padding: 3px;
+            background: conic-gradient(#fde047, #ef4444, #ec4899, #fde047);
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            animation: frameSpin 1.8s linear infinite;
+            filter: drop-shadow(0 0 6px rgba(250, 204, 21, 0.8));
+        }
+
+        @keyframes frameSpin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        @keyframes frameSpinReverse {
+            0% { transform: rotate(360deg); }
+            100% { transform: rotate(0deg); }
+        }
+        @keyframes framePulseBolt {
+            0% { border-color: #38bdf8; box-shadow: 0 0 4px #38bdf8; transform: scale(1); }
+            100% { border-color: #e0f2fe; box-shadow: 0 0 12px #0284c7; transform: scale(1.03); }
+        }
+        @keyframes frameHaloGlow {
+            0%, 100% { box-shadow: 0 0 5px rgba(250, 204, 21, 0.65); }
+            50% { box-shadow: 0 0 14px rgba(250, 204, 21, 1); }
         }
     </style>
 </head>
