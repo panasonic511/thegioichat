@@ -60,6 +60,7 @@ function formatCommentUserStyle(row) {
         name_border_glow: row.name_border_glow,
         border_color: row.border_color,
         avatar_glow: row.avatar_glow,
+        active_frame: row.active_frame,
         avatar: row.avatar
     };
     const rendered = renderUser(uObj);
@@ -68,6 +69,7 @@ function formatCommentUserStyle(row) {
         : "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/></svg>";
     return {
         nameHtml: rendered.nameHtml,
+        avatarHtml: rendered.avatarHtml || `<img src="${escapeHtml(av)}" width="32" height="32" style="${escapeHtml(rendered.avatarStyle || 'border-radius: 50%; object-fit: cover;')}">`,
         avatarSrc: av,
         avatarStyle: rendered.avatarStyle || 'border-radius: 50%; object-fit: cover;'
     };
@@ -77,6 +79,10 @@ function renderWallPostsListHtml({ userPosts, commentsByPost, likesCountByPost, 
     if (!Array.isArray(userPosts) || userPosts.length === 0) {
         return `<div style="color: #888; text-align: center; padding: 14px; font-size: 12px;">Chưa có bài đăng nào.</div>`;
     }
+
+    const postAvatarMarkup = rProfile.avatarHtml
+        ? rProfile.avatarHtml
+        : `<img src="${avatarSrc}" width="34" height="34" style="${rProfile.avatarStyle} display: block;">`;
 
     return userPosts.map((post) => {
         const postId = Number(post.id || 0);
@@ -109,7 +115,7 @@ function renderWallPostsListHtml({ userPosts, commentsByPost, likesCountByPost, 
         <div data-post-id="${postId}" style="background: #141414; border: 1px solid #2b2b2b; border-radius: 4px; padding: 10px; margin-top: 8px;">
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
                 <div style="display: flex; align-items: center; gap: 8px;">
-                    <img src="${avatarSrc}" width="34" height="34" style="${rProfile.avatarStyle} display: block;">
+                    <div class="wall-post-avt-slot">${postAvatarMarkup}</div>
                     <div>
                         <div style="font-size: 13px; line-height: 1.2;">${rProfile.nameHtml}</div>
                         <div style="font-size: 11px; color: #999; margin-top: 2px;">🕒 ${escapeHtml(timeAgo)}</div>
@@ -171,7 +177,7 @@ async function fetchWallSnapshot(db, feedTable, targetId, currentUserId, rProfil
             const placeholders = postIds.map(() => '?').join(',');
             const cRows = await db.prepare(`
                 SELECT c.*, u.username, u.display_name, u.avatar, u.role, u.is_admin, u.active_icon,
-                       u.name_color, u.name_glow, u.name_border, u.name_border_glow, u.border_color, u.avatar_glow
+                       u.name_color, u.name_glow, u.name_border, u.name_border_glow, u.border_color, u.avatar_glow, u.active_frame
                 FROM wall_post_comments c
                 LEFT JOIN users u ON u.id = c.user_id
                 WHERE c.post_id IN (${placeholders})
@@ -186,6 +192,7 @@ async function fetchWallSnapshot(db, feedTable, targetId, currentUserId, rProfil
                     id: Number(c.id || 0),
                     userId: Number(c.user_id || 0),
                     nameHtml: styleInfo.nameHtml,
+                    avatarHtml: styleInfo.avatarHtml,
                     avatarSrc: styleInfo.avatarSrc,
                     avatarStyle: styleInfo.avatarStyle,
                     content: c.content || '',
@@ -237,7 +244,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
     let message = "";
     const targetId = parseInt(url.searchParams.get('user') || user.id);
 
-    const cols = ['name_color', 'name_glow', 'name_border', 'name_border_glow', 'border_color', 'avatar_glow', 'active_icon', 'role', 'is_admin', 'cover_photo', 'gender', 'relationship', 'province', 'birthday', 'online_minutes', 'created_at'];
+    const cols = ['name_color', 'name_glow', 'name_border', 'name_border_glow', 'border_color', 'avatar_glow', 'active_frame', 'active_icon', 'role', 'is_admin', 'cover_photo', 'gender', 'relationship', 'province', 'birthday', 'online_minutes', 'created_at'];
     for (const col of cols) {
         try { await env.DB.prepare(`ALTER TABLE users ADD COLUMN ${col} TEXT;`).run(); } catch(e) {}
     }
@@ -313,6 +320,9 @@ export async function handleProfile(request, env, user, renderLayout, url) {
     const avatarSrc = profileUser.avatar && !profileUser.avatar.includes('7gXvS6v')
         ? profileUser.avatar
         : "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%231a1a1a'/><circle cx='50' cy='38' r='18' fill='%2300ff00'/></svg>";
+    const mainProfileAvatarMarkup = rProfile.avatarHtml
+        ? rProfile.avatarHtml
+        : `<img src="${avatarSrc}" width="66" height="66" style="${rProfile.avatarStyle} display: block;">`;
 
     if (request.method === 'GET' && url.searchParams.get('ajax_wall') === '1') {
         const snap = await fetchWallSnapshot(env.DB, feedTable, targetId, user.id, rProfile, avatarSrc, canModerate);
@@ -479,6 +489,7 @@ export async function handleProfile(request, env, user, renderLayout, url) {
                             id: Number(insRes?.meta?.last_row_id || Date.now()),
                             userId: Number(user.id),
                             nameHtml: styleInfo.nameHtml,
+                            avatarHtml: styleInfo.avatarHtml,
                             avatarSrc: styleInfo.avatarSrc,
                             avatarStyle: styleInfo.avatarStyle,
                             content: commentText,
@@ -582,8 +593,63 @@ export async function handleProfile(request, env, user, renderLayout, url) {
     const commentsJsonSafe = JSON.stringify(wallSnap.commentsByPost).replace(/</g, '\\u003c');
     const wallPostsHtml = wallSnap.wallPostsHtml;
     const postCount = wallSnap.postCount;
+    const currentUserRendered = renderUser(user);
 
     const content = `
+    <style>
+        .profile-main-avt-slot {
+            width: 66px;
+            height: 66px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .profile-main-avt-slot .wap-avt-link {
+            width: 66px !important;
+            height: 66px !important;
+        }
+        .profile-main-avt-slot .wap-avt-frame,
+        .profile-main-avt-slot .wap-avt-frame-img {
+            width: 66px !important;
+            height: 66px !important;
+        }
+        .wall-post-avt-slot {
+            width: 34px;
+            height: 34px;
+            flex-shrink: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .wall-post-avt-slot .wap-avt-link {
+            width: 34px !important;
+            height: 34px !important;
+        }
+        .wall-post-avt-slot .wap-avt-frame,
+        .wall-post-avt-slot .wap-avt-frame-img {
+            width: 34px !important;
+            height: 34px !important;
+        }
+        .wall-cmt-avt-slot {
+            width: 32px;
+            height: 32px;
+            flex-shrink: 0;
+            margin-top: 2px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .wall-cmt-avt-slot .wap-avt-link {
+            width: 32px !important;
+            height: 32px !important;
+        }
+        .wall-cmt-avt-slot .wap-avt-frame,
+        .wall-cmt-avt-slot .wap-avt-frame-img {
+            width: 32px !important;
+            height: 32px !important;
+        }
+    </style>
+
     <div class="box" style="margin-bottom: 8px; border: 1px solid #333;">
         <div class="box-title" style="display: flex; justify-content: space-between; align-items: center;">
             <span>📁 ${isOwner ? 'Hồ sơ của tôi' : 'Hồ sơ thành viên'}</span>
@@ -605,8 +671,8 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             ` : ''}
 
             <div style="position: relative; margin-top: -35px; margin-bottom: 4px; display: inline-block;">
-                <img src="${avatarSrc}" width="66" height="66" style="${rProfile.avatarStyle} display: block;">
-                ${isOwner ? `<button type="button" onclick="openAvatarModal()" title="Đổi ảnh đại diện" style="position: absolute; bottom: -2px; right: -2px; background: #111; color: #00ff00; border: 1px solid #00ff00; border-radius: 50%; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; box-shadow: 0 0 4px #000;">📷</button>` : ''}
+                <div class="profile-main-avt-slot">${mainProfileAvatarMarkup}</div>
+                ${isOwner ? `<button type="button" onclick="openAvatarModal()" title="Đổi ảnh đại diện" style="position: absolute; bottom: -2px; right: -2px; background: #111; color: #00ff00; border: 1px solid #00ff00; border-radius: 50%; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; box-shadow: 0 0 4px #000; z-index: 5;">📷</button>` : ''}
             </div>
             
             <div style="font-size: 13px; margin: 4px 0 10px 0;">
@@ -932,10 +998,11 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             listEl.innerHTML = list.map(c => {
                 const av = (c.avatarSrc && !String(c.avatarSrc).includes('7gXvS6v')) ? c.avatarSrc : FALLBACK_AVATAR;
                 const avStyle = c.avatarStyle || 'border-radius: 50%; object-fit: cover;';
+                const avMarkup = c.avatarHtml || ('<img src="' + escapeJsHtml(av) + '" width="32" height="32" style="' + escapeJsHtml(avStyle) + ' display:block;">');
                 const nameMarkup = c.nameHtml || escapeJsHtml(c.name || ('ID #' + c.userId));
                 return \`
                 <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px;">
-                    <img src="\${escapeJsHtml(av)}" width="32" height="32" style="\${escapeJsHtml(avStyle)} flex-shrink:0;margin-top:2px;">
+                    <div class="wall-cmt-avt-slot">\${avMarkup}</div>
                     <div style="flex:1;min-width:0;">
                         <div style="background:#1c1c1c;border:1px solid #2b2b2b;border-radius:8px;padding:6px 10px;">
                             <div style="font-size:12px;line-height:1.3;margin-bottom:2px;">\${nameMarkup}</div>
@@ -1123,9 +1190,10 @@ export async function handleProfile(request, env, user, renderLayout, url) {
             const optimisticComment = {
                 id: 'opt_' + Date.now(),
                 userId: Number(${Number(user.id || 0)}),
-                nameHtml: ${JSON.stringify(renderUser(user).nameHtml)},
+                nameHtml: ${JSON.stringify(currentUserRendered.nameHtml)},
+                avatarHtml: ${JSON.stringify(currentUserRendered.avatarHtml || '')},
                 avatarSrc: ${JSON.stringify((user.avatar && !String(user.avatar).includes('7gXvS6v')) ? user.avatar : '')} || FALLBACK_AVATAR,
-                avatarStyle: ${JSON.stringify(renderUser(user).avatarStyle || 'border-radius: 50%; object-fit: cover;')},
+                avatarStyle: ${JSON.stringify(currentUserRendered.avatarStyle || 'border-radius: 50%; object-fit: cover;')},
                 content: text,
                 timeAgo: 'Vừa xong'
             };
