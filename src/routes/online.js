@@ -246,7 +246,7 @@ export async function getOnlineUsers(env, currentUser, currentPath = '/online') 
     let rawUsers = [];
     try {
         const res = await env.DB.prepare(`
-            SELECT id, username, display_name, avatar, border_color, avatar_glow,
+            SELECT id, username, display_name, avatar, border_color, avatar_glow, active_frame,
                    name_color, name_glow, name_border, name_border_glow,
                    active_icon, role, is_admin, gender, level,
                    last_seen, last_active, updated_at, is_online, current_location
@@ -257,7 +257,7 @@ export async function getOnlineUsers(env, currentUser, currentPath = '/online') 
     } catch (e) {
         try {
             const res2 = await env.DB.prepare(`
-                SELECT id, username, display_name, avatar, border_color, avatar_glow,
+                SELECT id, username, display_name, avatar, border_color, avatar_glow, active_frame,
                        name_color, name_glow, name_border, name_border_glow,
                        active_icon, role, is_admin, gender, level, last_seen, current_location
                 FROM users
@@ -372,6 +372,10 @@ export async function handleOnline(request, env, user, renderLayout, url) {
                 ? `${rendered.avatarStyle}; width: 42px; height: 42px; display: block;`
                 : 'width: 42px; height: 42px; border-radius: 50%; object-fit: cover; border: 2px solid #00ff00; display: block;';
 
+            const avatarMarkup = rendered.avatarHtml
+                ? rendered.avatarHtml
+                : `<a href="/profile?user=${uid}" class="online-avatar-link"><img src="${escapeHtml(avSrc)}" alt="${escapeHtml(uItem.display_name || uItem.username || `ID #${uid}`)}" style="${escapeHtml(avStyle)}"></a>`;
+
             const genderText = formatGenderLabel(uItem.gender);
             const locationText = formatLocationLabel(uItem, currentPath);
             const nickLabel = escapeHtml(uItem.display_name || uItem.username || `ID #${uid}`);
@@ -380,9 +384,7 @@ export async function handleOnline(request, env, user, renderLayout, url) {
             return `
                 <div class="online-user-row ${idx % 2 === 0 ? 'even' : 'odd'}">
                     <div class="online-user-left">
-                        <a href="/profile?user=${uid}" class="online-avatar-link">
-                            <img src="${escapeHtml(avSrc)}" alt="${nickLabel}" style="${escapeHtml(avStyle)}">
-                        </a>
+                        <div class="online-avatar-slot">${avatarMarkup}</div>
                         <div class="online-user-info">
                             <div class="online-name-row">
                                 ${rendered.nameHtml}
@@ -410,6 +412,23 @@ export async function handleOnline(request, env, user, renderLayout, url) {
             border: 1px solid #262c36;
             border-radius: 4px;
             overflow: hidden;
+        }
+        .online-avatar-slot {
+            width: 42px;
+            height: 42px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .online-avatar-slot .wap-avt-link {
+            width: 42px !important;
+            height: 42px !important;
+        }
+        .online-avatar-slot .wap-avt-frame,
+        .online-avatar-slot .wap-avt-frame-img {
+            width: 42px !important;
+            height: 42px !important;
         }
         .online-top-bar {
             display: flex;
