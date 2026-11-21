@@ -1047,162 +1047,164 @@ export async function handleIndex(request, env, user, renderLayout) {
         }
     </style>
 
-    <!-- Khung thông tin cá nhân ngoài Trang chủ -->
-    <div class="box" style="margin-bottom: 12px; background: #080808; border: 1px solid #333;">
-        <div class="box-content" style="display: flex; align-items: center; padding: 12px;">
-            <div style="display: flex; align-items: center; min-width: 0;">
-                <div style="width: 44px; height: 44px; margin-right: 12px; flex-shrink: 0;">
-                    ${styledCurrentAvatar}
-                </div>
-                <div style="min-width: 0;">
-                    <div style="font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                        ${currentUserUI.nameHtml}
+    <div id="pjax-main-content" data-pjax-url="/">
+        <!-- Khung thông tin cá nhân ngoài Trang chủ -->
+        <div class="box" style="margin-bottom: 12px; background: #080808; border: 1px solid #333;">
+            <div class="box-content" style="display: flex; align-items: center; padding: 12px;">
+                <div style="display: flex; align-items: center; min-width: 0;">
+                    <div style="width: 44px; height: 44px; margin-right: 12px; flex-shrink: 0;">
+                        ${styledCurrentAvatar}
                     </div>
-                    <div style="font-size: 13px; color: #ccc; margin-top: 3px;">
-                        🪙 ${(user.coins || 0).toLocaleString()} Xu
-                        ${user.gold ? `| 👑 ${user.gold.toLocaleString()} Vàng` : ''}
+                    <div style="min-width: 0;">
+                        <div style="font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                            ${currentUserUI.nameHtml}
+                        </div>
+                        <div style="font-size: 13px; color: #ccc; margin-top: 3px;">
+                            🪙 ${(user.coins || 0).toLocaleString()} Xu
+                            ${user.gold ? `| 👑 ${user.gold.toLocaleString()} Vàng` : ''}
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- Phòng chát -->
-    <div class="box">
-        <div class="box-title">🟢 Phòng chát</div>
-        <div class="box-content" style="padding: 10px;">
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                <a href="/users/feed" class="btn" style="text-align: left; padding: 10px; background: #141414; border: 1px solid #333; font-size: 14px;">🎉 Bữa tiệc (${partyCount})</a>
-                <a href="/game" class="btn" style="text-align: left; padding: 10px; background: #141414; border: 1px solid #333; font-size: 14px;">🎮 Trò chơi (0)</a>
-            </div>
-        </div>
-    </div>
-
-    <!-- Menu hệ thống -->
-    <div class="box">
-        <div class="box-title">≡ Menu</div>
-        <div class="box-content" style="padding: 10px;">
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: stretch;">
-                <div style="background: #121212; border: 1px solid #333; padding: 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;">
-                    <div style="font-size: 28px; font-weight: bold; color: #fff; letter-spacing: 2px; text-shadow: 0 0 8px #00ff00;">${timeDisplay}</div>
-                    <div style="font-size: 13px; color: #ffcc00; margin-top: 4px;">${dateDisplay}</div>
-                </div>
-
-                <div style="display: flex; flex-direction: column; gap: 6px;">
-                    <a href="/profile" style="background: #121212; border: 1px solid #333; padding: 7px 10px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff3333; text-decoration: none;">
-                        <span>👤</span> Trang cá nhân
-                    </a>
-                    <a href="/profile" style="background: #121212; border: 1px solid #333; padding: 7px 10px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff3333; text-decoration: none;">
-                        <span>🔍</span> Tìm kiếm ID
-                    </a>
-                    <a href="/profile/level" style="background: #121212; border: 1px solid #333; padding: 7px 10px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff3333; text-decoration: none;">
-                        <span>📊</span> Bảng xếp hạng
-                    </a>
-                </div>
-            </div>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
-                <div style="display: flex; flex-direction: column; gap: 6px;">
-                    <a href="/users/feed" style="background: #121212; border: 1px solid #333; padding: 8px 10px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff66cc; text-decoration: none;">
-                        <span>💬</span> Diễn đàn
-                    </a>
-                    <a href="/profile/level" style="background: #121212; border: 1px solid #333; padding: 8px 10px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff66cc; text-decoration: none;">
-                        <span>📊</span> Bảng cấp độ
-                    </a>
-                    <a href="/shop" style="background: #121212; border: 1px solid #333; padding: 8px 10px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff66cc; text-decoration: none;">
-                        <span>📈</span> Thống kê
-                    </a>
-                </div>
-                <div style="display: flex; flex-direction: column; gap: 6px;">
-                    <a href="/profile" style="background: #121212; border: 1px solid #333; padding: 8px 10px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff66cc; text-decoration: none;">
-                        <span>👥</span> Bạn bè
-                    </a>
-                    <a href="/profile" style="background: #121212; border: 1px solid #333; padding: 8px 10px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff66cc; text-decoration: none;">
-                        <span>⚙️</span> Cài đặt
-                    </a>
-                    <a href="/game" style="background: #121212; border: 1px solid #333; padding: 8px 10px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff66cc; text-decoration: none;">
-                        <span>🎮</span> Khu giải trí [${entertainmentCount}]
-                    </a>
+        <!-- Phòng chát -->
+        <div class="box">
+            <div class="box-title">🟢 Phòng chát</div>
+            <div class="box-content" style="padding: 10px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <a href="/users/feed" class="btn" style="text-align: left; padding: 10px; background: #141414; border: 1px solid #333; font-size: 14px;">🎉 Bữa tiệc (${partyCount})</a>
+                    <a href="/game" class="btn" style="text-align: left; padding: 10px; background: #141414; border: 1px solid #333; font-size: 14px;">🎮 Trò chơi (0)</a>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- Thông báo hệ thống -->
-    <div class="box">
-        <div class="box-title" style="justify-content: space-between;">
-            <span>📢 Thông báo</span>
-            <a href="/" style="font-size: 12px; color: #ff9933; font-weight: bold; text-decoration: none;">↻ Làm mới</a>
-        </div>
-        <div class="box-content" style="font-size: 13px; padding: 8px 10px;">
-            ${announcementHtml}
-            ${memberFeedHtml}
-        </div>
-    </div>
-
-    <!-- Chát cộng đồng -->
-    <div class="box cchat-box" id="communityChatBox" data-last-id="${initialLastId}" data-page="${initialPageData.page}" data-total-pages="${initialPageData.totalPages}">
-        <div class="cchat-header">
-            <div class="cchat-title-wrap">
-                <span class="cchat-live-dot"></span>
-                <span>💬 Chát cộng đồng</span>
-            </div>
-        </div>
-
-        <div class="cchat-subbar">
-            <div class="cchat-link-group">
-                <button type="button" class="cchat-sub-link" onclick="cchatReloadList()">↻ Làm mới</button>
-            </div>
-        </div>
-
-        <div class="cchat-form-area">
-            <form id="cchatForm" onsubmit="return cchatSubmitForm(event);">
-                <div class="cchat-label">
-                    <span>Nội dung tin nhắn:</span>
-                    <span id="cchatCharCount">0 / 600</span>
-                </div>
-                <textarea id="cchatInput" class="cchat-textarea" placeholder="Nhập nội dung trò chuyện cùng mọi người..."></textarea>
-
-                <div class="cchat-toolbar">
-                    <button type="submit" id="cchatSendBtn" class="cchat-send-btn">
-                        <span>➤</span>
-                        <span>Gửi</span>
-                    </button>
-                    <button type="button" id="cchatIconBtn" class="cchat-tool-btn" onclick="cchatTogglePicker('icon')">
-                        <span class="wap-anim-ico ico-bounce" style="font-size:15px;">😄</span>
-                        <span>Icon cảm xúc</span>
-                    </button>
-                    <button type="button" id="cchatColorBtn" class="cchat-tool-btn" onclick="cchatTogglePicker('color')">
-                        <span>🎨</span>
-                        <span>BBCode Color</span>
-                    </button>
-                </div>
-
-                <div id="cchatIconPicker" class="cchat-picker-panel">
-                    <div class="cchat-picker-head">
-                        <span>✨ Icon động cảm xúc WAP</span>
-                        <span>Bấm để chèn</span>
+        <!-- Menu hệ thống -->
+        <div class="box">
+            <div class="box-title">≡ Menu</div>
+            <div class="box-content" style="padding: 10px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: stretch;">
+                    <div style="background: #121212; border: 1px solid #333; padding: 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;">
+                        <div style="font-size: 28px; font-weight: bold; color: #fff; letter-spacing: 2px; text-shadow: 0 0 8px #00ff00;">${timeDisplay}</div>
+                        <div style="font-size: 13px; color: #ffcc00; margin-top: 4px;">${dateDisplay}</div>
                     </div>
-                    <div class="cchat-icon-grid" id="cchatIconGrid"></div>
-                </div>
 
-                <div id="cchatColorPicker" class="cchat-picker-panel">
-                    <div class="cchat-picker-head">
-                        <span>🎨 BBCode Color (chèn [color=#màu]chữ[/color])</span>
-                        <span>Bấm để chèn</span>
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <a href="/profile" style="background: #121212; border: 1px solid #333; padding: 7px 10px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff3333; text-decoration: none;">
+                            <span>👤</span> Trang cá nhân
+                        </a>
+                        <a href="/profile" style="background: #121212; border: 1px solid #333; padding: 7px 10px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff3333; text-decoration: none;">
+                            <span>🔍</span> Tìm kiếm ID
+                        </a>
+                        <a href="/profile/level" style="background: #121212; border: 1px solid #333; padding: 7px 10px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff3333; text-decoration: none;">
+                            <span>📊</span> Bảng xếp hạng
+                        </a>
                     </div>
-                    <div class="cchat-color-grid" id="cchatColorGrid"></div>
                 </div>
 
-                <div id="cchatStatusMsg" class="cchat-status-msg"></div>
-            </form>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <a href="/users/feed" style="background: #121212; border: 1px solid #333; padding: 8px 10px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff66cc; text-decoration: none;">
+                            <span>💬</span> Diễn đàn
+                        </a>
+                        <a href="/profile/level" style="background: #121212; border: 1px solid #333; padding: 8px 10px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff66cc; text-decoration: none;">
+                            <span>📊</span> Bảng cấp độ
+                        </a>
+                        <a href="/shop" style="background: #121212; border: 1px solid #333; padding: 8px 10px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff66cc; text-decoration: none;">
+                            <span>📈</span> Thống kê
+                        </a>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <a href="/profile" style="background: #121212; border: 1px solid #333; padding: 8px 10px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff66cc; text-decoration: none;">
+                            <span>👥</span> Bạn bè
+                        </a>
+                        <a href="/profile" style="background: #121212; border: 1px solid #333; padding: 8px 10px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff66cc; text-decoration: none;">
+                            <span>⚙️</span> Cài đặt
+                        </a>
+                        <a href="/game" style="background: #121212; border: 1px solid #333; padding: 8px 10px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; color: #ff66cc; text-decoration: none;">
+                            <span>🎮</span> Khu giải trí [${entertainmentCount}]
+                        </a>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <div class="cchat-stream" id="cchatStream">
-            ${initialChatHtml}
+        <!-- Thông báo hệ thống -->
+        <div class="box">
+            <div class="box-title" style="justify-content: space-between;">
+                <span>📢 Thông báo</span>
+                <a href="/" style="font-size: 12px; color: #ff9933; font-weight: bold; text-decoration: none;">↻ Làm mới</a>
+            </div>
+            <div class="box-content" style="font-size: 13px; padding: 8px 10px;">
+                ${announcementHtml}
+                ${memberFeedHtml}
+            </div>
         </div>
-        <div id="cchatPaginationWrap">
-            ${initialPaginationHtml}
+
+        <!-- Chát cộng đồng -->
+        <div class="box cchat-box" id="communityChatBox" data-last-id="${initialLastId}" data-page="${initialPageData.page}" data-total-pages="${initialPageData.totalPages}">
+            <div class="cchat-header">
+                <div class="cchat-title-wrap">
+                    <span class="cchat-live-dot"></span>
+                    <span>💬 Chát cộng đồng</span>
+                </div>
+            </div>
+
+            <div class="cchat-subbar">
+                <div class="cchat-link-group">
+                    <button type="button" class="cchat-sub-link" onclick="cchatReloadList()">↻ Làm mới</button>
+                </div>
+            </div>
+
+            <div class="cchat-form-area">
+                <form id="cchatForm" onsubmit="return cchatSubmitForm(event);">
+                    <div class="cchat-label">
+                        <span>Nội dung tin nhắn:</span>
+                        <span id="cchatCharCount">0 / 600</span>
+                    </div>
+                    <textarea id="cchatInput" class="cchat-textarea" placeholder="Nhập nội dung trò chuyện cùng mọi người..."></textarea>
+
+                    <div class="cchat-toolbar">
+                        <button type="submit" id="cchatSendBtn" class="cchat-send-btn">
+                            <span>➤</span>
+                            <span>Gửi</span>
+                        </button>
+                        <button type="button" id="cchatIconBtn" class="cchat-tool-btn" onclick="cchatTogglePicker('icon')">
+                            <span class="wap-anim-ico ico-bounce" style="font-size:15px;">😄</span>
+                            <span>Icon cảm xúc</span>
+                        </button>
+                        <button type="button" id="cchatColorBtn" class="cchat-tool-btn" onclick="cchatTogglePicker('color')">
+                            <span>🎨</span>
+                            <span>BBCode Color</span>
+                        </button>
+                    </div>
+
+                    <div id="cchatIconPicker" class="cchat-picker-panel">
+                        <div class="cchat-picker-head">
+                            <span>✨ Icon động cảm xúc WAP</span>
+                            <span>Bấm để chèn</span>
+                        </div>
+                        <div class="cchat-icon-grid" id="cchatIconGrid"></div>
+                    </div>
+
+                    <div id="cchatColorPicker" class="cchat-picker-panel">
+                        <div class="cchat-picker-head">
+                            <span>🎨 BBCode Color (chèn [color=#màu]chữ[/color])</span>
+                            <span>Bấm để chèn</span>
+                        </div>
+                        <div class="cchat-color-grid" id="cchatColorGrid"></div>
+                    </div>
+
+                    <div id="cchatStatusMsg" class="cchat-status-msg"></div>
+                </form>
+            </div>
+
+            <div class="cchat-stream" id="cchatStream">
+                ${initialChatHtml}
+            </div>
+            <div id="cchatPaginationWrap">
+                ${initialPaginationHtml}
+            </div>
         </div>
     </div>
 
@@ -1250,6 +1252,13 @@ export async function handleIndex(request, env, user, renderLayout) {
 
             let isSending = false;
             let isPolling = false;
+
+            function registerLocalTimer(id) {
+                window.__wapPjaxCleanups = window.__wapPjaxCleanups || [];
+                window.__wapPjaxCleanups.push(function() {
+                    clearInterval(id);
+                });
+            }
 
             function getCurrentPage() {
                 return Math.max(1, Number(boxEl ? (boxEl.getAttribute('data-page') || 1) : 1));
@@ -1648,8 +1657,174 @@ export async function handleIndex(request, env, user, renderLayout) {
 
             renderPickers();
             refreshTimestamps();
-            setInterval(refreshTimestamps, 15000);
-            setInterval(pollCurrentPage, 4000);
+            registerLocalTimer(setInterval(refreshTimestamps, 15000));
+            registerLocalTimer(setInterval(pollCurrentPage, 4000));
+        })();
+    </script>
+
+    <script>
+        (function initWapPjax() {
+            if (window.__wapPjaxInitialized) return;
+            window.__wapPjaxInitialized = true;
+
+            const CACHE_TTL_MS = 10000;
+            const memoryCache = new Map();
+            let activeController = null;
+
+            function cleanupOldPageScripts() {
+                const list = window.__wapPjaxCleanups;
+                if (Array.isArray(list)) {
+                    while (list.length > 0) {
+                        const fn = list.pop();
+                        try { if (typeof fn === 'function') fn(); } catch (e) {}
+                    }
+                }
+            }
+
+            function extractMainHtml(htmlText, fallbackUrl) {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(htmlText, 'text/html');
+                const title = doc.title || document.title;
+
+                const targetContainer = doc.getElementById('pjax-main-content');
+                if (targetContainer) {
+                    return { title, html: targetContainer.innerHTML };
+                }
+
+                const mainBox = doc.querySelector('.container') || doc.body;
+                if (mainBox) {
+                    return { title, html: mainBox.innerHTML };
+                }
+
+                return { title, html: `<div class="box"><div class="box-content"><a href="${fallbackUrl}">Mở trang</a></div></div>` };
+            }
+
+            function executeInlineScripts(containerEl) {
+                const scripts = Array.from(containerEl.querySelectorAll('script'));
+                scripts.forEach(function(oldScript) {
+                    const newScript = document.createElement('script');
+                    Array.from(oldScript.attributes).forEach(function(attr) {
+                        newScript.setAttribute(attr.name, attr.value);
+                    });
+                    if (!oldScript.src) {
+                        newScript.textContent = oldScript.textContent;
+                    }
+                    oldScript.parentNode.replaceChild(newScript, oldScript);
+                });
+            }
+
+            function applyHtmlToContainer(containerEl, title, htmlContent) {
+                cleanupOldPageScripts();
+                if (title) document.title = title;
+                containerEl.innerHTML = htmlContent;
+                executeInlineScripts(containerEl);
+            }
+
+            async function navigatePjax(urlStr, opts = {}) {
+                const { push = true, fromPop = false } = opts;
+                const container = document.getElementById('pjax-main-content');
+                if (!container) {
+                    window.location.href = urlStr;
+                    return;
+                }
+
+                const targetUrl = new URL(urlStr, window.location.origin);
+                if (targetUrl.origin !== window.location.origin) {
+                    window.location.href = urlStr;
+                    return;
+                }
+
+                const fullKey = targetUrl.pathname + targetUrl.search;
+                if (push && fullKey !== (window.location.pathname + window.location.search)) {
+                    window.history.pushState({ pjaxUrl: fullKey }, '', fullKey);
+                }
+
+                const cached = memoryCache.get(fullKey);
+                if (cached && (Date.now() - cached.savedAt) <= CACHE_TTL_MS) {
+                    applyHtmlToContainer(container, cached.title, cached.html);
+                    if (!fromPop) window.scrollTo({ top: 0, behavior: 'instant' });
+                }
+
+                if (activeController) {
+                    try { activeController.abort(); } catch (e) {}
+                }
+                activeController = new AbortController();
+
+                try {
+                    const res = await fetch(fullKey, {
+                        signal: activeController.signal,
+                        headers: { 'X-PJAX': '1', 'X-Requested-With': 'XMLHttpRequest' }
+                    });
+                    if (!res.ok) {
+                        window.location.href = fullKey;
+                        return;
+                    }
+                    const text = await res.text();
+                    const extracted = extractMainHtml(text, fullKey);
+                    memoryCache.set(fullKey, {
+                        title: extracted.title,
+                        html: extracted.html,
+                        savedAt: Date.now()
+                    });
+
+                    if ((window.location.pathname + window.location.search) === fullKey) {
+                        if (!cached || cached.html !== extracted.html) {
+                            applyHtmlToContainer(container, extracted.title, extracted.html);
+                        }
+                    }
+                } catch (err) {
+                    if (err && err.name === 'AbortError') return;
+                    window.location.href = fullKey;
+                }
+            }
+
+            function prefetchUrl(urlStr) {
+                try {
+                    const u = new URL(urlStr, window.location.origin);
+                    if (u.origin !== window.location.origin) return;
+                    const key = u.pathname + u.search;
+                    const cur = memoryCache.get(key);
+                    if (cur && (Date.now() - cur.savedAt) <= CACHE_TTL_MS) return;
+
+                    fetch(key, { headers: { 'X-PJAX': '1' } })
+                        .then(r => r.ok ? r.text() : null)
+                        .then(txt => {
+                            if (!txt) return;
+                            const ex = extractMainHtml(txt, key);
+                            memoryCache.set(key, { title: ex.title, html: ex.html, savedAt: Date.now() });
+                        })
+                        .catch(() => {});
+                } catch (e) {}
+            }
+
+            document.addEventListener('pointerenter', function(ev) {
+                const a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
+                if (!a) return;
+                const href = a.getAttribute('href') || '';
+                if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.includes('logout')) return;
+                prefetchUrl(href);
+            }, true);
+
+            document.addEventListener('click', function(ev) {
+                if (ev.defaultPrevented || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey || ev.button !== 0) return;
+                const a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
+                if (!a) return;
+
+                if (a.hasAttribute('download') || a.getAttribute('target') === '_blank' || a.dataset.noPjax === '1') return;
+                const href = a.getAttribute('href') || '';
+                if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) return;
+                if (href.includes('/logout')) return;
+
+                const u = new URL(href, window.location.origin);
+                if (u.origin !== window.location.origin) return;
+
+                ev.preventDefault();
+                navigatePjax(u.pathname + u.search, { push: true });
+            });
+
+            window.addEventListener('popstate', function() {
+                navigatePjax(window.location.pathname + window.location.search, { push: false, fromPop: true });
+            });
         })();
     </script>
     `;
