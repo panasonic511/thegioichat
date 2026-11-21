@@ -1882,10 +1882,10 @@ export async function handleIndex(request, env, user, renderLayout) {
                         const extracted = extractMainHtml(text, fullKey);
                         writeCache(fullKey, extracted.title, extracted.html);
 
-                        if ((window.location.pathname + window.location.search) === fullKey) {
+                      if ((window.location.pathname + window.location.search) === fullKey) {
                             const isPlaceholder = !!container.querySelector('[data-pjax-placeholder="1"]');
-                            if (isPlaceholder || !cached || cached.html !== extracted.html) {
-                                applyHtmlToContainer(container, extracted.title, extracted.html);
+                            if (isPlaceholder || fromPop || !cached || cached.html !== extracted.html) {
+                                applyHtmlToContainer(container, extracted.title, extracted.html, fullKey);
                             }
                         }
                     } catch (err) {
