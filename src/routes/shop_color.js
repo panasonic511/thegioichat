@@ -8,6 +8,25 @@ export async function handleShopColor(request, env, user, renderLayout) {
 
     let message = '';
     let savedOk = false;
+    let activeTargetType = 'color';
+
+    async function syncUserColorFieldsFromDb() {
+        try {
+            const fresh = await env.DB.prepare(
+                "SELECT name_color, name_glow, name_border, name_border_glow, border_color, avatar_glow FROM users WHERE id = ?"
+            ).bind(user.id).first();
+            if (fresh) {
+                user.name_color = fresh.name_color ?? '#00ff00';
+                user.name_glow = fresh.name_glow ?? '#000000';
+                user.name_border = fresh.name_border ?? '#000000';
+                user.name_border_glow = fresh.name_border_glow ?? '#000000';
+                user.border_color = fresh.border_color ?? '#ffcc00';
+                user.avatar_glow = fresh.avatar_glow ?? '#000000';
+            }
+        } catch (e) {}
+    }
+
+    await syncUserColorFieldsFromDb();
 
     if (request.method === 'POST') {
         try {
@@ -16,6 +35,7 @@ export async function handleShopColor(request, env, user, renderLayout) {
 
             if (action === 'update_color') {
                 const targetType = String(formData.get('target_type') || 'color');
+                activeTargetType = targetType;
                 const rawColor = String(formData.get('color_val') || '').trim();
                 const colorVal = rawColor || '#000000';
 
@@ -27,11 +47,12 @@ export async function handleShopColor(request, env, user, renderLayout) {
                 else if (targetType === 'avt_glow') sqlField = 'avatar_glow';
 
                 await env.DB.prepare(`UPDATE users SET ${sqlField} = ? WHERE id = ?`).bind(colorVal, user.id).run();
-                user[sqlField] = colorVal;
+                await syncUserColorFieldsFromDb();
                 savedOk = true;
                 message = `<div style="color: #00ff00; text-align: center; margin-bottom: 10px; font-weight: bold;">✅ Đã lưu trang trí màu sắc thành công (${colorVal})!</div>`;
             } else if (action === 'clear_field') {
-                const targetType = String(formData.get('target_type') || '');
+                const targetType = String(formData.get('target_type') || 'color');
+                activeTargetType = targetType;
                 let sqlField = '';
                 let defaultVal = '#000000';
                 if (targetType === 'glow') { sqlField = 'name_glow'; defaultVal = '#000000'; }
@@ -43,20 +64,16 @@ export async function handleShopColor(request, env, user, renderLayout) {
 
                 if (sqlField) {
                     await env.DB.prepare(`UPDATE users SET ${sqlField} = ? WHERE id = ?`).bind(defaultVal, user.id).run();
-                    user[sqlField] = defaultVal;
+                    await syncUserColorFieldsFromDb();
                     savedOk = true;
                     message = '<div style="color: #ffcc00; text-align: center; margin-bottom: 10px; font-weight: bold;">✅ Đã đặt lại mục đã chọn về mặc định!</div>';
                 }
             } else if (action === 'reset_all') {
+                activeTargetType = 'color';
                 await env.DB.prepare(
                     "UPDATE users SET name_color = '#00ff00', name_glow = '#000000', name_border = '#000000', name_border_glow = '#000000', border_color = '#ffcc00', avatar_glow = '#000000' WHERE id = ?"
                 ).bind(user.id).run();
-                user.name_color = '#00ff00';
-                user.name_glow = '#000000';
-                user.name_border = '#000000';
-                user.name_border_glow = '#000000';
-                user.border_color = '#ffcc00';
-                user.avatar_glow = '#000000';
+                await syncUserColorFieldsFromDb();
                 savedOk = true;
                 message = '<div style="color: #ffcc00; text-align: center; margin-bottom: 10px; font-weight: bold;">✅ Đã khôi phục toàn bộ màu mặc định!</div>';
             }
@@ -80,6 +97,7 @@ export async function handleShopColor(request, env, user, renderLayout) {
     };
 
     const initStateJson = JSON.stringify(initState).replace(/</g, '\\u003c');
+    const activeTargetJson = JSON.stringify(activeTargetType).replace(/</g, '\\u003c');
     const savedFlag = savedOk ? 'true' : 'false';
 
     const shadowsInit = [];
@@ -198,6 +216,8 @@ export async function handleShopColor(request, env, user, renderLayout) {
                     border_color: '#ffcc00',
                     avatar_glow: '#000000'
                 }, ${initStateJson});
+
+                targetType.value = ${activeTargetJson} || 'color';
 
                 function getFieldForType(t) {
                     if (t === 'glow') return 'name_glow';
