@@ -1750,6 +1750,20 @@ export async function handleIndex(request, env, user, renderLayout) {
                     } catch (e) {}
                 }
 
+                window.__wapInvalidatePjaxCache = function(key) {
+                    if (key) {
+                        memoryCache.delete(key);
+                        try { sessionStorage.removeItem(CACHE_PREFIX + key); } catch (e) {}
+                    } else {
+                        memoryCache.clear();
+                        try {
+                            Object.keys(sessionStorage).forEach(function(k) {
+                                if (k && k.indexOf(CACHE_PREFIX) === 0) sessionStorage.removeItem(k);
+                            });
+                        } catch (e) {}
+                    }
+                };
+
                 function saveCurrentPageSnapshot() {
                     const container = document.getElementById('pjax-main-content');
                     if (!container) return;
@@ -1882,10 +1896,10 @@ export async function handleIndex(request, env, user, renderLayout) {
                         const extracted = extractMainHtml(text, fullKey);
                         writeCache(fullKey, extracted.title, extracted.html);
 
-                      if ((window.location.pathname + window.location.search) === fullKey) {
+                        if ((window.location.pathname + window.location.search) === fullKey) {
                             const isPlaceholder = !!container.querySelector('[data-pjax-placeholder="1"]');
-                            if (isPlaceholder || fromPop || !cached || cached.html !== extracted.html) {
-                                applyHtmlToContainer(container, extracted.title, extracted.html, fullKey);
+                            if (isPlaceholder || fromPop || fullKey === '/' || !cached || cached.html !== extracted.html) {
+                                applyHtmlToContainer(container, extracted.title, extracted.html);
                             }
                         }
                     } catch (err) {
