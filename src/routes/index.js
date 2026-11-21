@@ -183,7 +183,7 @@ async function fetchChatPage(db, page = 1, pageSize = PAGE_SIZE) {
             SELECT c.id, c.user_id, c.content, c.created_at,
                    u.display_name, u.username, u.role, u.is_admin, u.active_icon,
                    u.name_color, u.name_glow, u.name_border, u.name_border_glow,
-                   u.border_color, u.avatar_glow, u.avatar, u.gender, u.level, u.coins, u.status_text
+                   u.border_color, u.avatar_glow, u.active_frame, u.avatar, u.gender, u.level, u.coins, u.status_text
             FROM community_chat c
             LEFT JOIN users u ON c.user_id = u.id
             ORDER BY c.id DESC
@@ -352,7 +352,7 @@ export async function handleIndex(request, env, user, renderLayout) {
             items_html: itemsHtml,
             pagination_html: paginationHtml
         }), {
-            headers: { 'Content-Type': 'application/json;charset=UTF-8', 'Cache-Control': 'no-store' }
+            headers: { 'Content-Type': 'text/json;charset=UTF-8', 'Cache-Control': 'no-store' }
         });
     }
 
@@ -463,6 +463,7 @@ export async function handleIndex(request, env, user, renderLayout) {
             name_border_glow: user.name_border_glow,
             border_color: user.border_color,
             avatar_glow: user.avatar_glow,
+            active_frame: user.active_frame,
             avatar: user.avatar,
             gender: user.gender,
             level: user.level,
@@ -495,7 +496,7 @@ export async function handleIndex(request, env, user, renderLayout) {
     try {
         announcements = await env.DB.prepare(`
             SELECT announcements.*, users.display_name, users.username, users.role, users.is_admin, users.active_icon,
-                   users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.border_color, users.avatar_glow, users.avatar
+                   users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.border_color, users.avatar_glow, users.active_frame, users.avatar
             FROM announcements
             LEFT JOIN users ON announcements.user_id = users.id
             ORDER BY announcements.id DESC
@@ -508,7 +509,7 @@ export async function handleIndex(request, env, user, renderLayout) {
         const fRows = await env.DB.prepare(`
             SELECT feeds.id, feeds.user_id, feeds.content, feeds.created_at,
                    users.display_name, users.username, users.role, users.is_admin, users.active_icon,
-                   users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.border_color, users.avatar_glow, users.avatar
+                   users.name_color, users.name_glow, users.name_border, users.name_border_glow, users.border_color, users.avatar_glow, users.active_frame, users.avatar
             FROM feeds
             LEFT JOIN users ON feeds.user_id = users.id
             ORDER BY feeds.id DESC
