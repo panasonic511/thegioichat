@@ -10,23 +10,39 @@ export async function handleShopColor(request, env, user, renderLayout) {
     let savedOk = false;
     let activeTargetType = 'color';
 
-    async function syncUserColorFieldsFromDb() {
-        try {
-            const fresh = await env.DB.prepare(
-                "SELECT name_color, name_glow, name_border, name_border_glow, border_color, avatar_glow FROM users WHERE id = ?"
-            ).bind(user.id).first();
-            if (fresh) {
-                user.name_color = fresh.name_color ?? '#00ff00';
-                user.name_glow = fresh.name_glow ?? '#000000';
-                user.name_border = fresh.name_border ?? '#000000';
-                user.name_border_glow = fresh.name_border_glow ?? '#000000';
-                user.border_color = fresh.border_color ?? '#ffcc00';
-                user.avatar_glow = fresh.avatar_glow ?? '#000000';
-            }
-        } catch (e) {}
-    }
+    let currentColors = {
+        name_color: String(user.name_color || '#00ff00'),
+        name_glow: String(user.name_glow || '#000000'),
+        name_border: String(user.name_border || '#000000'),
+        name_border_glow: String(user.name_border_glow || '#000000'),
+        border_color: String(user.border_color || '#ffcc00'),
+        avatar_glow: String(user.avatar_glow || '#000000')
+    };
 
-    await syncUserColorFieldsFromDb();
+    try {
+        const row = await env.DB.prepare(
+            "SELECT name_color, name_glow, name_border, name_border_glow, border_color, avatar_glow FROM users WHERE id = ?"
+        ).bind(user.id).first();
+        if (row) {
+            currentColors = {
+                name_color: String(row.name_color || currentColors.name_color || '#00ff00'),
+                name_glow: String(row.name_glow || currentColors.name_glow || '#000000'),
+                name_border: String(row.name_border || currentColors.name_border || '#000000'),
+                name_border_glow: String(row.name_border_glow || currentColors.name_border_glow || '#000000'),
+                border_color: String(row.border_color || currentColors.border_color || '#ffcc00'),
+                avatar_glow: String(row.avatar_glow || currentColors.avatar_glow || '#000000')
+            };
+        }
+    } catch (e) {}
+
+    function applyColorsToUserObj(obj) {
+        user.name_color = obj.name_color;
+        user.name_glow = obj.name_glow;
+        user.name_border = obj.name_border;
+        user.name_border_glow = obj.name_border_glow;
+        user.border_color = obj.border_color;
+        user.avatar_glow = obj.avatar_glow;
+    }
 
     if (request.method === 'POST') {
         try {
@@ -39,41 +55,104 @@ export async function handleShopColor(request, env, user, renderLayout) {
                 const rawColor = String(formData.get('color_val') || '').trim();
                 const colorVal = rawColor || '#000000';
 
-                let sqlField = 'name_color';
-                if (targetType === 'glow') sqlField = 'name_glow';
-                else if (targetType === 'border') sqlField = 'name_border';
-                else if (targetType === 'border_glow') sqlField = 'name_border_glow';
-                else if (targetType === 'avt_border') sqlField = 'border_color';
-                else if (targetType === 'avt_glow') sqlField = 'avatar_glow';
+                const nextColors = {
+                    name_color: String(formData.get('state_name_color') || currentColors.name_color || '#00ff00'),
+                    name_glow: String(formData.get('state_name_glow') || currentColors.name_glow || '#000000'),
+                    name_border: String(formData.get('state_name_border') || currentColors.name_border || '#000000'),
+                    name_border_glow: String(formData.get('state_name_border_glow') || currentColors.name_border_glow || '#000000'),
+                    border_color: String(formData.get('state_border_color') || currentColors.border_color || '#ffcc00'),
+                    avatar_glow: String(formData.get('state_avatar_glow') || currentColors.avatar_glow || '#000000')
+                };
 
-                await env.DB.prepare(`UPDATE users SET ${sqlField} = ? WHERE id = ?`).bind(colorVal, user.id).run();
-                await syncUserColorFieldsFromDb();
+                if (targetType === 'glow') nextColors.name_glow = colorVal;
+                else if (targetType === 'border') nextColors.name_border = colorVal;
+                else if (targetType === 'border_glow') nextColors.name_border_glow = colorVal;
+                else if (targetType === 'avt_border') nextColors.border_color = colorVal;
+                else if (targetType === 'avt_glow') nextColors.avatar_glow = colorVal;
+                else nextColors.name_color = colorVal;
+
+                await env.DB.prepare(`
+                    UPDATE users
+                    SET name_color = ?, name_glow = ?, name_border = ?, name_border_glow = ?, border_color = ?, avatar_glow = ?
+                    WHERE id = ?
+                `).bind(
+                    nextColors.name_color,
+                    nextColors.name_glow,
+                    nextColors.name_border,
+                    nextColors.name_border_glow,
+                    nextColors.border_color,
+                    nextColors.avatar_glow,
+                    user.id
+                ).run();
+
+                currentColors = nextColors;
+                applyColorsToUserObj(currentColors);
                 savedOk = true;
                 message = `<div style="color: #00ff00; text-align: center; margin-bottom: 10px; font-weight: bold;">✅ Đã lưu trang trí màu sắc thành công (${colorVal})!</div>`;
             } else if (action === 'clear_field') {
                 const targetType = String(formData.get('target_type') || 'color');
                 activeTargetType = targetType;
-                let sqlField = '';
-                let defaultVal = '#000000';
-                if (targetType === 'glow') { sqlField = 'name_glow'; defaultVal = '#000000'; }
-                else if (targetType === 'border') { sqlField = 'name_border'; defaultVal = '#000000'; }
-                else if (targetType === 'border_glow') { sqlField = 'name_border_glow'; defaultVal = '#000000'; }
-                else if (targetType === 'avt_glow') { sqlField = 'avatar_glow'; defaultVal = '#000000'; }
-                else if (targetType === 'avt_border') { sqlField = 'border_color'; defaultVal = '#ffcc00'; }
-                else if (targetType === 'color') { sqlField = 'name_color'; defaultVal = '#00ff00'; }
 
-                if (sqlField) {
-                    await env.DB.prepare(`UPDATE users SET ${sqlField} = ? WHERE id = ?`).bind(defaultVal, user.id).run();
-                    await syncUserColorFieldsFromDb();
-                    savedOk = true;
-                    message = '<div style="color: #ffcc00; text-align: center; margin-bottom: 10px; font-weight: bold;">✅ Đã đặt lại mục đã chọn về mặc định!</div>';
-                }
+                const nextColors = {
+                    name_color: String(formData.get('state_name_color') || currentColors.name_color || '#00ff00'),
+                    name_glow: String(formData.get('state_name_glow') || currentColors.name_glow || '#000000'),
+                    name_border: String(formData.get('state_name_border') || currentColors.name_border || '#000000'),
+                    name_border_glow: String(formData.get('state_name_border_glow') || currentColors.name_border_glow || '#000000'),
+                    border_color: String(formData.get('state_border_color') || currentColors.border_color || '#ffcc00'),
+                    avatar_glow: String(formData.get('state_avatar_glow') || currentColors.avatar_glow || '#000000')
+                };
+
+                if (targetType === 'glow') nextColors.name_glow = '#000000';
+                else if (targetType === 'border') nextColors.name_border = '#000000';
+                else if (targetType === 'border_glow') nextColors.name_border_glow = '#000000';
+                else if (targetType === 'avt_glow') nextColors.avatar_glow = '#000000';
+                else if (targetType === 'avt_border') nextColors.border_color = '#ffcc00';
+                else if (targetType === 'color') nextColors.name_color = '#00ff00';
+
+                await env.DB.prepare(`
+                    UPDATE users
+                    SET name_color = ?, name_glow = ?, name_border = ?, name_border_glow = ?, border_color = ?, avatar_glow = ?
+                    WHERE id = ?
+                `).bind(
+                    nextColors.name_color,
+                    nextColors.name_glow,
+                    nextColors.name_border,
+                    nextColors.name_border_glow,
+                    nextColors.border_color,
+                    nextColors.avatar_glow,
+                    user.id
+                ).run();
+
+                currentColors = nextColors;
+                applyColorsToUserObj(currentColors);
+                savedOk = true;
+                message = '<div style="color: #ffcc00; text-align: center; margin-bottom: 10px; font-weight: bold;">✅ Đã đặt lại mục đã chọn về mặc định!</div>';
             } else if (action === 'reset_all') {
                 activeTargetType = 'color';
-                await env.DB.prepare(
-                    "UPDATE users SET name_color = '#00ff00', name_glow = '#000000', name_border = '#000000', name_border_glow = '#000000', border_color = '#ffcc00', avatar_glow = '#000000' WHERE id = ?"
-                ).bind(user.id).run();
-                await syncUserColorFieldsFromDb();
+                const resetColors = {
+                    name_color: '#00ff00',
+                    name_glow: '#000000',
+                    name_border: '#000000',
+                    name_border_glow: '#000000',
+                    border_color: '#ffcc00',
+                    avatar_glow: '#000000'
+                };
+                await env.DB.prepare(`
+                    UPDATE users
+                    SET name_color = ?, name_glow = ?, name_border = ?, name_border_glow = ?, border_color = ?, avatar_glow = ?
+                    WHERE id = ?
+                `).bind(
+                    resetColors.name_color,
+                    resetColors.name_glow,
+                    resetColors.name_border,
+                    resetColors.name_border_glow,
+                    resetColors.border_color,
+                    resetColors.avatar_glow,
+                    user.id
+                ).run();
+
+                currentColors = resetColors;
+                applyColorsToUserObj(currentColors);
                 savedOk = true;
                 message = '<div style="color: #ffcc00; text-align: center; margin-bottom: 10px; font-weight: bold;">✅ Đã khôi phục toàn bộ màu mặc định!</div>';
             }
@@ -82,20 +161,14 @@ export async function handleShopColor(request, env, user, renderLayout) {
         }
     }
 
+    applyColorsToUserObj(currentColors);
+
     const defaultAvatarMale = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'><rect width='120' height='120' fill='%230f172a'/><circle cx='60' cy='45' r='22' fill='%2338bdf8'/><path d='M20 105 C20 80, 100 80, 100 105' fill='%2338bdf8'/></svg>";
     const avt = (user.avatar && !String(user.avatar).includes('7gXvS6v')) ? user.avatar : defaultAvatarMale;
     const activeIcon = user.active_icon ? `${user.active_icon} ` : '';
     const displayName = user.display_name || user.username || 'Thành viên';
 
-    const initState = {
-        name_color: String(user.name_color || '#00ff00'),
-        name_glow: String(user.name_glow || '#000000'),
-        name_border: String(user.name_border || '#000000'),
-        name_border_glow: String(user.name_border_glow || '#000000'),
-        border_color: String(user.border_color || '#ffcc00'),
-        avatar_glow: String(user.avatar_glow || '#000000')
-    };
-
+    const initState = { ...currentColors };
     const initStateJson = JSON.stringify(initState).replace(/</g, '\\u003c');
     const activeTargetJson = JSON.stringify(activeTargetType).replace(/</g, '\\u003c');
     const savedFlag = savedOk ? 'true' : 'false';
@@ -118,7 +191,6 @@ export async function handleShopColor(request, env, user, renderLayout) {
             </div>
             <div class="box-content">
                 ${message}
-                <!-- Khung xem trước (Live Preview) -->
                 <div style="background: #141414; border: 1px solid #2a2a2a; padding: 12px; margin-bottom: 12px; border-radius: 6px; text-align: center;">
                     <div style="font-size: 12px; color: #aaa; margin-bottom: 8px;">Xem trước thay đổi (đồng bộ trực tiếp với nick):</div>
                     <div style="display: flex; align-items: center; justify-content: center; gap: 12px;">
@@ -139,6 +211,13 @@ export async function handleShopColor(request, env, user, renderLayout) {
 
                 <form id="shopColorForm" method="POST" action="/shop/buycolor" data-no-pjax="1" style="background: #121212; border: 1px solid #2c2c2c; padding: 12px; border-radius: 6px; margin-bottom: 12px;">
                     <input type="hidden" name="action" value="update_color">
+                    <input type="hidden" id="hidNameColor" name="state_name_color" value="${initState.name_color}">
+                    <input type="hidden" id="hidNameGlow" name="state_name_glow" value="${initState.name_glow}">
+                    <input type="hidden" id="hidNameBorder" name="state_name_border" value="${initState.name_border}">
+                    <input type="hidden" id="hidNameBorderGlow" name="state_name_border_glow" value="${initState.name_border_glow}">
+                    <input type="hidden" id="hidBorderColor" name="state_border_color" value="${initState.border_color}">
+                    <input type="hidden" id="hidAvatarGlow" name="state_avatar_glow" value="${initState.avatar_glow}">
+
                     <div style="font-weight: bold; color: #00ff00; margin-bottom: 8px; font-size: 13px;">⚙️ Tùy chỉnh màu sắc chuyên sâu:</div>
 
                     <div style="margin-bottom: 10px;">
@@ -219,6 +298,21 @@ export async function handleShopColor(request, env, user, renderLayout) {
 
                 targetType.value = ${activeTargetJson} || 'color';
 
+                function syncHiddenInputs() {
+                    const hNameColor = formEl.querySelector('#hidNameColor');
+                    const hNameGlow = formEl.querySelector('#hidNameGlow');
+                    const hNameBorder = formEl.querySelector('#hidNameBorder');
+                    const hNameBorderGlow = formEl.querySelector('#hidNameBorderGlow');
+                    const hBorderColor = formEl.querySelector('#hidBorderColor');
+                    const hAvatarGlow = formEl.querySelector('#hidAvatarGlow');
+                    if (hNameColor) hNameColor.value = state.name_color;
+                    if (hNameGlow) hNameGlow.value = state.name_glow;
+                    if (hNameBorder) hNameBorder.value = state.name_border;
+                    if (hNameBorderGlow) hNameBorderGlow.value = state.name_border_glow;
+                    if (hBorderColor) hBorderColor.value = state.border_color;
+                    if (hAvatarGlow) hAvatarGlow.value = state.avatar_glow;
+                }
+
                 function getFieldForType(t) {
                     if (t === 'glow') return 'name_glow';
                     if (t === 'border') return 'name_border';
@@ -278,6 +372,7 @@ export async function handleShopColor(request, env, user, renderLayout) {
                         previewAvt.style.boxShadow = 'none';
                     }
 
+                    syncHiddenInputs();
                     renderSummary();
                 }
 
