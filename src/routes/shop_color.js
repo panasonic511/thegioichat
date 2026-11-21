@@ -5,6 +5,7 @@ export async function handleShopColor(request, env, user, renderLayout) {
     try { await env.DB.prepare("ALTER TABLE users ADD COLUMN name_border_glow TEXT DEFAULT '#000000'").run(); } catch (e) {}
     try { await env.DB.prepare("ALTER TABLE users ADD COLUMN border_color TEXT DEFAULT '#ffcc00'").run(); } catch (e) {}
     try { await env.DB.prepare("ALTER TABLE users ADD COLUMN avatar_glow TEXT DEFAULT '#000000'").run(); } catch (e) {}
+    try { await env.DB.prepare("ALTER TABLE users ADD COLUMN active_frame TEXT DEFAULT ''").run(); } catch (e) {}
 
     let message = '';
     let savedOk = false;
@@ -18,10 +19,11 @@ export async function handleShopColor(request, env, user, renderLayout) {
         border_color: String(user.border_color || '#ffcc00'),
         avatar_glow: String(user.avatar_glow || '#000000')
     };
+    let activeFrame = String(user.active_frame || '');
 
     try {
         const row = await env.DB.prepare(
-            "SELECT name_color, name_glow, name_border, name_border_glow, border_color, avatar_glow FROM users WHERE id = ?"
+            "SELECT name_color, name_glow, name_border, name_border_glow, border_color, avatar_glow, active_frame FROM users WHERE id = ?"
         ).bind(user.id).first();
         if (row) {
             currentColors = {
@@ -32,6 +34,7 @@ export async function handleShopColor(request, env, user, renderLayout) {
                 border_color: String(row.border_color || currentColors.border_color || '#ffcc00'),
                 avatar_glow: String(row.avatar_glow || currentColors.avatar_glow || '#000000')
             };
+            activeFrame = String(row.active_frame || activeFrame || '');
         }
     } catch (e) {}
 
@@ -42,6 +45,7 @@ export async function handleShopColor(request, env, user, renderLayout) {
         user.name_border_glow = obj.name_border_glow;
         user.border_color = obj.border_color;
         user.avatar_glow = obj.avatar_glow;
+        user.active_frame = activeFrame;
     }
 
     if (request.method === 'POST') {
@@ -167,11 +171,13 @@ export async function handleShopColor(request, env, user, renderLayout) {
     const avt = (user.avatar && !String(user.avatar).includes('7gXvS6v')) ? user.avatar : defaultAvatarMale;
     const activeIcon = user.active_icon ? `${user.active_icon} ` : '';
     const displayName = user.display_name || user.username || 'Thành viên';
+    const hasFrameEquipped = Boolean(activeFrame);
 
     const initState = { ...currentColors };
     const initStateJson = JSON.stringify(initState).replace(/</g, '\\u003c');
     const activeTargetJson = JSON.stringify(activeTargetType).replace(/</g, '\\u003c');
     const savedFlag = savedOk ? 'true' : 'false';
+    const hasFrameFlag = hasFrameEquipped ? 'true' : 'false';
 
     const shadowsInit = [];
     if (initState.name_glow && initState.name_glow !== '#000000') shadowsInit.push(`0 0 6px ${initState.name_glow}`);
@@ -180,7 +186,15 @@ export async function handleShopColor(request, env, user, renderLayout) {
     if (shadowsInit.length > 0) initNameStyle += ` text-shadow: ${shadowsInit.join(', ')};`;
     if (initState.name_border && initState.name_border !== '#000000') initNameStyle += ` -webkit-text-stroke: 0.5px ${initState.name_border};`;
 
-    const initAvtStyle = `width: 50px; height: 50px; border-radius: 50%; object-fit: cover; border: 2px solid ${initState.border_color}; ${initState.avatar_glow && initState.avatar_glow !== '#000000' ? `box-shadow: 0 0 10px ${initState.avatar_glow};` : ''}`;
+    const initAvtStyle = hasFrameEquipped
+        ? `width: 50px; height: 50px; border-radius: 50%; object-fit: cover; border: none; box-shadow: none;`
+        : `width: 50px; height: 50px; border-radius: 50%; object-fit: cover; border: 2px solid ${initState.border_color}; ${initState.avatar_glow && initState.avatar_glow !== '#000000' ? `box-shadow: 0 0 10px ${initState.avatar_glow};` : ''}`;
+
+    const frameNoticeHtml = hasFrameEquipped
+        ? `<div style="background:#1c1917;border:1px solid #f59e0b;color:#fde68a;padding:7px 10px;border-radius:5px;font-size:11px;margin-bottom:10px;text-align:center;">
+            🎭 Bạn đang đeo khung avatar (<b>${activeFrame}</b>) nên <b>Viền AVT</b> và <b>Sáng AVT</b> đang tự động ẩn. Vào <a href="/shop/inventory" style="color:#4ade80;text-decoration:underline;">Túi đồ</a> để gỡ khung nếu muốn hiển thị lại.
+           </div>`
+        : '';
 
     const content = `
     <div id="pjax-main-content" data-pjax-url="/shop/buycolor">
@@ -191,6 +205,7 @@ export async function handleShopColor(request, env, user, renderLayout) {
             </div>
             <div class="box-content">
                 ${message}
+                ${frameNoticeHtml}
                 <div style="background: #141414; border: 1px solid #2a2a2a; padding: 12px; margin-bottom: 12px; border-radius: 6px; text-align: center;">
                     <div style="font-size: 12px; color: #aaa; margin-bottom: 8px;">Xem trước thay đổi (đồng bộ trực tiếp với nick):</div>
                     <div style="display: flex; align-items: center; justify-content: center; gap: 12px;">
@@ -204,8 +219,7 @@ export async function handleShopColor(request, env, user, renderLayout) {
                         <span>· Sáng tên: <b style="color:${initState.name_glow === '#000000' ? '#71717a' : initState.name_glow}">${initState.name_glow}</b></span>
                         <span>· Viền tên: <b style="color:${initState.name_border === '#000000' ? '#71717a' : initState.name_border}">${initState.name_border}</b></span>
                         <span>· Sáng viền tên: <b style="color:${initState.name_border_glow === '#000000' ? '#71717a' : initState.name_border_glow}">${initState.name_border_glow}</b></span>
-                        <span>· Viền AVT: <b style="color:${initState.border_color}">${initState.border_color}</b></span>
-                        <span>· Sáng AVT: <b style="color:${initState.avatar_glow === '#000000' ? '#71717a' : initState.avatar_glow}">${initState.avatar_glow}</b></span>
+                        ${hasFrameEquipped ? '' : `<span>· Viền AVT: <b style="color:${initState.border_color}">${initState.border_color}</b></span><span>· Sáng AVT: <b style="color:${initState.avatar_glow === '#000000' ? '#71717a' : initState.avatar_glow}">${initState.avatar_glow}</b></span>`}
                     </div>
                 </div>
 
@@ -227,8 +241,7 @@ export async function handleShopColor(request, env, user, renderLayout) {
                             <option value="glow">Hiệu ứng sáng tên (Glow)</option>
                             <option value="border">Viền tên tài khoản</option>
                             <option value="border_glow">Hiệu ứng sáng viền tên</option>
-                            <option value="avt_border">Viền ảnh đại diện</option>
-                            <option value="avt_glow">Hiệu ứng sáng ảnh đại diện</option>
+                            ${hasFrameEquipped ? '' : `<option value="avt_border">Viền ảnh đại diện</option><option value="avt_glow">Hiệu ứng sáng ảnh đại diện</option>`}
                         </select>
                     </div>
 
@@ -287,6 +300,7 @@ export async function handleShopColor(request, env, user, renderLayout) {
                 const clearCurrentBtn = container.querySelector('#clearCurrentTypeBtn');
                 if (!formEl || !colorInput || !colorPicker || !targetType || !previewName || !previewAvt) return;
 
+                const hasFrame = ${hasFrameFlag};
                 const state = Object.assign({
                     name_color: '#00ff00',
                     name_glow: '#000000',
@@ -296,7 +310,12 @@ export async function handleShopColor(request, env, user, renderLayout) {
                     avatar_glow: '#000000'
                 }, ${initStateJson});
 
-                targetType.value = ${activeTargetJson} || 'color';
+                const reqTarget = ${activeTargetJson} || 'color';
+                if (hasFrame && (reqTarget === 'avt_border' || reqTarget === 'avt_glow')) {
+                    targetType.value = 'color';
+                } else {
+                    targetType.value = reqTarget;
+                }
 
                 function syncHiddenInputs() {
                     const hNameColor = formEl.querySelector('#hidNameColor');
@@ -336,13 +355,17 @@ export async function handleShopColor(request, env, user, renderLayout) {
                     const sBorderGlow = state.name_border_glow || '#000000';
                     const sAvtBorder = state.border_color || '#ffcc00';
                     const sAvtGlow = state.avatar_glow || '#000000';
-                    summaryEl.innerHTML =
+                    let html =
                         '<span>Màu tên: <b style="color:' + sColor + '">' + sColor + '</b></span>' +
                         '<span>· Sáng tên: <b style="color:' + (sGlow === '#000000' ? '#71717a' : sGlow) + '">' + sGlow + '</b></span>' +
                         '<span>· Viền tên: <b style="color:' + (sBorder === '#000000' ? '#71717a' : sBorder) + '">' + sBorder + '</b></span>' +
-                        '<span>· Sáng viền tên: <b style="color:' + (sBorderGlow === '#000000' ? '#71717a' : sBorderGlow) + '">' + sBorderGlow + '</b></span>' +
-                        '<span>· Viền AVT: <b style="color:' + sAvtBorder + '">' + sAvtBorder + '</b></span>' +
-                        '<span>· Sáng AVT: <b style="color:' + (sAvtGlow === '#000000' ? '#71717a' : sAvtGlow) + '">' + sAvtGlow + '</b></span>';
+                        '<span>· Sáng viền tên: <b style="color:' + (sBorderGlow === '#000000' ? '#71717a' : sBorderGlow) + '">' + sBorderGlow + '</b></span>';
+                    if (!hasFrame) {
+                        html +=
+                            '<span>· Viền AVT: <b style="color:' + sAvtBorder + '">' + sAvtBorder + '</b></span>' +
+                            '<span>· Sáng AVT: <b style="color:' + (sAvtGlow === '#000000' ? '#71717a' : sAvtGlow) + '">' + sAvtGlow + '</b></span>';
+                    }
+                    summaryEl.innerHTML = html;
                 }
 
                 function applyFullPreview() {
@@ -365,11 +388,16 @@ export async function handleShopColor(request, env, user, renderLayout) {
                         previewName.style.webkitTextStrokeColor = 'transparent';
                     }
 
-                    previewAvt.style.border = '2px solid ' + (state.border_color || '#ffcc00');
-                    if (state.avatar_glow && state.avatar_glow !== '#000000') {
-                        previewAvt.style.boxShadow = '0 0 10px ' + state.avatar_glow;
-                    } else {
+                    if (hasFrame) {
+                        previewAvt.style.border = 'none';
                         previewAvt.style.boxShadow = 'none';
+                    } else {
+                        previewAvt.style.border = '2px solid ' + (state.border_color || '#ffcc00');
+                        if (state.avatar_glow && state.avatar_glow !== '#000000') {
+                            previewAvt.style.boxShadow = '0 0 10px ' + state.avatar_glow;
+                        } else {
+                            previewAvt.style.boxShadow = 'none';
+                        }
                     }
 
                     syncHiddenInputs();
