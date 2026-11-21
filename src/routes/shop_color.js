@@ -12,7 +12,7 @@ export async function handleShopColor(request, env, user, renderLayout) {
     if (request.method === 'POST') {
         try {
             const formData = await request.formData();
-            const action = formData.get('action');
+            const action = String(formData.get('action') || '');
 
             if (action === 'update_color') {
                 const targetType = String(formData.get('target_type') || 'color');
@@ -29,7 +29,24 @@ export async function handleShopColor(request, env, user, renderLayout) {
                 await env.DB.prepare(`UPDATE users SET ${sqlField} = ? WHERE id = ?`).bind(colorVal, user.id).run();
                 user[sqlField] = colorVal;
                 savedOk = true;
-                message = '<div style="color: #00ff00; text-align: center; margin-bottom: 10px; font-weight: bold;">✅ Đã lưu trang trí màu sắc thành công!</div>';
+                message = `<div style="color: #00ff00; text-align: center; margin-bottom: 10px; font-weight: bold;">✅ Đã lưu trang trí màu sắc thành công (${colorVal})!</div>`;
+            } else if (action === 'clear_field') {
+                const targetType = String(formData.get('target_type') || '');
+                let sqlField = '';
+                let defaultVal = '#000000';
+                if (targetType === 'glow') { sqlField = 'name_glow'; defaultVal = '#000000'; }
+                else if (targetType === 'border') { sqlField = 'name_border'; defaultVal = '#000000'; }
+                else if (targetType === 'border_glow') { sqlField = 'name_border_glow'; defaultVal = '#000000'; }
+                else if (targetType === 'avt_glow') { sqlField = 'avatar_glow'; defaultVal = '#000000'; }
+                else if (targetType === 'avt_border') { sqlField = 'border_color'; defaultVal = '#ffcc00'; }
+                else if (targetType === 'color') { sqlField = 'name_color'; defaultVal = '#00ff00'; }
+
+                if (sqlField) {
+                    await env.DB.prepare(`UPDATE users SET ${sqlField} = ? WHERE id = ?`).bind(defaultVal, user.id).run();
+                    user[sqlField] = defaultVal;
+                    savedOk = true;
+                    message = '<div style="color: #ffcc00; text-align: center; margin-bottom: 10px; font-weight: bold;">✅ Đã đặt lại mục đã chọn về mặc định!</div>';
+                }
             } else if (action === 'reset_all') {
                 await env.DB.prepare(
                     "UPDATE users SET name_color = '#00ff00', name_glow = '#000000', name_border = '#000000', name_border_glow = '#000000', border_color = '#ffcc00', avatar_glow = '#000000' WHERE id = ?"
@@ -65,6 +82,15 @@ export async function handleShopColor(request, env, user, renderLayout) {
     const initStateJson = JSON.stringify(initState).replace(/</g, '\\u003c');
     const savedFlag = savedOk ? 'true' : 'false';
 
+    const shadowsInit = [];
+    if (initState.name_glow && initState.name_glow !== '#000000') shadowsInit.push(`0 0 6px ${initState.name_glow}`);
+    if (initState.name_border_glow && initState.name_border_glow !== '#000000') shadowsInit.push(`0 0 4px ${initState.name_border_glow}`);
+    let initNameStyle = `color: ${initState.name_color}; font-weight: bold;`;
+    if (shadowsInit.length > 0) initNameStyle += ` text-shadow: ${shadowsInit.join(', ')};`;
+    if (initState.name_border && initState.name_border !== '#000000') initNameStyle += ` -webkit-text-stroke: 0.5px ${initState.name_border};`;
+
+    const initAvtStyle = `width: 50px; height: 50px; border-radius: 50%; object-fit: cover; border: 2px solid ${initState.border_color}; ${initState.avatar_glow && initState.avatar_glow !== '#000000' ? `box-shadow: 0 0 10px ${initState.avatar_glow};` : ''}`;
+
     const content = `
     <div id="pjax-main-content" data-pjax-url="/shop/buycolor">
         <div class="box">
@@ -75,20 +101,21 @@ export async function handleShopColor(request, env, user, renderLayout) {
             <div class="box-content">
                 ${message}
                 <!-- Khung xem trước (Live Preview) -->
-                <div style="background: #141414; border: 1px solid #2a2a2a; padding: 12px; margin-bottom: 15px; border-radius: 6px; text-align: center;">
-                    <div style="font-size: 12px; color: #aaa; margin-bottom: 8px;">Xem trước thay đổi:</div>
+                <div style="background: #141414; border: 1px solid #2a2a2a; padding: 12px; margin-bottom: 12px; border-radius: 6px; text-align: center;">
+                    <div style="font-size: 12px; color: #aaa; margin-bottom: 8px;">Xem trước thay đổi (đồng bộ trực tiếp với nick):</div>
                     <div style="display: flex; align-items: center; justify-content: center; gap: 12px;">
-                        <img id="previewAvt" src="${avt}" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover; border: 2px solid ${initState.border_color}; ${initState.avatar_glow && initState.avatar_glow !== '#000000' ? `box-shadow: 0 0 10px ${initState.avatar_glow};` : ''}">
+                        <img id="previewAvt" src="${avt}" style="${initAvtStyle}">
                         <span style="font-size: 16px;">
-                            <a id="previewName" href="#" onclick="return false;" style="color: ${initState.name_color}; font-weight: bold; ${(() => {
-                                const shadows = [];
-                                if (initState.name_glow && initState.name_glow !== '#000000') shadows.push(`0 0 6px ${initState.name_glow}`);
-                                if (initState.name_border_glow && initState.name_border_glow !== '#000000') shadows.push(`0 0 4px ${initState.name_border_glow}`);
-                                let st = shadows.length ? `text-shadow: ${shadows.join(', ')};` : '';
-                                if (initState.name_border && initState.name_border !== '#000000') st += ` -webkit-text-stroke: 0.5px ${initState.name_border};`;
-                                return st;
-                            })()}">${activeIcon}${displayName}</a>
+                            <a id="previewName" href="#" onclick="return false;" style="${initNameStyle}">${activeIcon}${displayName}</a>
                         </span>
+                    </div>
+                    <div id="previewMetaSummary" style="margin-top: 10px; font-size: 11px; color: #9ca3af; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;">
+                        <span>Màu tên: <b style="color:${initState.name_color}">${initState.name_color}</b></span>
+                        <span>· Sáng tên: <b style="color:${initState.name_glow === '#000000' ? '#71717a' : initState.name_glow}">${initState.name_glow}</b></span>
+                        <span>· Viền tên: <b style="color:${initState.name_border === '#000000' ? '#71717a' : initState.name_border}">${initState.name_border}</b></span>
+                        <span>· Sáng viền tên: <b style="color:${initState.name_border_glow === '#000000' ? '#71717a' : initState.name_border_glow}">${initState.name_border_glow}</b></span>
+                        <span>· Viền AVT: <b style="color:${initState.border_color}">${initState.border_color}</b></span>
+                        <span>· Sáng AVT: <b style="color:${initState.avatar_glow === '#000000' ? '#71717a' : initState.avatar_glow}">${initState.avatar_glow}</b></span>
                     </div>
                 </div>
 
@@ -119,8 +146,9 @@ export async function handleShopColor(request, env, user, renderLayout) {
                         </div>
                     </div>
 
-                    <div style="display: flex; gap: 8px;">
-                        <button type="submit" class="btn" style="background: #0055ff; color: #fff; flex: 1; padding: 8px; border-radius: 4px;">💾 Lưu màu</button>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button type="submit" class="btn" style="background: #0055ff; color: #fff; flex: 1; min-width: 140px; padding: 8px; border-radius: 4px;">💾 Lưu màu</button>
+                        <button type="button" id="clearCurrentTypeBtn" class="btn" style="background: #27272a; color: #fbbf24; border: 1px solid #52525b; padding: 8px 10px; border-radius: 4px; font-size: 12px;">↩ Tắt / Mặc định mục này</button>
                     </div>
                 </form>
 
@@ -152,12 +180,15 @@ export async function handleShopColor(request, env, user, renderLayout) {
                     window.__wapInvalidatePjaxCache('/shop/buycolor');
                 }
 
+                const formEl = container.querySelector('#shopColorForm');
                 const colorInput = container.querySelector('#colorInput');
                 const colorPicker = container.querySelector('#colorPicker');
                 const targetType = container.querySelector('#targetType');
                 const previewName = container.querySelector('#previewName');
                 const previewAvt = container.querySelector('#previewAvt');
-                if (!colorInput || !colorPicker || !targetType || !previewName || !previewAvt) return;
+                const summaryEl = container.querySelector('#previewMetaSummary');
+                const clearCurrentBtn = container.querySelector('#clearCurrentTypeBtn');
+                if (!formEl || !colorInput || !colorPicker || !targetType || !previewName || !previewAvt) return;
 
                 const state = Object.assign({
                     name_color: '#00ff00',
@@ -177,6 +208,29 @@ export async function handleShopColor(request, env, user, renderLayout) {
                     return 'name_color';
                 }
 
+                function getDefaultForType(t) {
+                    if (t === 'color') return '#00ff00';
+                    if (t === 'avt_border') return '#ffcc00';
+                    return '#000000';
+                }
+
+                function renderSummary() {
+                    if (!summaryEl) return;
+                    const sColor = state.name_color || '#00ff00';
+                    const sGlow = state.name_glow || '#000000';
+                    const sBorder = state.name_border || '#000000';
+                    const sBorderGlow = state.name_border_glow || '#000000';
+                    const sAvtBorder = state.border_color || '#ffcc00';
+                    const sAvtGlow = state.avatar_glow || '#000000';
+                    summaryEl.innerHTML =
+                        '<span>Màu tên: <b style="color:' + sColor + '">' + sColor + '</b></span>' +
+                        '<span>· Sáng tên: <b style="color:' + (sGlow === '#000000' ? '#71717a' : sGlow) + '">' + sGlow + '</b></span>' +
+                        '<span>· Viền tên: <b style="color:' + (sBorder === '#000000' ? '#71717a' : sBorder) + '">' + sBorder + '</b></span>' +
+                        '<span>· Sáng viền tên: <b style="color:' + (sBorderGlow === '#000000' ? '#71717a' : sBorderGlow) + '">' + sBorderGlow + '</b></span>' +
+                        '<span>· Viền AVT: <b style="color:' + sAvtBorder + '">' + sAvtBorder + '</b></span>' +
+                        '<span>· Sáng AVT: <b style="color:' + (sAvtGlow === '#000000' ? '#71717a' : sAvtGlow) + '">' + sAvtGlow + '</b></span>';
+                }
+
                 function applyFullPreview() {
                     previewName.style.color = state.name_color || '#00ff00';
                     previewName.style.fontWeight = 'bold';
@@ -193,7 +247,8 @@ export async function handleShopColor(request, env, user, renderLayout) {
                     if (state.name_border && state.name_border !== '#000000') {
                         previewName.style.webkitTextStroke = '0.5px ' + state.name_border;
                     } else {
-                        previewName.style.webkitTextStroke = '0px transparent';
+                        previewName.style.webkitTextStroke = '0px';
+                        previewName.style.webkitTextStrokeColor = 'transparent';
                     }
 
                     previewAvt.style.border = '2px solid ' + (state.border_color || '#ffcc00');
@@ -202,11 +257,13 @@ export async function handleShopColor(request, env, user, renderLayout) {
                     } else {
                         previewAvt.style.boxShadow = 'none';
                     }
+
+                    renderSummary();
                 }
 
                 function syncInputsFromType() {
                     const field = getFieldForType(targetType.value);
-                    const curVal = state[field] || '#000000';
+                    const curVal = state[field] || getDefaultForType(targetType.value);
                     colorInput.value = curVal;
                     colorPicker.value = (/^#[0-9a-fA-F]{6}$/.test(curVal)) ? curVal : '#00ff00';
                 }
@@ -234,9 +291,24 @@ export async function handleShopColor(request, env, user, renderLayout) {
                     applyFullPreview();
                 }
 
+                function onClearCurrentType() {
+                    const t = targetType.value;
+                    const defVal = getDefaultForType(t);
+                    const field = getFieldForType(t);
+                    state[field] = defVal;
+                    colorInput.value = defVal;
+                    colorPicker.value = (/^#[0-9a-fA-F]{6}$/.test(defVal)) ? defVal : '#00ff00';
+                    applyFullPreview();
+
+                    const actionInput = formEl.querySelector('input[name="action"]');
+                    if (actionInput) actionInput.value = 'clear_field';
+                    formEl.submit();
+                }
+
                 colorInput.addEventListener('input', onColorInput);
                 colorPicker.addEventListener('input', onPickerChange);
                 targetType.addEventListener('change', onTypeChange);
+                if (clearCurrentBtn) clearCurrentBtn.addEventListener('click', onClearCurrentType);
 
                 const presetButtons = Array.from(container.querySelectorAll('[data-preset]'));
                 const presetHandlers = presetButtons.map(function(btn) {
@@ -262,6 +334,7 @@ export async function handleShopColor(request, env, user, renderLayout) {
                     colorInput.removeEventListener('input', onColorInput);
                     colorPicker.removeEventListener('input', onPickerChange);
                     targetType.removeEventListener('change', onTypeChange);
+                    if (clearCurrentBtn) clearCurrentBtn.removeEventListener('click', onClearCurrentType);
                     presetHandlers.forEach(function(item) {
                         item.btn.removeEventListener('click', item.handler);
                     });
