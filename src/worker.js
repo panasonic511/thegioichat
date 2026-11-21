@@ -107,6 +107,14 @@ function getStaffAfterNickBadge(safeUser) {
     return '';
 }
 
+function extractFrameSizePx(safeUser, styleStr) {
+    const explicit = Number(safeUser.avatar_size || safeUser.avt_size || 0);
+    if (explicit >= 20 && explicit <= 220) return explicit;
+    const m = String(styleStr || '').match(/(?:^|;)\s*width\s*:\s*(\d+)px/i);
+    if (m && Number(m[1]) >= 20 && Number(m[1]) <= 220) return Number(m[1]);
+    return 44;
+}
+
 export function renderUser(u) {
     const safeUser = new Proxy(u || {}, {
         get(target, prop) {
@@ -124,7 +132,7 @@ export function renderUser(u) {
     const avatarVal = String(safeUser.avatar || '');
     const avatarUrl = (avatarVal && !avatarVal.includes('7gXvS6v')) ? avatarVal : systemDefaultAvatar;
 
-    const activeFrame = String(safeUser.active_frame || '');
+    const activeFrame = String(safeUser.active_frame || '').trim();
     const borderColor = String(safeUser.border_color || '#ffcc00');
 
     let avatarStyle = `border-radius: 50%; object-fit: cover; border: 2px solid ${borderColor};`;
@@ -148,10 +156,11 @@ export function renderUser(u) {
 
     const activeIcon = safeUser.active_icon ? `${escapeHtmlText(safeUser.active_icon)} ` : '';
     const staffBadge = getStaffAfterNickBadge(safeUser);
+    const frameSize = extractFrameSizePx(safeUser, safeUser.avatar_style || '');
 
     const avatarHtml = activeFrame
-        ? `<a href="/profile?user=${userId}" style="display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;">${renderAvatarFrameHtml(escapeHtmlText(avatarUrl), activeFrame, 44, avatarStyle)}</a>`
-        : `<a href="/profile?user=${userId}"><img src="${escapeHtmlText(avatarUrl)}" style="${avatarStyle}"></a>`;
+        ? `<a href="/profile?user=${userId}" class="wap-avt-link" style="display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;flex-shrink:0;">${renderAvatarFrameHtml(escapeHtmlText(avatarUrl), activeFrame, frameSize, avatarStyle)}</a>`
+        : `<a href="/profile?user=${userId}" class="wap-avt-link" style="display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;flex-shrink:0;"><img src="${escapeHtmlText(avatarUrl)}" style="${avatarStyle}"></a>`;
 
     return {
         nameStyle,
@@ -600,31 +609,42 @@ function renderLayout(title, content, user) {
             100% { background-position: 200% 50%; }
         }
 
-        /* KHUNG AVATAR (6 TĨNH + 6 ĐỘNG) */
+        /* KHUNG AVATAR (6 TĨNH + 6 ĐỘNG) - ĐỒNG BỘ MỌI TRANG & MỌI MỤC SHOP */
+        .wap-avt-link {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            vertical-align: middle !important;
+            flex-shrink: 0 !important;
+            line-height: 0 !important;
+        }
         .wap-avt-frame {
-            position: relative;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 50%;
-            vertical-align: middle;
-            box-sizing: border-box;
+            position: relative !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            border-radius: 50% !important;
+            vertical-align: middle !important;
+            box-sizing: border-box !important;
+            flex-shrink: 0 !important;
         }
         .wap-avt-frame-ring {
-            position: absolute;
-            inset: 0;
-            border-radius: 50%;
-            pointer-events: none;
-            box-sizing: border-box;
+            position: absolute !important;
+            inset: 0 !important;
+            border-radius: 50% !important;
+            pointer-events: none !important;
+            box-sizing: border-box !important;
+            z-index: 2 !important;
         }
         .wap-avt-frame-img {
-            position: relative;
-            z-index: 1;
-            border-radius: 50%;
-            object-fit: cover;
-            display: block;
+            position: relative !important;
+            z-index: 1 !important;
+            border-radius: 50% !important;
+            object-fit: cover !important;
+            display: block !important;
             border: none !important;
             box-shadow: none !important;
+            max-width: none !important;
         }
 
         /* 6 KHUNG TĨNH */
