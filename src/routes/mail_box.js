@@ -26,10 +26,15 @@ function buildPartnerVisual(pObj) {
         ? `${rendered.avatarStyle}; width: 38px; height: 38px; border-radius: 50%; object-fit: cover; display: block;`
         : 'width: 38px; height: 38px; border-radius: 50%; object-fit: cover; border: 1px solid #00ff00; display: block;';
 
+    const avatarHtml = rendered.avatarHtml
+        ? rendered.avatarHtml
+        : `<img src="${escapeHtml(avatarSrc)}" alt="${escapeHtml((pObj && (pObj.display_name || pObj.username)) || '')}" style="${escapeHtml(avatarStyle)}">`;
+
     return {
         nameHtml: rendered.nameHtml || escapeHtml((pObj && (pObj.display_name || pObj.username)) || 'Thành viên'),
         avatarSrc,
-        avatarStyle
+        avatarStyle,
+        avatarHtml
     };
 }
 
@@ -153,14 +158,14 @@ export async function handleMailBox(request, env, user, renderLayout) {
             let partner = null;
             try {
                 partner = await env.DB.prepare(`
-                    SELECT id, username, display_name, avatar, border_color, avatar_glow,
+                    SELECT id, username, display_name, avatar, border_color, avatar_glow, active_frame,
                            name_color, name_glow, name_border, name_border_glow, active_icon, role, is_admin, coins
                     FROM users WHERE id = ?
                 `).bind(pid).first();
             } catch (e) {
                 try {
                     partner = await env.DB.prepare(`
-                        SELECT id, username, display_name, avatar, border_color, avatar_glow,
+                        SELECT id, username, display_name, avatar, border_color, avatar_glow, active_frame,
                                name_color, name_glow, name_border, name_border_glow, active_icon, role, is_admin
                         FROM users WHERE id = ?
                     `).bind(pid).first();
@@ -248,7 +253,7 @@ export async function handleMailBox(request, env, user, renderLayout) {
                 return `
                 <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px; border-bottom: 1px solid #222; background: ${index % 2 === 0 ? '#080808' : '#030303'};">
                     <div style="display: flex; align-items: center; gap: 10px; overflow: hidden;">
-                        <img src="${escapeHtml(visual.avatarSrc)}" alt="${escapeHtml(p.display_name || p.username || '')}" style="${escapeHtml(visual.avatarStyle)}">
+                        <div class="mailbox-avt-slot">${visual.avatarHtml}</div>
                         <div style="overflow: hidden;">
                             <div style="font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                                 <a href="/profile?user=${pId}" style="text-decoration: none;">${visual.nameHtml}</a>
@@ -268,6 +273,25 @@ export async function handleMailBox(request, env, user, renderLayout) {
     }
 
     const content = `
+    <style>
+        .mailbox-avt-slot {
+            width: 38px;
+            height: 38px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .mailbox-avt-slot .wap-avt-link {
+            width: 38px !important;
+            height: 38px !important;
+        }
+        .mailbox-avt-slot .wap-avt-frame,
+        .mailbox-avt-slot .wap-avt-frame-img {
+            width: 38px !important;
+            height: 38px !important;
+        }
+    </style>
     <div class="box">
         <div class="box-title">✉️ Hộp thư tin nhắn</div>
         <div class="box-content" style="padding: 0;">
